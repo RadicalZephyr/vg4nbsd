@@ -168,12 +168,11 @@ stage2_LDFLAGS = \
 	-Wl,-defsym,kickstart_base=@KICKSTART_BASE@ -Wl,-T,stage2.lds
 endif
 
-stage2_LDADD= $(stage2_extra) \
-	-ldl
+stage2_LDADD= $(stage2_extra) $(LIBDL)
 
 vg_preload_core_so_SOURCES = vg_preloaded.c
 vg_preload_core_so_CFLAGS = $(AM_CFLAGS) -fpic
-vg_preload_core_so_LDADD = -ldl
+vg_preload_core_so_LDADD = $(LIBDL)
 vg_preload_core_so_LDFLAGS = \
 	-shared \
 	-Wl,--soname,vg_preload_core.so \

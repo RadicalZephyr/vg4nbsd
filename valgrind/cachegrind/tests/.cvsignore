@@ -1,0 +1,10 @@
+Makefile.in
+Makefile
+chdir
+dlclose
+cachegrind.out
+cachegrind.out.*
+*.stdout.diff
+*.stderr.diff
+*.stdout.out
+*.stderr.out

@@ -1562,46 +1562,57 @@ PRE(old_mmap)
 // applicable to every architecture -- I think only to 32-bit archs.
 // We're going to need something like linux/core_os32.h for such
 // things, eventually, I think.  --njn
-/* PRE(sys_lstat64) */
-/* { */
+// for netbsd, these are just stubs, I have put the I die here macro
+//   so that when an error is seen, it is tested and fixed The Right
+// Way. By the way this involves pulling in the right stat64 structure
+// from the sources, piece of cake :p
+PRE(sys_lstat64)
+{
+	I_die_here;
 /*    PRINT("sys_lstat64 ( %p(%s), %p )",ARG1,ARG1,ARG2); */
 /*    PRE_REG_READ2(long, "lstat64", char *, file_name, struct stat64 *, buf); */
 /*    PRE_MEM_RASCIIZ( "lstat64(file_name)", ARG1 ); */
 /*    PRE_MEM_WRITE( "lstat64(buf)", ARG2, sizeof(struct vki_stat64) ); */
-/* } */
+}
 
-/* POST(sys_lstat64) */
-/* { */
+POST(sys_lstat64)
+{
+	I_die_here;
 /*    vg_assert(SUCCESS); */
 /*    if (RES == 0) { */
 /*       POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) ); */
 /*    } */
-/* } */
+/* XXX -NetBSD first pull in a stat64 structure then fix this */
+}
 
-/* PRE(sys_stat64) */
-/* { */
+PRE(sys_stat64)
+{
+	I_die_here;
 /*    PRINT("sys_stat64 ( %p, %p )",ARG1,ARG2); */
 /*    PRE_REG_READ2(long, "stat64", char *, file_name, struct stat64 *, buf); */
 /*    PRE_MEM_RASCIIZ( "stat64(file_name)", ARG1 ); */
 /*    PRE_MEM_WRITE( "stat64(buf)", ARG2, sizeof(struct vki_stat64) ); */
-/* } */
+}
 
-/* POST(sys_stat64) */
-/* { */
+POST(sys_stat64)
+{
+	I_die_here;
 /*    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) ); */
-/* } */
+}
 
-/* PRE(sys_fstat64) */
-/* { */
+PRE(sys_fstat64)
+{
+	I_die_here;
 /*    PRINT("sys_fstat64 ( %d, %p )",ARG1,ARG2); */
 /*    PRE_REG_READ2(long, "fstat64", unsigned long, fd, struct stat64 *, buf); */
 /*    PRE_MEM_WRITE( "fstat64(buf)", ARG2, sizeof(struct vki_stat64) ); */
-/* } */
+}
 
-/* POST(sys_fstat64) */
-/* { */
+POST(sys_fstat64)
+{
+	I_die_here;
 /*    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) ); */
-/* } */
+}
 
 PRE(sys_socketcall)
 {
@@ -1928,9 +1939,9 @@ POST(sys_sigaction)
    The x86/Linux syscall table
    ------------------------------------------------------------------ */
 
-/* Add an x86-linux specific wrapper to a syscall table. */
-#define PLAX_(sysno, name)    WRAPPER_ENTRY_X_(x86_linux, sysno, name) 
-#define PLAXY(sysno, name)    WRAPPER_ENTRY_XY(x86_linux, sysno, name)
+/* Add an x86-netbsd specific wrapper to a syscall table. */
+#define PLAX_(sysno, name)    WRAPPER_ENTRY_X_(x86_netbsdelf2, sysno, name) 
+#define PLAXY(sysno, name)    WRAPPER_ENTRY_XY(x86_netbsdelf2, sysno, name)
 
 
 // This table maps from __NR_xxx syscall numbers (from
@@ -1941,6 +1952,9 @@ POST(sys_sigaction)
 // arch/OS combination, eg. */* (generic), */Linux (Linux only), ?/?
 // (unknown).
 
+// Importing NetBSD's syscall numbers : change what is necessary ,
+// remove the pre and post wrappers or put in stubs that fail, again
+// we will write it later when a program actually fails over it. 
 const SyscallTableEntry VGP_(syscall_table)[] = {
 //zz    //   (restart_syscall)                             // 0
    GENX_(__NR_exit,              sys_exit),           // 1
@@ -1950,18 +1964,18 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENXY(__NR_open,              sys_open),           // 5
    GENXY(__NR_close,             sys_close),          // 6
-   GENXY(__NR_waitpid,           sys_waitpid),        // 7
-   GENXY(__NR_creat,             sys_creat),          // 8
+   GENXY(__NR_wait4,           sys_wait4),        // 7
+   GENXY(__NR_compat_43_ocreat,             sys_compat_ocreat), // 8
    GENX_(__NR_link,              sys_link),           // 9
 
    GENX_(__NR_unlink,            sys_unlink),         // 10
-   GENX_(__NR_execve,            sys_execve),         // 11
+//   GENX_(__NR_execve,            sys_execve),         // 11 obsolete 
    GENX_(__NR_chdir,             sys_chdir),          // 12
-   GENXY(__NR_time,              sys_time),           // 13
+   GENXY(__NR_fchdir,              sys_fchdir),           // 13
    GENX_(__NR_mknod,             sys_mknod),          // 14
 
    GENX_(__NR_chmod,             sys_chmod),          // 15
-//zz    //   (__NR_lchown,            sys_lchown16),       // 16 ## P
+   NBSDX_(__NR_chown,            sys_chown),       // 16 ## P
    GENX_(__NR_break,             sys_ni_syscall),     // 17
 //zz    //   (__NR_oldstat,           sys_stat),           // 18 (obsolete)
    GENX_(__NR_lseek,             sys_lseek),          // 19

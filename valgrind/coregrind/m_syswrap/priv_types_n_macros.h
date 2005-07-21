@@ -206,6 +206,10 @@ extern const UInt VGP_(syscall_table_size);
 #define LINX_(sysno, name)    WRAPPER_ENTRY_X_(linux, sysno, name) 
 #define LINXY(sysno, name)    WRAPPER_ENTRY_XY(linux, sysno, name)
 
+/* Add a NetBSD-specific, arch-independent wrapper to a syscall
+   table. */
+#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsd, sysno, name) 
+#define NBSDXY(sysno, name)    WRAPPER_ENTRY_XY(netbsd, sysno, name)
 
 
 /* ---------------------------------------------------------------------

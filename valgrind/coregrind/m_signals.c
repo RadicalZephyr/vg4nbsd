@@ -403,15 +403,19 @@ extern void my_sigreturn(void);
    "	movq	$" #name ", %rax\n" \
    "	syscall\n"
 #elif defined(VGP_x86_netbsdelf2) 
-/* XXX nothing */
+#  define _MYSIG(name) \
+   "my_sigreturn:\n" \
+   "	movl	$" #name ", %eax\n" \
+   "	int	$0x80\n"
+/* XXX broken */
 #else
 #  error Unknown platform
 #endif
 
-/* #define MYSIG(name)  _MYSIG(name) */
-/* asm( */
-/*    MYSIG(__NR_rt_sigreturn) */
-/* ); */
+#define MYSIG(name)  _MYSIG(name)
+asm(
+   MYSIG(__NR_rt_sigreturn)
+);
 /* XXX - netbsd */
 
 static void handle_SCSS_change ( Bool force_update )

@@ -24,295 +24,886 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __VKI_UNISTD_X86_LINUX_H
-#define __VKI_UNISTD_X86_LINUX_H
+#ifndef __VKI_UNISTD_X86_NETBSD_H
+#define __VKI_UNISTD_X86_NETBSD_H
 
-// From linux-2.6.9/include/asm-i386/unistd.h
+// From $SRCDIR/sys/sys/syscall.h generated from sys/sys/syscalls.master 
 
-#define __NR_restart_syscall      0
-#define __NR_exit		  1
-#define __NR_fork		  2
-#define __NR_read		  3
-#define __NR_write		  4
-#define __NR_open		  5
-#define __NR_close		  6
-#define __NR_waitpid		  7
-#define __NR_creat		  8
-#define __NR_link		  9
-#define __NR_unlink		 10
-#define __NR_execve		 11
-#define __NR_chdir		 12
-#define __NR_time		 13
-#define __NR_mknod		 14
-#define __NR_chmod		 15
-#define __NR_lchown		 16
-#define __NR_break		 17
-#define __NR_oldstat		 18
-#define __NR_lseek		 19
-#define __NR_getpid		 20
-#define __NR_mount		 21
-#define __NR_umount		 22
-#define __NR_setuid		 23
-#define __NR_getuid		 24
-#define __NR_stime		 25
-#define __NR_ptrace		 26
-#define __NR_alarm		 27
-#define __NR_oldfstat		 28
-#define __NR_pause		 29
-#define __NR_utime		 30
-#define __NR_stty		 31
-#define __NR_gtty		 32
-#define __NR_access		 33
-#define __NR_nice		 34
-#define __NR_ftime		 35
-#define __NR_sync		 36
-#define __NR_kill		 37
-#define __NR_rename		 38
-#define __NR_mkdir		 39
-#define __NR_rmdir		 40
-#define __NR_dup		 41
-#define __NR_pipe		 42
-#define __NR_times		 43
-#define __NR_prof		 44
-#define __NR_brk		 45
-#define __NR_setgid		 46
-#define __NR_getgid		 47
-#define __NR_signal		 48
-#define __NR_geteuid		 49
-#define __NR_getegid		 50
-#define __NR_acct		 51
-#define __NR_umount2		 52
-#define __NR_lock		 53
-#define __NR_ioctl		 54
-#define __NR_fcntl		 55
-#define __NR_mpx		 56
-#define __NR_setpgid		 57
-#define __NR_ulimit		 58
-#define __NR_oldolduname	 59
-#define __NR_umask		 60
-#define __NR_chroot		 61
-#define __NR_ustat		 62
-#define __NR_dup2		 63
-#define __NR_getppid		 64
-#define __NR_getpgrp		 65
-#define __NR_setsid		 66
-#define __NR_sigaction		 67
-#define __NR_sgetmask		 68
-#define __NR_ssetmask		 69
-#define __NR_setreuid		 70
-#define __NR_setregid		 71
-#define __NR_sigsuspend		 72
-#define __NR_sigpending		 73
-#define __NR_sethostname	 74
-#define __NR_setrlimit		 75
-#define __NR_getrlimit		 76	/* Back compatible 2Gig limited rlimit */
-#define __NR_getrusage		 77
-#define __NR_gettimeofday	 78
-#define __NR_settimeofday	 79
-#define __NR_getgroups		 80
-#define __NR_setgroups		 81
-#define __NR_select		 82
-#define __NR_symlink		 83
-#define __NR_oldlstat		 84
-#define __NR_readlink		 85
-#define __NR_uselib		 86
-#define __NR_swapon		 87
-#define __NR_reboot		 88
-#define __NR_readdir		 89
-#define __NR_mmap		 90
-#define __NR_munmap		 91
-#define __NR_truncate		 92
-#define __NR_ftruncate		 93
-#define __NR_fchmod		 94
-#define __NR_fchown		 95
-#define __NR_getpriority	 96
-#define __NR_setpriority	 97
-#define __NR_profil		 98
-#define __NR_statfs		 99
-#define __NR_fstatfs		100
-#define __NR_ioperm		101
-#define __NR_socketcall		102
-#define __NR_syslog		103
-#define __NR_setitimer		104
-#define __NR_getitimer		105
-#define __NR_stat		106
-#define __NR_lstat		107
-#define __NR_fstat		108
-#define __NR_olduname		109
-#define __NR_iopl		110
-#define __NR_vhangup		111
-#define __NR_idle		112
-#define __NR_vm86old		113
-#define __NR_wait4		114
-#define __NR_swapoff		115
-#define __NR_sysinfo		116
-#define __NR_ipc		117
-#define __NR_fsync		118
-#define __NR_sigreturn		119
-#define __NR_clone		120
-#define __NR_setdomainname	121
-#define __NR_uname		122
-#define __NR_modify_ldt		123
-#define __NR_adjtimex		124
-#define __NR_mprotect		125
-#define __NR_sigprocmask	126
-#define __NR_create_module	127
-#define __NR_init_module	128
-#define __NR_delete_module	129
-#define __NR_get_kernel_syms	130
-#define __NR_quotactl		131
-#define __NR_getpgid		132
-#define __NR_fchdir		133
-#define __NR_bdflush		134
-#define __NR_sysfs		135
-#define __NR_personality	136
-#define __NR_afs_syscall	137 /* Syscall for Andrew File System */
-#define __NR_setfsuid		138
-#define __NR_setfsgid		139
-#define __NR__llseek		140
-#define __NR_getdents		141
-#define __NR__newselect		142
-#define __NR_flock		143
-#define __NR_msync		144
-#define __NR_readv		145
-#define __NR_writev		146
-#define __NR_getsid		147
-#define __NR_fdatasync		148
-#define __NR__sysctl		149
-#define __NR_mlock		150
-#define __NR_munlock		151
-#define __NR_mlockall		152
-#define __NR_munlockall		153
-#define __NR_sched_setparam		154
-#define __NR_sched_getparam		155
-#define __NR_sched_setscheduler		156
-#define __NR_sched_getscheduler		157
-#define __NR_sched_yield		158
-#define __NR_sched_get_priority_max	159
-#define __NR_sched_get_priority_min	160
-#define __NR_sched_rr_get_interval	161
-#define __NR_nanosleep		162
-#define __NR_mremap		163
-#define __NR_setresuid		164
-#define __NR_getresuid		165
-#define __NR_vm86		166
-#define __NR_query_module	167
-#define __NR_poll		168
-#define __NR_nfsservctl		169
-#define __NR_setresgid		170
-#define __NR_getresgid		171
-#define __NR_prctl              172
-#define __NR_rt_sigreturn	173
-#define __NR_rt_sigaction	174
-#define __NR_rt_sigprocmask	175
-#define __NR_rt_sigpending	176
-#define __NR_rt_sigtimedwait	177
-#define __NR_rt_sigqueueinfo	178
-#define __NR_rt_sigsuspend	179
-#define __NR_pread64		180
-#define __NR_pwrite64		181
-#define __NR_chown		182
-#define __NR_getcwd		183
-#define __NR_capget		184
-#define __NR_capset		185
-#define __NR_sigaltstack	186
-#define __NR_sendfile		187
-#define __NR_getpmsg		188	/* some people actually want streams */
-#define __NR_putpmsg		189	/* some people actually want streams */
-#define __NR_vfork		190
-#define __NR_ugetrlimit		191	/* SuS compliant getrlimit */
-#define __NR_mmap2		192
-#define __NR_truncate64		193
-#define __NR_ftruncate64	194
-#define __NR_stat64		195
-#define __NR_lstat64		196
-#define __NR_fstat64		197
-#define __NR_lchown32		198
-#define __NR_getuid32		199
-#define __NR_getgid32		200
-#define __NR_geteuid32		201
-#define __NR_getegid32		202
-#define __NR_setreuid32		203
-#define __NR_setregid32		204
-#define __NR_getgroups32	205
-#define __NR_setgroups32	206
-#define __NR_fchown32		207
-#define __NR_setresuid32	208
-#define __NR_getresuid32	209
-#define __NR_setresgid32	210
-#define __NR_getresgid32	211
-#define __NR_chown32		212
-#define __NR_setuid32		213
-#define __NR_setgid32		214
-#define __NR_setfsuid32		215
-#define __NR_setfsgid32		216
-#define __NR_pivot_root		217
-#define __NR_mincore		218
-#define __NR_madvise		219
-#define __NR_madvise1		219	/* delete when C lib stub is removed */
-#define __NR_getdents64		220
-#define __NR_fcntl64		221
-/* 223 is unused */
-#define __NR_gettid		224
-#define __NR_readahead		225
-#define __NR_setxattr		226
-#define __NR_lsetxattr		227
-#define __NR_fsetxattr		228
-#define __NR_getxattr		229
-#define __NR_lgetxattr		230
-#define __NR_fgetxattr		231
-#define __NR_listxattr		232
-#define __NR_llistxattr		233
-#define __NR_flistxattr		234
-#define __NR_removexattr	235
-#define __NR_lremovexattr	236
-#define __NR_fremovexattr	237
-#define __NR_tkill		238
-#define __NR_sendfile64		239
-#define __NR_futex		240
-#define __NR_sched_setaffinity	241
-#define __NR_sched_getaffinity	242
-#define __NR_set_thread_area	243
-#define __NR_get_thread_area	244
-#define __NR_io_setup		245
-#define __NR_io_destroy		246
-#define __NR_io_getevents	247
-#define __NR_io_submit		248
-#define __NR_io_cancel		249
-#define __NR_fadvise64		250
+#define	__NR_syscall	0
 
-#define __NR_exit_group		252
-#define __NR_lookup_dcookie	253
-#define __NR_epoll_create	254
-#define __NR_epoll_ctl		255
-#define __NR_epoll_wait		256
-#define __NR_remap_file_pages	257
-#define __NR_set_tid_address	258
-#define __NR_timer_create	259
-#define __NR_timer_settime	(__NR_timer_create+1)
-#define __NR_timer_gettime	(__NR_timer_create+2)
-#define __NR_timer_getoverrun	(__NR_timer_create+3)
-#define __NR_timer_delete	(__NR_timer_create+4)
-#define __NR_clock_settime	(__NR_timer_create+5)
-#define __NR_clock_gettime	(__NR_timer_create+6)
-#define __NR_clock_getres	(__NR_timer_create+7)
-#define __NR_clock_nanosleep	(__NR_timer_create+8)
-#define __NR_statfs64		268
-#define __NR_fstatfs64		269
-#define __NR_tgkill		270
-#define __NR_utimes		271
-#define __NR_fadvise64_64	272
-#define __NR_vserver		273
-#define __NR_mbind		274
-#define __NR_get_mempolicy	275
-#define __NR_set_mempolicy	276
-#define __NR_mq_open 		277
-#define __NR_mq_unlink		(__NR_mq_open+1)
-#define __NR_mq_timedsend	(__NR_mq_open+2)
-#define __NR_mq_timedreceive	(__NR_mq_open+3)
-#define __NR_mq_notify		(__NR_mq_open+4)
-#define __NR_mq_getsetattr	(__NR_mq_open+5)
-#define __NR_sys_kexec_load	283
-#define __NR_wait		284
+/* syscall: "exit" ret: "void" args: "int" */
+#define	__NR_exit	1
 
-#endif /* __VKI_UNISTD_X86_LINUX_H */
+/* syscall: "fork" ret: "int" args: */
+#define	__NR_fork	2
+
+/* syscall: "read" ret: "ssize_t" args: "int" "void *" "size_t" */
+#define	__NR_read	3
+
+/* syscall: "write" ret: "ssize_t" args: "int" "const void *" "size_t" */
+#define	__NR_write	4
+
+/* syscall: "open" ret: "int" args: "const char *" "int" "..." */
+#define	__NR_open	5
+
+/* syscall: "close" ret: "int" args: "int" */
+#define	__NR_close	6
+
+/* syscall: "wait4" ret: "int" args: "int" "int *" "int" "struct rusage *" */
+#define	__NR_wait4	7
+
+/* syscall: "compat_43_ocreat" ret: "int" args: "const char *" "mode_t" */
+#define	__NR_compat_43_ocreat	8
+
+/* syscall: "link" ret: "int" args: "const char *" "const char *" */
+#define	__NR_link	9
+
+/* syscall: "unlink" ret: "int" args: "const char *" */
+#define	__NR_unlink	10
+
+				/* 11 is obsolete execv */
+/* syscall: "chdir" ret: "int" args: "const char *" */
+#define	__NR_chdir	12
+
+/* syscall: "fchdir" ret: "int" args: "int" */
+#define	__NR_fchdir	13
+
+/* syscall: "mknod" ret: "int" args: "const char *" "mode_t" "dev_t" */
+#define	__NR_mknod	14
+
+/* syscall: "chmod" ret: "int" args: "const char *" "mode_t" */
+#define	__NR_chmod	15
+
+/* syscall: "chown" ret: "int" args: "const char *" "uid_t" "gid_t" */
+#define	__NR_chown	16
+
+/* syscall: "break" ret: "int" args: "char *" */
+#define	__NR_break	17
+
+/* syscall: "getfsstat" ret: "int" args: "struct statfs *" "long" "int" */
+#define	__NR_getfsstat	18
+
+/* syscall: "compat_43_olseek" ret: "long" args: "int" "long" "int" */
+#define	__NR_compat_43_olseek	19
+
+
+/* syscall: "getpid" ret: "pid_t" args: */
+#define	__NR_getpid	20
+
+
+/* syscall: "getpid" ret: "pid_t" args: */
+#define	__NR_getpid	20
+
+/* syscall: "mount" ret: "int" args: "const char *" "const char *" "int" "void *" */
+#define	__NR_mount	21
+
+/* syscall: "unmount" ret: "int" args: "const char *" "int" */
+#define	__NR_unmount	22
+
+/* syscall: "setuid" ret: "int" args: "uid_t" */
+#define	__NR_setuid	23
+
+
+/* syscall: "getuid" ret: "uid_t" args: */
+#define	__NR_getuid	24
+
+
+/* syscall: "getuid" ret: "uid_t" args: */
+#define	__NR_getuid	24
+
+/* syscall: "geteuid" ret: "uid_t" args: */
+#define	__NR_geteuid	25
+
+/* syscall: "ptrace" ret: "int" args: "int" "pid_t" "caddr_t" "int" */
+#define	__NR_ptrace	26
+
+/* syscall: "recvmsg" ret: "ssize_t" args: "int" "struct msghdr *" "int" */
+#define	__NR_recvmsg	27
+
+/* syscall: "sendmsg" ret: "ssize_t" args: "int" "const struct msghdr *" "int" */
+#define	__NR_sendmsg	28
+
+/* syscall: "recvfrom" ret: "ssize_t" args: "int" "void *" "size_t" "int" "struct sockaddr *" "unsigned int *" */
+#define	__NR_recvfrom	29
+
+/* syscall: "accept" ret: "int" args: "int" "struct sockaddr *" "unsigned int *" */
+#define	__NR_accept	30
+
+/* syscall: "getpeername" ret: "int" args: "int" "struct sockaddr *" "unsigned int *" */
+#define	__NR_getpeername	31
+
+/* syscall: "getsockname" ret: "int" args: "int" "struct sockaddr *" "unsigned int *" */
+#define	__NR_getsockname	32
+
+/* syscall: "access" ret: "int" args: "const char *" "int" */
+#define	__NR_access	33
+
+/* syscall: "chflags" ret: "int" args: "const char *" "u_long" */
+#define	__NR_chflags	34
+
+/* syscall: "fchflags" ret: "int" args: "int" "u_long" */
+#define	__NR_fchflags	35
+
+/* syscall: "sync" ret: "void" args: */
+#define	__NR_sync	36
+
+/* syscall: "kill" ret: "int" args: "int" "int" */
+#define	__NR_kill	37
+
+/* syscall: "compat_43_stat43" ret: "int" args: "const char *" "struct stat43 *" */
+#define	__NR_compat_43_stat43	38
+
+/* syscall: "getppid" ret: "pid_t" args: */
+#define	__NR_getppid	39
+
+/* syscall: "compat_43_lstat43" ret: "int" args: "const char *" "struct stat43 *" */
+#define	__NR_compat_43_lstat43	40
+
+/* syscall: "dup" ret: "int" args: "int" */
+#define	__NR_dup	41
+
+/* syscall: "pipe" ret: "int" args: */
+#define	__NR_pipe	42
+
+/* syscall: "getegid" ret: "gid_t" args: */
+#define	__NR_getegid	43
+
+/* syscall: "profil" ret: "int" args: "caddr_t" "size_t" "u_long" "u_int" */
+#define	__NR_profil	44
+
+
+/* syscall: "ktrace" ret: "int" args: "const char *" "int" "int" "int" */
+#define	__NR_ktrace	45
+
+/* syscall: "compat_13_sigaction13" ret: "int" args: "int" "const struct sigaction13 *" "struct sigaction13 *" */
+#define	__NR_compat_13_sigaction13	46
+
+/* syscall: "getgid" ret: "gid_t" args: */
+#define	__NR_getgid	47
+
+/* syscall: "getgid" ret: "gid_t" args: */
+#define	__NR_getgid	47
+
+
+/* syscall: "compat_13_sigprocmask13" ret: "int" args: "int" "int" */
+#define	__NR_compat_13_sigprocmask13	48
+
+/* syscall: "__getlogin" ret: "int" args: "char *" "size_t" */
+#define	__NR___getlogin	49
+
+/* syscall: "__setlogin" ret: "int" args: "const char *" */
+#define	__NR___setlogin	50
+
+/* syscall: "acct" ret: "int" args: "const char *" */
+#define	__NR_acct	51
+
+/* syscall: "compat_13_sigpending13" ret: "int" args: */
+#define	__NR_compat_13_sigpending13	52
+
+/* syscall: "compat_13_sigaltstack13" ret: "int" args: "const struct sigaltstack13 *" "struct sigaltstack13 *" */
+#define	__NR_compat_13_sigaltstack13	53
+
+/* syscall: "ioctl" ret: "int" args: "int" "u_long" "..." */
+#define	__NR_ioctl	54
+
+/* syscall: "compat_12_oreboot" ret: "int" args: "int" */
+#define	__NR_compat_12_oreboot	55
+
+/* syscall: "revoke" ret: "int" args: "const char *" */
+#define	__NR_revoke	56
+
+/* syscall: "symlink" ret: "int" args: "const char *" "const char *" */
+#define	__NR_symlink	57
+
+/* syscall: "readlink" ret: "int" args: "const char *" "char *" "size_t" */
+#define	__NR_readlink	58
+
+/* syscall: "execve" ret: "int" args: "const char *" "char *const *" "char *const *" */
+#define	__NR_execve	59
+
+/* syscall: "umask" ret: "mode_t" args: "mode_t" */
+#define	__NR_umask	60
+
+/* syscall: "chroot" ret: "int" args: "const char *" */
+#define	__NR_chroot	61
+
+/* syscall: "compat_43_fstat43" ret: "int" args: "int" "struct stat43 *" */
+#define	__NR_compat_43_fstat43	62
+
+/* syscall: "compat_43_ogetkerninfo" ret: "int" args: "int" "char *" "int *" "int" */
+#define	__NR_compat_43_ogetkerninfo	63
+
+/* syscall: "compat_43_ogetpagesize" ret: "int" args: */
+#define	__NR_compat_43_ogetpagesize	64
+
+/* syscall: "compat_12_msync" ret: "int" args: "caddr_t" "size_t" */
+#define	__NR_compat_12_msync	65
+
+/* syscall: "vfork" ret: "int" args: */
+#define	__NR_vfork	66
+
+				/* 67 is obsolete vread */
+				/* 68 is obsolete vwrite */
+/* syscall: "sbrk" ret: "int" args: "intptr_t" */
+#define	__NR_sbrk	69
+
+/* syscall: "sstk" ret: "int" args: "int" */
+#define	__NR_sstk	70
+
+/* syscall: "compat_43_ommap" ret: "int" args: "caddr_t" "size_t" "int" "int" "int" "long" */
+#define	__NR_compat_43_ommap	71
+
+/* syscall: "vadvise" ret: "int" args: "int" */
+#define	__NR_vadvise	72
+
+/* syscall: "munmap" ret: "int" args: "void *" "size_t" */
+#define	__NR_munmap	73
+
+/* syscall: "mprotect" ret: "int" args: "void *" "size_t" "int" */
+#define	__NR_mprotect	74
+
+/* syscall: "madvise" ret: "int" args: "void *" "size_t" "int" */
+#define	__NR_madvise	75
+
+				/* 76 is obsolete vhangup */
+				/* 77 is obsolete vlimit */
+/* syscall: "mincore" ret: "int" args: "void *" "size_t" "char *" */
+#define	__NR_mincore	78
+
+/* syscall: "getgroups" ret: "int" args: "int" "gid_t *" */
+#define	__NR_getgroups	79
+
+/* syscall: "setgroups" ret: "int" args: "int" "const gid_t *" */
+#define	__NR_setgroups	80
+
+/* syscall: "getpgrp" ret: "int" args: */
+#define	__NR_getpgrp	81
+
+/* syscall: "setpgid" ret: "int" args: "int" "int" */
+#define	__NR_setpgid	82
+
+/* syscall: "setitimer" ret: "int" args: "int" "const struct itimerval *" "struct itimerval *" */
+#define	__NR_setitimer	83
+
+/* syscall: "compat_43_owait" ret: "int" args: */
+#define	__NR_compat_43_owait	84
+
+/* syscall: "compat_12_oswapon" ret: "int" args: "const char *" */
+#define	__NR_compat_12_oswapon	85
+
+/* syscall: "getitimer" ret: "int" args: "int" "struct itimerval *" */
+#define	__NR_getitimer	86
+
+/* syscall: "compat_43_ogethostname" ret: "int" args: "char *" "u_int" */
+#define	__NR_compat_43_ogethostname	87
+
+/* syscall: "compat_43_osethostname" ret: "int" args: "char *" "u_int" */
+#define	__NR_compat_43_osethostname	88
+
+/* syscall: "compat_43_ogetdtablesize" ret: "int" args: */
+#define	__NR_compat_43_ogetdtablesize	89
+
+/* syscall: "dup2" ret: "int" args: "int" "int" */
+#define	__NR_dup2	90
+
+/* syscall: "fcntl" ret: "int" args: "int" "int" "..." */
+#define	__NR_fcntl	92
+
+/* syscall: "select" ret: "int" args: "int" "fd_set *" "fd_set *" "fd_set *" "struct timeval *" */
+#define	__NR_select	93
+
+/* syscall: "fsync" ret: "int" args: "int" */
+#define	__NR_fsync	95
+
+/* syscall: "setpriority" ret: "int" args: "int" "int" "int" */
+#define	__NR_setpriority	96
+
+/* syscall: "socket" ret: "int" args: "int" "int" "int" */
+#define	__NR_socket	97
+
+/* syscall: "connect" ret: "int" args: "int" "const struct sockaddr *" "unsigned int" */
+#define	__NR_connect	98
+
+/* syscall: "compat_43_oaccept" ret: "int" args: "int" "caddr_t" "int *" */
+#define	__NR_compat_43_oaccept	99
+
+/* syscall: "getpriority" ret: "int" args: "int" "int" */
+#define	__NR_getpriority	100
+
+/* syscall: "compat_43_osend" ret: "int" args: "int" "caddr_t" "int" "int" */
+#define	__NR_compat_43_osend	101
+
+/* syscall: "compat_43_orecv" ret: "int" args: "int" "caddr_t" "int" "int" */
+#define	__NR_compat_43_orecv	102
+
+/* syscall: "compat_13_sigreturn13" ret: "int" args: "struct sigcontext13 *" */
+#define	__NR_compat_13_sigreturn13	103
+
+/* syscall: "bind" ret: "int" args: "int" "const struct sockaddr *" "unsigned int" */
+#define	__NR_bind	104
+
+/* syscall: "setsockopt" ret: "int" args: "int" "int" "int" "const void *" "unsigned int" */
+#define	__NR_setsockopt	105
+
+/* syscall: "listen" ret: "int" args: "int" "int" */
+#define	__NR_listen	106
+
+				/* 107 is obsolete vtimes */
+/* syscall: "compat_43_osigvec" ret: "int" args: "int" "struct sigvec *" "struct sigvec *" */
+#define	__NR_compat_43_osigvec	108
+
+/* syscall: "compat_43_osigblock" ret: "int" args: "int" */
+#define	__NR_compat_43_osigblock	109
+
+/* syscall: "compat_43_osigsetmask" ret: "int" args: "int" */
+#define	__NR_compat_43_osigsetmask	110
+
+/* syscall: "compat_13_sigsuspend13" ret: "int" args: "int" */
+#define	__NR_compat_13_sigsuspend13	111
+
+/* syscall: "compat_43_osigstack" ret: "int" args: "struct sigstack *" "struct sigstack *" */
+#define	__NR_compat_43_osigstack	112
+
+/* syscall: "compat_43_orecvmsg" ret: "int" args: "int" "struct omsghdr *" "int" */
+#define	__NR_compat_43_orecvmsg	113
+
+/* syscall: "compat_43_osendmsg" ret: "int" args: "int" "caddr_t" "int" */
+#define	__NR_compat_43_osendmsg	114
+
+				/* 115 is obsolete vtrace */
+/* syscall: "gettimeofday" ret: "int" args: "struct timeval *" "struct timezone *" */
+#define	__NR_gettimeofday	116
+
+/* syscall: "getrusage" ret: "int" args: "int" "struct rusage *" */
+#define	__NR_getrusage	117
+
+/* syscall: "getsockopt" ret: "int" args: "int" "int" "int" "void *" "unsigned int *" */
+#define	__NR_getsockopt	118
+
+				/* 119 is obsolete resuba */
+/* syscall: "readv" ret: "ssize_t" args: "int" "const struct iovec *" "int" */
+#define	__NR_readv	120
+
+/* syscall: "writev" ret: "ssize_t" args: "int" "const struct iovec *" "int" */
+#define	__NR_writev	121
+
+/* syscall: "settimeofday" ret: "int" args: "const struct timeval *" "const struct timezone *" */
+#define	__NR_settimeofday	122
+
+/* syscall: "fchown" ret: "int" args: "int" "uid_t" "gid_t" */
+#define	__NR_fchown	123
+
+/* syscall: "fchmod" ret: "int" args: "int" "mode_t" */
+#define	__NR_fchmod	124
+
+/* syscall: "compat_43_orecvfrom" ret: "int" args: "int" "caddr_t" "size_t" "int" "caddr_t" "int *" */
+#define	__NR_compat_43_orecvfrom	125
+
+/* syscall: "setreuid" ret: "int" args: "uid_t" "uid_t" */
+#define	__NR_setreuid	126
+
+/* syscall: "setregid" ret: "int" args: "gid_t" "gid_t" */
+#define	__NR_setregid	127
+
+/* syscall: "rename" ret: "int" args: "const char *" "const char *" */
+#define	__NR_rename	128
+
+/* syscall: "compat_43_otruncate" ret: "int" args: "const char *" "long" */
+#define	__NR_compat_43_otruncate	129
+
+/* syscall: "compat_43_oftruncate" ret: "int" args: "int" "long" */
+#define	__NR_compat_43_oftruncate	130
+
+/* syscall: "flock" ret: "int" args: "int" "int" */
+#define	__NR_flock	131
+
+/* syscall: "mkfifo" ret: "int" args: "const char *" "mode_t" */
+#define	__NR_mkfifo	132
+
+/* syscall: "sendto" ret: "ssize_t" args: "int" "const void *" "size_t" "int" "const struct sockaddr *" "unsigned int" */
+#define	__NR_sendto	133
+
+/* syscall: "shutdown" ret: "int" args: "int" "int" */
+#define	__NR_shutdown	134
+
+/* syscall: "socketpair" ret: "int" args: "int" "int" "int" "int *" */
+#define	__NR_socketpair	135
+
+/* syscall: "mkdir" ret: "int" args: "const char *" "mode_t" */
+#define	__NR_mkdir	136
+
+/* syscall: "rmdir" ret: "int" args: "const char *" */
+#define	__NR_rmdir	137
+
+/* syscall: "utimes" ret: "int" args: "const char *" "const struct timeval *" */
+#define	__NR_utimes	138
+
+				/* 139 is obsolete 4.2 sigreturn */
+/* syscall: "adjtime" ret: "int" args: "const struct timeval *" "struct timeval *" */
+#define	__NR_adjtime	140
+
+/* syscall: "compat_43_ogetpeername" ret: "int" args: "int" "caddr_t" "int *" */
+#define	__NR_compat_43_ogetpeername	141
+
+/* syscall: "compat_43_ogethostid" ret: "int32_t" args: */
+#define	__NR_compat_43_ogethostid	142
+
+/* syscall: "compat_43_osethostid" ret: "int" args: "int32_t" */
+#define	__NR_compat_43_osethostid	143
+
+/* syscall: "compat_43_ogetrlimit" ret: "int" args: "int" "struct orlimit *" */
+#define	__NR_compat_43_ogetrlimit	144
+
+/* syscall: "compat_43_osetrlimit" ret: "int" args: "int" "const struct orlimit *" */
+#define	__NR_compat_43_osetrlimit	145
+
+/* syscall: "compat_43_okillpg" ret: "int" args: "int" "int" */
+#define	__NR_compat_43_okillpg	146
+
+/* syscall: "setsid" ret: "int" args: */
+#define	__NR_setsid	147
+
+/* syscall: "quotactl" ret: "int" args: "const char *" "int" "int" "caddr_t" */
+#define	__NR_quotactl	148
+
+/* syscall: "compat_43_oquota" ret: "int" args: */
+#define	__NR_compat_43_oquota	149
+
+/* syscall: "compat_43_ogetsockname" ret: "int" args: "int" "caddr_t" "int *" */
+#define	__NR_compat_43_ogetsockname	150
+
+
+/* syscall: "nfssvc" ret: "int" args: "int" "void *" */
+#define	__NR_nfssvc	155
+
+/* syscall: "compat_43_ogetdirentries" ret: "int" args: "int" "char *" "u_int" "long *" */
+#define	__NR_compat_43_ogetdirentries	156
+
+/* syscall: "statfs" ret: "int" args: "const char *" "struct statfs *" */
+#define	__NR_statfs	157
+
+/* syscall: "fstatfs" ret: "int" args: "int" "struct statfs *" */
+#define	__NR_fstatfs	158
+
+/* syscall: "getfh" ret: "int" args: "const char *" "fhandle_t *" */
+#define	__NR_getfh	161
+
+/* syscall: "compat_09_ogetdomainname" ret: "int" args: "char *" "int" */
+#define	__NR_compat_09_ogetdomainname	162
+
+/* syscall: "compat_09_osetdomainname" ret: "int" args: "char *" "int" */
+#define	__NR_compat_09_osetdomainname	163
+
+/* syscall: "compat_09_ouname" ret: "int" args: "struct outsname *" */
+#define	__NR_compat_09_ouname	164
+
+/* syscall: "sysarch" ret: "int" args: "int" "void *" */
+#define	__NR_sysarch	165
+
+
+/* syscall: "compat_10_osemsys" ret: "int" args: "int" "int" "int" "int" "int" */
+#define	__NR_compat_10_osemsys	169
+
+
+				/* 169 is excluded 1.0 semsys */
+
+
+/* syscall: "compat_10_omsgsys" ret: "int" args: "int" "int" "int" "int" "int" "int" */
+#define	__NR_compat_10_omsgsys	170
+
+
+/* syscall: "compat_10_oshmsys" ret: "int" args: "int" "int" "int" "int" */
+#define	__NR_compat_10_oshmsys	171
+
+
+/* syscall: "pread" ret: "ssize_t" args: "int" "void *" "size_t" "int" "off_t" */
+#define	__NR_pread	173
+
+/* syscall: "pwrite" ret: "ssize_t" args: "int" "const void *" "size_t" "int" "off_t" */
+#define	__NR_pwrite	174
+
+/* syscall: "ntp_gettime" ret: "int" args: "struct ntptimeval *" */
+#define	__NR_ntp_gettime	175
+
+
+/* syscall: "ntp_adjtime" ret: "int" args: "struct timex *" */
+#define	__NR_ntp_adjtime	176
+
+/* syscall: "setgid" ret: "int" args: "gid_t" */
+#define	__NR_setgid	181
+
+/* syscall: "setegid" ret: "int" args: "gid_t" */
+#define	__NR_setegid	182
+
+/* syscall: "seteuid" ret: "int" args: "uid_t" */
+#define	__NR_seteuid	183
+
+
+#define	__NR_lfs_bmapv	184
+
+/* syscall: "lfs_markv" ret: "int" args: "fsid_t *" "struct block_info *" "int" */
+#define	__NR_lfs_markv	185
+
+/* syscall: "lfs_segclean" ret: "int" args: "fsid_t *" "u_long" */
+#define	__NR_lfs_segclean	186
+
+/* syscall: "lfs_segwait" ret: "int" args: "fsid_t *" "struct timeval *" */
+#define	__NR_lfs_segwait	187
+
+
+/* syscall: "compat_12_stat12" ret: "int" args: "const char *" "struct stat12 *" */
+#define	__NR_compat_12_stat12	188
+
+/* syscall: "compat_12_fstat12" ret: "int" args: "int" "struct stat12 *" */
+#define	__NR_compat_12_fstat12	189
+
+/* syscall: "compat_12_lstat12" ret: "int" args: "const char *" "struct stat12 *" */
+#define	__NR_compat_12_lstat12	190
+
+/* syscall: "pathconf" ret: "long" args: "const char *" "int" */
+#define	__NR_pathconf	191
+
+/* syscall: "fpathconf" ret: "long" args: "int" "int" */
+#define	__NR_fpathconf	192
+
+/* syscall: "getrlimit" ret: "int" args: "int" "struct rlimit *" */
+#define	__NR_getrlimit	194
+
+/* syscall: "setrlimit" ret: "int" args: "int" "const struct rlimit *" */
+#define	__NR_setrlimit	195
+
+/* syscall: "compat_12_getdirentries" ret: "int" args: "int" "char *" "u_int" "long *" */
+#define	__NR_compat_12_getdirentries	196
+
+/* syscall: "mmap" ret: "void *" args: "void *" "size_t" "int" "int" "int" "long" "off_t" */
+#define	__NR_mmap	197
+
+/* syscall: "__syscall" ret: "quad_t" args: "quad_t" "..." */
+#define	__NR___syscall	198
+
+/* syscall: "lseek" ret: "off_t" args: "int" "int" "off_t" "int" */
+#define	__NR_lseek	199
+
+/* syscall: "truncate" ret: "int" args: "const char *" "int" "off_t" */
+#define	__NR_truncate	200
+
+/* syscall: "ftruncate" ret: "int" args: "int" "int" "off_t" */
+#define	__NR_ftruncate	201
+
+/* syscall: "__sysctl" ret: "int" args: "int *" "u_int" "void *" "size_t *" "void *" "size_t" */
+#define	__NR___sysctl	202
+
+/* syscall: "mlock" ret: "int" args: "const void *" "size_t" */
+#define	__NR_mlock	203
+
+/* syscall: "munlock" ret: "int" args: "const void *" "size_t" */
+#define	__NR_munlock	204
+
+/* syscall: "undelete" ret: "int" args: "const char *" */
+#define	__NR_undelete	205
+
+/* syscall: "futimes" ret: "int" args: "int" "const struct timeval *" */
+#define	__NR_futimes	206
+
+/* syscall: "getpgid" ret: "pid_t" args: "pid_t" */
+#define	__NR_getpgid	207
+
+/* syscall: "reboot" ret: "int" args: "int" "char *" */
+#define	__NR_reboot	208
+
+/* syscall: "poll" ret: "int" args: "struct pollfd *" "u_int" "int" */
+#define	__NR_poll	209
+
+
+
+/* syscall: "compat_14___semctl" ret: "int" args: "int" "int" "int" "union __semun *" */
+#define	__NR_compat_14___semctl	220
+
+/* syscall: "semget" ret: "int" args: "key_t" "int" "int" */
+#define	__NR_semget	221
+
+/* syscall: "semop" ret: "int" args: "int" "struct sembuf *" "size_t" */
+#define	__NR_semop	222
+
+/* syscall: "semconfig" ret: "int" args: "int" */
+#define	__NR_semconfig	223
+
+/* syscall: "compat_14_msgctl" ret: "int" args: "int" "int" "struct msqid_ds14 *" */
+#define	__NR_compat_14_msgctl	224
+
+/* syscall: "msgget" ret: "int" args: "key_t" "int" */
+#define	__NR_msgget	225
+
+/* syscall: "msgsnd" ret: "int" args: "int" "const void *" "size_t" "int" */
+#define	__NR_msgsnd	226
+
+
+#define	__NR_msgrcv	227
+
+
+#define	__NR_shmat	228
+
+
+#define	__NR_compat_14_shmctl	229
+
+
+#define	__NR_shmdt	230
+
+
+#define	__NR_shmget	231
+
+
+#define	__NR_clock_gettime	232
+
+
+#define	__NR_clock_settime	233
+
+
+#define	__NR_clock_getres	234
+
+
+#define	__NR_timer_create	235
+
+
+#define	__NR_timer_delete	236
+
+
+#define	__NR_timer_settime	237
+
+
+#define	__NR_timer_gettime	238
+
+
+#define	__NR_timer_getoverrun	239
+
+
+#define	__NR_nanosleep	240
+
+
+#define	__NR_fdatasync	241
+
+
+#define	__NR_mlockall	242
+
+
+#define	__NR_munlockall	243
+
+
+#define	__NR___sigtimedwait	244
+
+
+#define	__NR__ksem_init	247
+
+#define	__NR__ksem_open	248
+
+
+#define	__NR__ksem_unlink	249
+
+
+#define	__NR__ksem_close	250
+
+
+#define	__NR__ksem_post	251
+
+#define	__NR__ksem_wait	252
+
+
+#define	__NR__ksem_trywait	253
+
+
+#define	__NR__ksem_getvalue	254
+
+
+#define	__NR__ksem_destroy	255
+
+				/* 247 is excluded sys__ksem_init */
+				/* 248 is excluded sys__ksem_open */
+				/* 249 is excluded sys__ksem_unlink */
+				/* 250 is excluded sys__ksem_close */
+				/* 251 is excluded sys__ksem_post */
+				/* 252 is excluded sys__ksem_wait */
+				/* 253 is excluded sys__ksem_trywait */
+				/* 254 is excluded sys__ksem_getvalue */
+				/* 255 is excluded sys__ksem_destroy */
+
+#define	__NR___posix_rename	270
+
+
+#define	__NR_swapctl	271
+
+
+#define	__NR_getdents	272
+
+
+#define	__NR_minherit	273
+
+
+#define	__NR_lchmod	274
+
+
+#define	__NR_lchown	275
+
+
+#define	__NR_lutimes	276
+
+
+#define	__NR___msync13	277
+
+
+#define	__NR___stat13	278
+
+
+#define	__NR___fstat13	279
+
+
+#define	__NR___lstat13	280
+
+
+#define	__NR___sigaltstack14	281
+
+
+#define	__NR___vfork14	282
+#define	__NR___posix_chown	283
+#define	__NR___posix_fchown	284
+#define	__NR___posix_lchown	285
+#define	__NR_getsid	286
+
+#define	__NR___clone	287
+#define	__NR_fktrace	288
+#define	__NR_preadv	289
+
+
+#define	__NR_pwritev	290
+
+
+#define	__NR_compat_16___sigaction14	291
+
+
+#define	__NR___sigpending14	292
+
+
+#define	__NR___sigprocmask14	293
+
+
+#define	__NR___sigsuspend14	294
+
+
+#define	__NR_compat_16___sigreturn14	295
+
+
+#define	__NR___getcwd	296
+
+
+#define	__NR_fchroot	297
+
+
+#define	__NR_fhopen	298
+
+
+#define	__NR_fhstat	299
+
+
+#define	__NR_fhstatfs	300
+
+
+
+#define	__NR_____semctl13	301
+
+
+
+
+
+#define	__NR___msgctl13	302
+
+
+
+
+#define	__NR___shmctl13	303
+
+
+
+#define	__NR_lchflags	304
+
+
+#define	__NR_issetugid	305
+
+
+#define	__NR_utrace	306
+
+
+#define	__NR_getcontext	307
+
+
+#define	__NR_setcontext	308
+
+
+#define	__NR__lwp_create	309
+
+
+#define	__NR__lwp_exit	310
+
+
+#define	__NR__lwp_self	311
+
+
+#define	__NR__lwp_wait	312
+
+
+#define	__NR__lwp_suspend	313
+
+
+#define	__NR__lwp_continue	314
+
+
+#define	__NR__lwp_wakeup	315
+
+
+#define	__NR__lwp_getprivate	316
+
+
+#define	__NR__lwp_setprivate	317
+
+
+#define	__NR_sa_register	330
+
+
+#define	__NR_sa_stacks	331
+
+
+#define	__NR_sa_enable	332
+
+
+#define	__NR_sa_setconcurrency	333
+
+
+#define	__NR_sa_yield	334
+
+
+#define	__NR_sa_preempt	335
+
+
+
+#define	__NR___sigaction_sigtramp	340
+
+
+#define	__NR_pmc_get_info	341
+
+
+#define	__NR_pmc_control	342
+
+
+#define	__NR_rasctl	343
+
+
+#define	__NR_kqueue	344
+
+
+#define	__NR_kevent	345
+
+
+#define	__NR_fsync_range	354
+
+
+#define	__NR_uuidgen	355
+
+#endif /* _VG_ASM_I386_UNISTD_H_ */

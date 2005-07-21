@@ -1866,9 +1866,12 @@ PRE(sys_quotactl)
 }
 
 // XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
 PRE(sys_lookup_dcookie)
 {
+#if defined(VGP_x86_netbsdelf2)
+	I_die_here;
+#endif
    PRINT("sys_lookup_dcookie (0x%llx, %p, %d)", LOHI64(ARG1,ARG2), ARG3, ARG4);
    PRE_REG_READ4(long, "lookup_dcookie",
                  vki_u32, cookie_low32, vki_u32, cookie_high32,
@@ -2112,9 +2115,12 @@ PRE(sys_setregid16)
 }
 
 // XXX: only for 32-bit archs
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
 PRE(sys_pwrite64)
 {
+#if defined (VGO_netbsdelf2)
+	I_die_here;
+#endif
    *flags |= SfMayBlock;
    PRINT("sys_pwrite64 ( %d, %p, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
@@ -2779,9 +2785,13 @@ PRE(sys_truncate)
 }
 
 // XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux)  || defined (VGP_x86_netbsdelf2)
 PRE(sys_ftruncate64)
 {
+#if defined (VGP_x86_netbsdelf2)
+	I_die_here; /* does this syscall even exist in netbsd? */
+	            /*  closer examination is required */
+#endif
    *flags |= SfMayBlock;
    PRINT("sys_ftruncate64 ( %d, %lld )", ARG1, LOHI64(ARG2,ARG3));
    PRE_REG_READ3(long, "ftruncate64",
@@ -2791,7 +2801,7 @@ PRE(sys_ftruncate64)
 #endif
 
 // XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
 PRE(sys_truncate64)
 {
    *flags |= SfMayBlock;
@@ -5308,14 +5318,16 @@ POST(sys_rt_sigaction)
 // XXX: This syscall is not used on amd64 -- it only provides
 //      sys_rt_sigprocmask, which uses sigset_t rather than old_sigset_t.
 // This wrapper is only suitable for 32-bit architectures.
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2) /* XXX fix this */
 PRE(sys_sigprocmask)
 {
    vki_old_sigset_t* set;
    vki_old_sigset_t* oldset;
    vki_sigset_t bigger_set;
    vki_sigset_t bigger_oldset;
-
+#if defined(VGP_x86_netbsdelf2)
+   I_die_here; /* NetBSD */
+#endif 
    PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sigprocmask", 
                  int, how, vki_old_sigset_t *, set, vki_old_sigset_t *, oldset);
@@ -5350,6 +5362,9 @@ PRE(sys_sigprocmask)
 POST(sys_sigprocmask)
 {
    vg_assert(SUCCESS);
+#if defined(VGO_netbsdelf2)
+   I_die_here; /* NetBSD */
+#endif
    if (RES == 0 && ARG3 != 0)
       POST_MEM_WRITE( ARG3, sizeof(vki_old_sigset_t));
 }

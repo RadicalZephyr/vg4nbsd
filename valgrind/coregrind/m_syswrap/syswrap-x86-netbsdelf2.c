@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Platform-specific syscalls stuff.        syswrap-x86-linux.c ---*/
+/*--- Platform-specific syscalls stuff.        syswrap-x86-netbsd.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -55,7 +55,7 @@
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"    /* for decls of generic wrappers */
-#include "priv_syswrap-linux.h"      /* for decls of linux-ish wrappers */
+#include "priv_syswrap-netbsd.h"     /* for decls of netbsd-ish wrappers */
 #include "priv_syswrap-main.h"
 
 #include "vki_unistd.h"              /* for the __NR_* constants */
@@ -140,7 +140,7 @@ static void run_a_thread_NORETURN ( Word tidW )
 {
    ThreadId tid = (ThreadId)tidW;
 
-   VG_(debugLog)(1, "syswrap-x86-linux", 
+   VG_(debugLog)(1, "syswrap-x86-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
                        "VG_(thread_wrapper) called\n",
                        (ULong)tidW);
@@ -148,7 +148,7 @@ static void run_a_thread_NORETURN ( Word tidW )
    /* Run the thread all the way through. */
    VgSchedReturnCode src = VG_(thread_wrapper)(tid);  
 
-   VG_(debugLog)(1, "syswrap-x86-linux", 
+   VG_(debugLog)(1, "syswrap-x86-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
                        "VG_(thread_wrapper) done\n",
                        (ULong)tidW);
@@ -158,7 +158,7 @@ static void run_a_thread_NORETURN ( Word tidW )
 
    if (c == 1) {
 
-      VG_(debugLog)(1, "syswrap-x86-linux", 
+      VG_(debugLog)(1, "syswrap-x86-netbsd", 
                        "run_a_thread_NORETURN(tid=%lld): "
                           "last one standing\n",
                           (ULong)tidW);
@@ -169,7 +169,7 @@ static void run_a_thread_NORETURN ( Word tidW )
 
    } else {
 
-      VG_(debugLog)(1, "syswrap-x86-linux", 
+      VG_(debugLog)(1, "syswrap-x86-netbsd", 
                        "run_a_thread_NORETURN(tid=%lld): "
                           "not last one standing\n",
                           (ULong)tidW);
@@ -242,7 +242,7 @@ asm(
 */
 void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
-   VG_(debugLog)(1, "syswrap-x86-linux", 
+   VG_(debugLog)(1, "syswrap-x86-netbsd", 
                     "entering VGP_(main_thread_wrapper_NORETURN)\n");
 
    UWord* esp = allocstack(tid);
@@ -301,7 +301,7 @@ static Int start_thread_NORETURN ( void* arg )
             pid_t* child_tid    in %edi
             void*  tls_ptr      in %esi
 
-	Returns an Int encoded in the linux-x86 way, not a SysRes.
+	Returns an Int encoded in the netbsd-x86 way, not a SysRes.
  */
 #define STRINGIFZ(__str) #__str
 #define STRINGIFY(__str)  STRINGIFZ(__str)
@@ -310,7 +310,7 @@ static Int start_thread_NORETURN ( void* arg )
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
 extern
-Int do_syscall_clone_x86_linux ( Int (*fn)(void *), 
+Int do_syscall_clone_x86_netbsd ( Int (*fn)(void *), 
                                  void* stack, 
                                  Int   flags, 
                                  void* arg,
@@ -319,7 +319,7 @@ Int do_syscall_clone_x86_linux ( Int (*fn)(void *),
                                  vki_modify_ldt_t * );
 asm(
 "\n"
-"do_syscall_clone_x86_linux:\n"
+"do_syscall_clone_x86_netbsd:\n"
 "        push    %ebx\n"
 "        push    %edi\n"
 
@@ -473,7 +473,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &blockall, &savedmask);
 
    /* Create the new thread */
-   eax = do_syscall_clone_x86_linux(
+   eax = do_syscall_clone_x86_netbsd(
             start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
@@ -973,29 +973,30 @@ static void setup_child ( /*OUT*/ ThreadArchState *child,
    PRE/POST wrappers for x86/Linux-specific syscalls
    ------------------------------------------------------------------ */
 
-#define PRE(name)       DEFN_PRE_TEMPLATE(x86_linux, name)
-#define POST(name)      DEFN_POST_TEMPLATE(x86_linux, name)
+#define PRE(name)       DEFN_PRE_TEMPLATE(x86_netbsdelf2, name)
+#define POST(name)      DEFN_POST_TEMPLATE(x86_netbsdelf2, name)
 
 /* Add prototypes for the wrappers declared here, so that gcc doesn't
    harass us for not having prototypes.  Really this is a kludge --
    the right thing to do is to make these wrappers 'static' since they
    aren't visible outside this file, but that requires even more macro
    magic. */
-DECL_TEMPLATE(x86_linux, sys_socketcall);
-DECL_TEMPLATE(x86_linux, sys_stat64);
-DECL_TEMPLATE(x86_linux, sys_fstat64);
-DECL_TEMPLATE(x86_linux, sys_lstat64);
-DECL_TEMPLATE(x86_linux, sys_clone);
-DECL_TEMPLATE(x86_linux, old_mmap);
-DECL_TEMPLATE(x86_linux, sys_sigreturn);
-DECL_TEMPLATE(x86_linux, sys_ipc);
-DECL_TEMPLATE(x86_linux, sys_rt_sigreturn);
-DECL_TEMPLATE(x86_linux, sys_modify_ldt);
-DECL_TEMPLATE(x86_linux, sys_set_thread_area);
-DECL_TEMPLATE(x86_linux, sys_get_thread_area);
-DECL_TEMPLATE(x86_linux, sys_ptrace);
-DECL_TEMPLATE(x86_linux, sys_sigaction);
-DECL_TEMPLATE(x86_linux, old_select);
+DECL_TEMPLATE(x86_netbsdelf2, sys_socketcall);
+DECL_TEMPLATE(x86_netbsdelf2, sys_stat64);
+DECL_TEMPLATE(x86_netbsdelf2, sys_fstat64);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lstat64);
+DECL_TEMPLATE(x86_netbsdelf2, sys_clone);
+DECL_TEMPLATE(x86_netbsdelf2, old_mmap);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sigreturn);
+DECL_TEMPLATE(x86_netbsdelf2, sys_ipc);
+DECL_TEMPLATE(x86_netbsdelf2, sys_rt_sigreturn);
+DECL_TEMPLATE(x86_netbsdelf2, sys_modify_ldt);
+DECL_TEMPLATE(x86_netbsdelf2, sys_set_thread_area);
+DECL_TEMPLATE(x86_netbsdelf2, sys_get_thread_area);
+DECL_TEMPLATE(x86_netbsdelf2, sys_ptrace);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sigaction);
+DECL_TEMPLATE(x86_netbsdelf2, old_select);
+DECL_TEMPLATE(x86_netbsdelf2, sys_compat_ocreat)
 
 PRE(old_select)
 {
@@ -1931,6 +1932,11 @@ POST(sys_sigaction)
       POST_MEM_WRITE( ARG3, sizeof(struct vki_old_sigaction));
 }
 
+PRE(sys_compat_ocreat)
+{
+   I_die_here;
+}
+
 #undef PRE
 #undef POST
 
@@ -1965,7 +1971,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_open,              sys_open),           // 5
    GENXY(__NR_close,             sys_close),          // 6
    GENXY(__NR_wait4,           sys_wait4),        // 7
-   GENXY(__NR_compat_43_ocreat,             sys_compat_ocreat), // 8
+   PLAX_(__NR_compat_43_ocreat,             sys_compat_ocreat), // 8
    GENX_(__NR_link,              sys_link),           // 9
 
    GENX_(__NR_unlink,            sys_unlink),         // 10

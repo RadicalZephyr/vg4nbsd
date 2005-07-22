@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Linux-specific syscalls, etc.                syswrap-linux.c ---*/
+/*--- NetBSD-specific syscalls, etc.          syswrap-netbsdelf2.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -46,7 +46,7 @@
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"
-#include "priv_syswrap-linux.h"
+#include "priv_syswrap-netbsd.h"
 
 // Run a thread from beginning to end and return the thread's
 // scheduler-return-code.
@@ -94,14 +94,64 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
 
 
 /* ---------------------------------------------------------------------
-   PRE/POST wrappers for arch-generic, Linux-specific syscalls
+   PRE/POST wrappers for arch-specific, NetBSD-specific syscalls
    ------------------------------------------------------------------ */
 
 // Nb: See the comment above the generic PRE/POST wrappers in
 // m_syswrap/syswrap-generic.c for notes about how they work.
 
-#define PRE(name)       DEFN_PRE_TEMPLATE(linux, name)
-#define POST(name)      DEFN_POST_TEMPLATE(linux, name)
+// XXX: Shouldn't these be factored out or sth?  It seems silly to
+// redefine them in every single arch-specific C file, and in the generic
+// file as well
+
+#define PRE(name)       DEFN_PRE_TEMPLATE(netbsdelf2, name)
+#define POST(name)      DEFN_POST_TEMPLATE(netbsdelf2, name)
+
+/* Add prototypes for the wrappers declared here, so that gcc doesn't
+   harass us for not having prototypes.  Really this is a kludge --
+   the right thing to do is to make these wrappers 'static' since they
+   aren't visible outside this file, but that requires even more macro
+   magic. */
+DECL_TEMPLATE(netbsdelf2, sys_set_tid_address);
+DECL_TEMPLATE(netbsdelf2, sys_exit_group);
+DECL_TEMPLATE(netbsdelf2, sys_mount);
+DECL_TEMPLATE(netbsdelf2, sys_oldumount)
+DECL_TEMPLATE(netbsdelf2, sys_umount)
+DECL_TEMPLATE(netbsdelf2, sys_llseek)
+DECL_TEMPLATE(netbsdelf2, sys_setfsuid16)
+DECL_TEMPLATE(netbsdelf2, sys_setfsuid)
+DECL_TEMPLATE(netbsdelf2, sys_setfsgid16)
+DECL_TEMPLATE(netbsdelf2, sys_setfsgid)
+DECL_TEMPLATE(netbsdelf2, sys_setresuid16)
+DECL_TEMPLATE(netbsdelf2, sys_setresuid)
+DECL_TEMPLATE(netbsdelf2, sys_getresuid16)
+DECL_TEMPLATE(netbsdelf2, sys_getresuid)
+DECL_TEMPLATE(netbsdelf2, sys_setresgid16)
+DECL_TEMPLATE(netbsdelf2, sys_setresgid)
+DECL_TEMPLATE(netbsdelf2, sys_getresgid16)
+DECL_TEMPLATE(netbsdelf2, sys_getresgid)
+DECL_TEMPLATE(netbsdelf2, sys_ioperm)
+DECL_TEMPLATE(netbsdelf2, sys_syslog)
+DECL_TEMPLATE(netbsdelf2, sys_vhangup)
+DECL_TEMPLATE(netbsdelf2, sys_sysinfo)
+DECL_TEMPLATE(netbsdelf2, sys_personality)
+DECL_TEMPLATE(netbsdelf2, sys_sysctl)
+DECL_TEMPLATE(netbsdelf2, sys_prctl)
+DECL_TEMPLATE(netbsdelf2, sys_sendfile)
+DECL_TEMPLATE(netbsdelf2, sys_sendfile64)
+DECL_TEMPLATE(netbsdelf2, sys_futex)
+DECL_TEMPLATE(netbsdelf2, sys_epoll_create)
+DECL_TEMPLATE(netbsdelf2, sys_epoll_ctl)
+DECL_TEMPLATE(netbsdelf2, sys_epoll_wait)
+DECL_TEMPLATE(netbsdelf2, sys_gettid)
+DECL_TEMPLATE(netbsdelf2, sys_tgkill)
+DECL_TEMPLATE(netbsdelf2, sys_fadvise64)
+DECL_TEMPLATE(netbsdelf2, sys_fadvise64_64)
+DECL_TEMPLATE(netbsdelf2, sys_io_setup)
+DECL_TEMPLATE(netbsdelf2, sys_io_destroy)
+DECL_TEMPLATE(netbsdelf2, sys_io_getevents)
+DECL_TEMPLATE(netbsdelf2, sys_io_submit)
+DECL_TEMPLATE(netbsdelf2, sys_io_cancel)
 
 PRE(sys_set_tid_address)
 {

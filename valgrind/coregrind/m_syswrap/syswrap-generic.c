@@ -144,6 +144,7 @@ void VG_(mmap_segment) ( Addr a, SizeT len, UInt prot,
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
 }
 
+#if defined (VGO_linux)
 static 
 SysRes mremap_segment ( Addr old_addr, SizeT old_size,
                         Addr new_addr, SizeT new_size,
@@ -279,6 +280,7 @@ SysRes mremap_segment ( Addr old_addr, SizeT old_size,
 
    return ret;
 }
+#endif
 
 
 /* ---------------------------------------------------------------------
@@ -1292,6 +1294,8 @@ UInt get_sem_count( Int semid )
 
 #  ifdef __NR_semctl
    res = VG_(do_syscall4)(__NR_semctl, semid, 0, VKI_IPC_STAT, *(UWord *)&arg);
+#  elif defined (VGO_netbsdelf2) && defined (__NR_____semctl13)
+   res = VG_(do_syscall4)(__NR_____semctl13, semid, 0, VKI_IPC_STAT, *(UWord *)&arg);
 #  else
    res = VG_(do_syscall5)(__NR_ipc, 3 /* IPCOP_semctl */, semid, 0,
                           VKI_IPC_STAT, (UWord)&arg);
@@ -1487,6 +1491,10 @@ UInt get_shm_size ( Int shmid )
 #  ifdef __NR_shmctl
    struct vki_shmid64_ds buf;
    SysRes __res = VG_(do_syscall3)(__NR_shmctl, shmid, VKI_IPC_STAT, (UWord)&buf);
+#  elif defined (VGO_netbsdelf2) && defined (__NR___shmctl13)
+   /* shmctl is weird.. */
+   struct vki_shmid_ds buf;
+   SysRes __res = VG_(do_syscall3)(__NR___shmctl13, shmid, VKI_IPC_STAT, (UWord)&buf);
 #  else
    struct vki_shmid_ds buf;
    SysRes __res = VG_(do_syscall5)(__NR_ipc, 24 /* IPCOP_shmctl */, shmid,
@@ -2019,6 +2027,7 @@ PRE(sys_madvise)
                  unsigned long, start, vki_size_t, length, int, advice);
 }
 
+#if defined (VGO_linux)
 PRE(sys_mremap)
 {
    // Nb: this is different to the glibc version described in the man pages,
@@ -2033,6 +2042,7 @@ PRE(sys_mremap)
       mremap_segment((Addr)ARG1, ARG2, (Addr)ARG5, ARG3, ARG4, tid) 
    );
 }
+#endif
 
 PRE(sys_nice)
 {

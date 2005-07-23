@@ -208,8 +208,8 @@ extern const UInt VGP_(syscall_table_size);
 
 /* Add a NetBSD-specific, arch-independent wrapper to a syscall
    table. */
-#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsd, sysno, name) 
-#define NBSDXY(sysno, name)    WRAPPER_ENTRY_XY(netbsd, sysno, name)
+#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsdelf2, sysno, name) 
+#define NBSDXY(sysno, name)    WRAPPER_ENTRY_XY(netbsdelf2, sysno, name)
 
 
 /* ---------------------------------------------------------------------

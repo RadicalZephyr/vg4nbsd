@@ -834,6 +834,17 @@ POST(sys_io_cancel)
    POST_MEM_WRITE( ARG3, sizeof(struct vki_io_event) );
 }
 
+PRE(sys_getfsstat)
+{
+   I_die_here;
+}
+
+POST(sys_getfsstat)
+{
+   I_die_here;
+}
+
+
 #undef PRE
 #undef POST
 

@@ -998,6 +998,12 @@ DECL_TEMPLATE(x86_netbsdelf2, sys_sigaction);
 DECL_TEMPLATE(x86_netbsdelf2, old_select);
 DECL_TEMPLATE(x86_netbsdelf2, sys_compat_ocreat);
 DECL_TEMPLATE(x86_netbsdelf2, sys_compat_lseek);
+DECL_TEMPLATE(x86_netbsdelf2, sys_recvmsg);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sendmsg);
+DECL_TEMPLATE(x86_netbsdelf2, sys_accept);
+DECL_TEMPLATE(x86_netbsdelf2, sys_getpeername);
+DECL_TEMPLATE(x86_netbsdelf2, sys_getsockname);
+DECL_TEMPLATE(x86_netbsdelf2, sys_break);
 
 PRE(old_select)
 {
@@ -1616,6 +1622,10 @@ POST(sys_fstat64)
 /*    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) ); */
 }
 
+/*
+ * XXX: What will we do with this? Probably just remove and splice up
+ * the usable stuff into calls like sys_recvmsg/sendmsg etc
+ */
 PRE(sys_socketcall)
 {
 #  define ARG2_0  (((UWord*)ARG2)[0])
@@ -1942,6 +1952,74 @@ PRE(sys_compat_lseek)
 {
    I_die_here;
 }
+
+/* XXX: Do the following really have to be in here?  Not in ...netbsdelf2.c? */
+/* From sys_socketcall */
+PRE(sys_recvmsg)
+{
+   I_die_here;
+}
+
+POST(sys_recvmsg)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_sendmsg)
+{
+   I_die_here;
+}
+
+POST(sys_sendmsg)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_accept)
+{
+   I_die_here;
+}
+
+POST(sys_accept)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_getpeername)
+{
+   I_die_here;
+}
+
+POST(sys_getpeername)
+{
+   I_die_here;
+}
+
+
+/* From sys_socketcall */
+PRE(sys_getsockname)
+{
+   I_die_here;
+}
+
+POST(sys_getsockname)
+{
+   I_die_here;
+}
+
+PRE(sys_break)
+{
+   I_die_here;
+}
+
+POST(sys_break)
+{
+   I_die_here;
+}
+
 #undef PRE
 #undef POST
 
@@ -1989,30 +2067,30 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_chown,             sys_chown),          // 16 ## P
    GENX_(__NR_break,             sys_ni_syscall),     // 17
    NBSDXY(__NR_getfsstat,        sys_getfsstat),      // 18 
-   NBSDX_(__NR_compat_43_olseek, sys_compat_lseek),   // 196
+   PLAX_(__NR_compat_43_olseek,  sys_compat_lseek),   // 19
 
    GENX_(__NR_getpid,            sys_getpid),         // 20
    NBSDX_(__NR_mount,            sys_mount),          // 21
-   NBSDX_(__NR_umount,           sys_oldumount),      // 22
+   NBSDX_(__NR_unmount,          sys_unmount),        // 22
    GENX_(__NR_setuid,            sys_setuid16),       // 23 ## P
    GENX_(__NR_getuid,            sys_getuid16),       // 24 ## P
 //zz 
 //zz    //   (__NR_stime,             sys_stime),          // 25 * (SVr4,SVID,X/OPEN)
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
-   NBSDXY(__NR_recvmsg,          sys_recvmsg),        // 27
-   NBSDX_(__NR_sendmsg,          sys_sendmsg),        // 28
+   PLAXY(__NR_recvmsg,           sys_recvmsg),        // 27
+   PLAX_(__NR_sendmsg,           sys_sendmsg),        // 28
 //zz    //   (__NR_oldfstat,          sys_fstat),          // 28 * L -- obsolete
-   NBSDXY(__NR_accept,           sys_accept),         // 29
-   NBSDXY(__NR_getpeername,      sys_getpeername),    //30
-   NBSDXY(__NR_getsockname,      sys_getsockname),    //31
+   PLAXY(__NR_accept,            sys_accept),         // 29
+   PLAXY(__NR_getpeername,       sys_getpeername),    //30
+   PLAXY(__NR_getsockname,       sys_getsockname),    //31
    GENX_(__NR_access,            sys_access),         // 33
    NBSDX_(__NR_chflags,          sys_chflags),        // 34
    NBSDX_(__NR_fchflags,         sys_fchflags),       // 35
    GENX_(__NR_sync,              sys_sync),           // 36
    GENX_(__NR_kill,              sys_kill),           // 37
-   NBSDXY(__NR_compat_43_stat43, sys_compat_stat),    // 34
-   NBSDX_(__NR_getppid,          sys_getppid),        // 37
-   NBSDXY(__NR_compat_43_lstat43,sys_compat_lstat),   // 34
+   GENX_(__NR_getppid,          sys_getppid),         // 39
+   NBSDXY(__NR_compat_43_stat43, sys_compat_stat),    // 38
+   NBSDXY(__NR_compat_43_lstat43,sys_compat_lstat),   // 40
    GENXY(__NR_dup,               sys_dup),            // 41
    GENXY(__NR_pipe,              sys_pipe),           // 42
    GENX_(__NR_getegid,           sys_getegid16),      // 50
@@ -2021,17 +2099,17 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    NBSDXY(__NR_compat_13_sigaction13, sys_compat_sigaction),
    GENX_(__NR_getgid,            sys_getgid16),       // 47
    NBSDXY(__NR_compat_13_sigprocmask13, sys_compat_sigprocmask),
-   NETBSDX_(__NR_getlogin,       sys_getlogin),
-   NETBSDX_(__NR_setlogin,       sys_setlogin),
+   NBSDX_(__NR___getlogin,       sys_getlogin),       // 49
+   NBSDX_(__NR___setlogin,       sys_setlogin),       // 50
    GENX_(__NR_acct,              sys_acct),           // 51
    NBSDXY(__NR_compat_13_sigpending13, sys_compat_sigpending),
-   NBSDXY(__NR_compat_13_signalstack13, sys_compat_signalstack),
+   NBSDXY(__NR_compat_13_sigaltstack13, sys_compat_sigaltstack),
    GENXY(__NR_ioctl,             sys_ioctl),          // 54
-   NBSDX_(__NR_compat_12_oreboot,sys_ni_syscall), // Might as well , this sounds silly to implement in vgrind
-   NBSDX_(__NR_revoke,           sys_revoke),         // 55
+   GENX_(__NR_compat_12_oreboot,sys_ni_syscall), // Might as well , this sounds silly to implement in vgrind
+   NBSDX_(__NR_revoke,           sys_revoke),         // 56
    GENX_(__NR_symlink,           sys_symlink),        // 83
    GENX_(__NR_readlink,          sys_readlink),       // 85
-   NBSDXY(__NR_execve,           sys_execve), 
+   GENX_(__NR_execve,           sys_execve), 
    GENX_(__NR_umask,             sys_umask),          // 60
    GENX_(__NR_chroot,            sys_chroot),         // 61
 
@@ -2040,52 +2118,37 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENX_(__NR_rmdir,             sys_rmdir),          // 40
 
-
-   GENXY(__NR_times,             sys_times),          // 43
-   GENX_(__NR_prof,              sys_ni_syscall),     // 44
-//zz 
-   GENX_(__NR_brk,               sys_brk),            // 45
+// XXX: Is the following thing actually the same as brk?
+   PLAX_(__NR_break,             sys_break),          // 45
    GENX_(__NR_setgid,            sys_setgid16),       // 46
 
 //zz    //   (__NR_signal,            sys_signal),         // 48 */* (ANSI C)
    GENX_(__NR_geteuid,           sys_geteuid16),      // 49
 
-
-
-   NBSDX_(__NR_umount2,          sys_umount),         // 52
-   GENX_(__NR_lock,              sys_ni_syscall),     // 53
-
-
    GENXY(__NR_fcntl,             sys_fcntl),          // 55
-   GENX_(__NR_mpx,               sys_ni_syscall),     // 56
    GENX_(__NR_setpgid,           sys_setpgid),        // 57
-   GENX_(__NR_ulimit,            sys_ni_syscall),     // 58
-//zz    //   (__NR_oldolduname,       sys_olduname),       // 59 Linux -- obsolete
 //zz 
 //zz    //   (__NR_ustat,             sys_ustat)           // 62 SVr4 -- deprecated
    GENXY(__NR_dup2,              sys_dup2),           // 63
-   GENX_(__NR_getppid,           sys_getppid),        // 64
 
    GENX_(__NR_getpgrp,           sys_getpgrp),        // 65
    GENX_(__NR_setsid,            sys_setsid),         // 66
-   PLAXY(__NR_sigaction,         sys_sigaction),      // 67
 //zz    //   (__NR_sgetmask,          sys_sgetmask),       // 68 */* (ANSI C)
 //zz    //   (__NR_ssetmask,          sys_ssetmask),       // 69 */* (ANSI C)
 //zz 
    GENX_(__NR_setreuid,          sys_setreuid16),     // 70
    GENX_(__NR_setregid,          sys_setregid16),     // 71
 //zz    GENX_(__NR_sigsuspend,        sys_sigsuspend),     // 72
-   GENXY(__NR_sigpending,        sys_sigpending),     // 73
+   // XXX: Is this good?
+   GENXY(__NR___sigpending14,    sys_sigpending),     // 73
 //zz    //   (__NR_sethostname,       sys_sethostname),    // 74 */*
 //zz 
-   GENX_(__NR_setrlimit,         sys_setrlimit),      // 75
-   GENXY(__NR_getrlimit,         sys_old_getrlimit),  // 76
-   GENXY(__NR_getrusage,         sys_getrusage),      // 77
-   GENXY(__NR_gettimeofday,      sys_gettimeofday),   // 78
-   GENX_(__NR_settimeofday,      sys_settimeofday),   // 79
+//zz NetBSD: vhangup 76 obsolete
+//zz NetBSD: vlimit  77 obsolete
 
    GENXY(__NR_getgroups,         sys_getgroups16),    // 80
    GENX_(__NR_setgroups,         sys_setgroups16),    // 81
+// XXX: Old or new select?
    PLAX_(__NR_select,            old_select),         // 82
 
 //zz    //   (__NR_oldlstat,          sys_lstat),          // 84 -- obsolete
@@ -2109,200 +2172,101 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_statfs,            sys_statfs),         // 99
 
    GENXY(__NR_fstatfs,           sys_fstatfs),        // 100
-   NBSDX_(__NR_ioperm,           sys_ioperm),         // 101
-   PLAXY(__NR_socketcall,        sys_socketcall),     // 102 x86/Linux-only
-   NBSDXY(__NR_syslog,           sys_syslog),         // 103
    GENXY(__NR_setitimer,         sys_setitimer),      // 104
 
    GENXY(__NR_getitimer,         sys_getitimer),      // 105
-   GENXY(__NR_stat,              sys_newstat),        // 106
-   GENXY(__NR_lstat,             sys_newlstat),       // 107
-   GENXY(__NR_fstat,             sys_newfstat),       // 108
-//zz    //   (__NR_olduname,          sys_uname),          // 109 -- obsolete
-//zz 
-   GENX_(__NR_iopl,              sys_iopl),           // 110
-   NBSDX_(__NR_vhangup,          sys_vhangup),        // 111
-   GENX_(__NR_idle,              sys_ni_syscall),     // 112
+   GENXY(__NR___stat13,          sys_newstat),        // 278
+   GENXY(__NR___lstat13,         sys_newlstat),       // 279
+   GENXY(__NR___fstat13,         sys_newfstat),       // 300
 //zz    //   (__NR_vm86old,           sys_vm86old),        // 113 x86/Linux-only
    GENXY(__NR_wait4,             sys_wait4),          // 114
 //zz 
 //zz    //   (__NR_swapoff,           sys_swapoff),        // 115 */Linux 
-   NBSDXY(__NR_sysinfo,          sys_sysinfo),        // 116
-   PLAXY(__NR_ipc,               sys_ipc),            // 117
+   GENXY(__NR_gettimeofday,      sys_gettimeofday),   // 116
+   GENXY(__NR_getrusage,         sys_getrusage),      // 117
    GENX_(__NR_fsync,             sys_fsync),          // 118
-   PLAX_(__NR_sigreturn,         sys_sigreturn),      // 119 ?/Linux
 
    PLAX_(__NR_clone,             sys_clone),          // 120
 //zz    //   (__NR_setdomainname,     sys_setdomainname),  // 121 */*(?)
-   GENXY(__NR_uname,             sys_newuname),       // 122
-   PLAX_(__NR_modify_ldt,        sys_modify_ldt),     // 123
+   GENX_(__NR_settimeofday,      sys_settimeofday),   // 122
+// XXX: WTF is this?
+//zz PLAX_(__NR_modify_ldt,        sys_modify_ldt),     // 123
 //zz    NBSDXY(__NR_adjtimex,         sys_adjtimex),       // 124
 //zz 
    GENXY(__NR_mprotect,          sys_mprotect),       // 125
-   GENXY(__NR_sigprocmask,       sys_sigprocmask),    // 126
-//zz    // Nb: create_module() was removed 2.4-->2.6
-   GENX_(__NR_create_module,     sys_ni_syscall),     // 127
-   GENX_(__NR_init_module,       sys_init_module),    // 128
-//zz    //   (__NR_delete_module,     sys_delete_module),  // 129 (*/Linux)?
-//zz 
-//zz    // Nb: get_kernel_syms() was removed 2.4-->2.6
-   GENX_(__NR_get_kernel_syms,   sys_ni_syscall),     // 130
    GENX_(__NR_quotactl,          sys_quotactl),       // 131
    GENX_(__NR_getpgid,           sys_getpgid),        // 132
    GENX_(__NR_fchdir,            sys_fchdir),         // 133
-//zz    //   (__NR_bdflush,           sys_bdflush),        // 134 */Linux
-//zz 
-//zz    //   (__NR_sysfs,             sys_sysfs),          // 135 SVr4
-   NBSDX_(__NR_personality,      sys_personality),    // 136
-   GENX_(__NR_afs_syscall,       sys_ni_syscall),     // 137
-   NBSDX_(__NR_setfsuid,         sys_setfsuid16),     // 138
-   NBSDX_(__NR_setfsgid,         sys_setfsgid16),     // 139
  
-   NBSDXY(__NR__llseek,          sys_llseek),         // 140
+   GENX_(__NR_lseek,             sys_lseek),          // 199
    GENXY(__NR_getdents,          sys_getdents),       // 141
-   GENX_(__NR__newselect,        sys_select),         // 142
    GENX_(__NR_flock,             sys_flock),          // 143
-   GENX_(__NR_msync,             sys_msync),          // 144
 
    GENXY(__NR_readv,             sys_readv),          // 145
    GENX_(__NR_writev,            sys_writev),         // 146
    GENX_(__NR_getsid,            sys_getsid),         // 147
    GENX_(__NR_fdatasync,         sys_fdatasync),      // 148
-   NBSDXY(__NR__sysctl,          sys_sysctl),         // 149
+   NBSDXY(__NR___sysctl,         sys_sysctl),         // 149
 
    GENX_(__NR_mlock,             sys_mlock),          // 150
    GENX_(__NR_munlock,           sys_munlock),        // 151
    GENX_(__NR_mlockall,          sys_mlockall),       // 152
    GENX_(__NR_munlockall,        sys_munlockall),     // 153
-   GENXY(__NR_sched_setparam,    sys_sched_setparam), // 154
 
-   GENXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
-   GENX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
-   GENX_(__NR_sched_getscheduler,     sys_sched_getscheduler),    // 157
-   GENX_(__NR_sched_yield,            sys_sched_yield),           // 158
-   GENX_(__NR_sched_get_priority_max, sys_sched_get_priority_max),// 159
+// XXX: Find sa_ stuff for all this  (maybe look into pthread and see what
+//       it calls to implement these)
+//   GENXY(__NR_sched_setparam,    sys_sched_setparam), // 154
+//   GENXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
+//   GENX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
+//   GENX_(__NR_sched_getscheduler,     sys_sched_getscheduler),    // 157
+//   GENX_(__NR_sched_yield,            sys_sched_yield),           // 158
+//   GENX_(__NR_sched_get_priority_max, sys_sched_get_priority_max),// 159
 
-   GENX_(__NR_sched_get_priority_min, sys_sched_get_priority_min),// 160
+//   GENX_(__NR_sched_get_priority_min, sys_sched_get_priority_min),// 160
 //zz    //   (__NR_sched_rr_get_interval,  sys_sched_rr_get_interval), // 161 */*
-   GENXY(__NR_nanosleep,         sys_nanosleep),      // 162
-   GENX_(__NR_mremap,            sys_mremap),         // 163
-   NBSDX_(__NR_setresuid,        sys_setresuid16),    // 164
+//   GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
+//   GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
+//   PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
+//   PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
+//   NBSDX_(__NR_exit_group,       sys_exit_group),     // 252
 
-   NBSDXY(__NR_getresuid,        sys_getresuid16),    // 165
-//zz    //   (__NR_vm86,              sys_vm86),           // 166 x86/Linux-only
-   GENX_(__NR_query_module,      sys_ni_syscall),     // 167
+   GENXY(__NR_nanosleep,         sys_nanosleep),      // 162
+   NBSDXY(__NR_compat_09_ouname, sys_compat_uname),   // 164
+
    GENXY(__NR_poll,              sys_poll),           // 168
 //zz    //   (__NR_nfsservctl,        sys_nfsservctl),     // 169 */Linux
 //zz 
-   NBSDX_(__NR_setresgid,        sys_setresgid16),    // 170
-   NBSDXY(__NR_getresgid,        sys_getresgid16),    // 171
-   NBSDX_(__NR_prctl,            sys_prctl),          // 172
-   PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 173 x86/Linux only?
-   GENXY(__NR_rt_sigaction,      sys_rt_sigaction),   // 174
+// XXX: NetBSD equivalent?
+//zz    //   (__NR_nfssvc,            sys_nfssvc),         // 155
+//zz 
 
-   GENXY(__NR_rt_sigprocmask,    sys_rt_sigprocmask), // 175
-   GENXY(__NR_rt_sigpending,     sys_rt_sigpending),  // 176
-   GENXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),// 177
-   GENXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 178
-   GENX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),  // 179
-
-   GENXY(__NR_pread64,           sys_pread64),        // 180
-   GENX_(__NR_pwrite64,          sys_pwrite64),       // 181
    GENX_(__NR_chown,             sys_chown16),        // 182
-   GENXY(__NR_getcwd,            sys_getcwd),         // 183
-   GENXY(__NR_capget,            sys_capget),         // 184
+   GENXY(__NR___getcwd,          sys_getcwd),         // 183
 
-   GENX_(__NR_capset,            sys_capset),         // 185
-   GENXY(__NR_sigaltstack,       sys_sigaltstack),    // 186
-   NBSDXY(__NR_sendfile,         sys_sendfile),       // 187
-   GENXY(__NR_getpmsg,           sys_getpmsg),        // 188
-   GENX_(__NR_putpmsg,           sys_putpmsg),        // 189
+/// XXX: Same thing?
+   GENXY(__NR___sigaltstack14,   sys_sigaltstack),    // 186
 
    // Nb: we treat vfork as fork
    GENX_(__NR_vfork,             sys_fork),           // 190
-   GENXY(__NR_ugetrlimit,        sys_getrlimit),      // 191
-   GENXY(__NR_mmap2,             sys_mmap2),          // 192
-   GENX_(__NR_truncate64,        sys_truncate64),     // 193
-   GENX_(__NR_ftruncate64,       sys_ftruncate64),    // 194
+
+// XXX: ?
+   GENXY(__NR_compat_43_ogetrlimit, sys_getrlimit),      // 191
+   GENXY(__NR_compat_43_osetrlimit, sys_setrlimit),      // 191
+   GENXY(__NR_compat_43_ommap,   sys_mmap2),          // 192
+
+   GENXY(__NR_getrlimit,         sys_old_getrlimit),  // 194
+   GENX_(__NR_setrlimit,         sys_setrlimit),      // 195
    
-   PLAXY(__NR_stat64,            sys_stat64),         // 195
-   PLAXY(__NR_lstat64,           sys_lstat64),        // 196
-   PLAXY(__NR_fstat64,           sys_fstat64),        // 197
-   GENX_(__NR_lchown32,          sys_lchown),         // 198
-   GENX_(__NR_getuid32,          sys_getuid),         // 199
-
-   GENX_(__NR_getgid32,          sys_getgid),         // 200
-   GENX_(__NR_geteuid32,         sys_geteuid),        // 201
-   GENX_(__NR_getegid32,         sys_getegid),        // 202
-   GENX_(__NR_setreuid32,        sys_setreuid),       // 203
-   GENX_(__NR_setregid32,        sys_setregid),       // 204
-
-   GENXY(__NR_getgroups32,       sys_getgroups),      // 205
-   GENX_(__NR_setgroups32,       sys_setgroups),      // 206
-   GENX_(__NR_fchown32,          sys_fchown),         // 207
-   NBSDX_(__NR_setresuid32,      sys_setresuid),      // 208
-   NBSDXY(__NR_getresuid32,      sys_getresuid),      // 209
-
-   NBSDX_(__NR_setresgid32,      sys_setresgid),      // 210
-   NBSDXY(__NR_getresgid32,      sys_getresgid),      // 211
-   GENX_(__NR_chown32,           sys_chown),          // 212
-   GENX_(__NR_setuid32,          sys_setuid),         // 213
-   GENX_(__NR_setgid32,          sys_setgid),         // 214
-
-   NBSDX_(__NR_setfsuid32,       sys_setfsuid),       // 215
-   NBSDX_(__NR_setfsgid32,       sys_setfsgid),       // 216
 //zz    //   (__NR_pivot_root,        sys_pivot_root),     // 217 */Linux
    GENXY(__NR_mincore,           sys_mincore),        // 218
    GENX_(__NR_madvise,           sys_madvise),        // 219
 
-   GENXY(__NR_getdents64,        sys_getdents64),     // 220
-   GENXY(__NR_fcntl64,           sys_fcntl64),        // 221
    GENX_(222,                    sys_ni_syscall),     // 222
    GENX_(223,                    sys_ni_syscall),     // 223
-   NBSDX_(__NR_gettid,           sys_gettid),         // 224
 
-//zz    //   (__NR_readahead,         sys_readahead),      // 225 */(Linux?)
-   GENX_(__NR_setxattr,          sys_setxattr),       // 226
-   GENX_(__NR_lsetxattr,         sys_lsetxattr),      // 227
-   GENX_(__NR_fsetxattr,         sys_fsetxattr),      // 228
-   GENXY(__NR_getxattr,          sys_getxattr),       // 229
-
-   GENXY(__NR_lgetxattr,         sys_lgetxattr),      // 230
-   GENXY(__NR_fgetxattr,         sys_fgetxattr),      // 231
-   GENXY(__NR_listxattr,         sys_listxattr),      // 232
-   GENXY(__NR_llistxattr,        sys_llistxattr),     // 233
-   GENXY(__NR_flistxattr,        sys_flistxattr),     // 234
-
-   GENX_(__NR_removexattr,       sys_removexattr),    // 235
-   GENX_(__NR_lremovexattr,      sys_lremovexattr),   // 236
-   GENX_(__NR_fremovexattr,      sys_fremovexattr),   // 237
-//zz    NBSDX_(__NR_tkill,            sys_tkill),          // 238 */Linux
-   NBSDXY(__NR_sendfile64,       sys_sendfile64),     // 239
-
-   NBSDXY(__NR_futex,            sys_futex),             // 240
-   GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
-   GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
-   PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
-   PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
-
-   NBSDX_(__NR_io_setup,         sys_io_setup),       // 245
-   NBSDX_(__NR_io_destroy,       sys_io_destroy),     // 246
-   NBSDXY(__NR_io_getevents,     sys_io_getevents),   // 247
-   NBSDX_(__NR_io_submit,        sys_io_submit),      // 248
-   NBSDXY(__NR_io_cancel,        sys_io_cancel),      // 249
-
-   NBSDX_(__NR_fadvise64,        sys_fadvise64),      // 250 */(Linux?)
    GENX_(251,                    sys_ni_syscall),     // 251
-   NBSDX_(__NR_exit_group,       sys_exit_group),     // 252
-   GENXY(__NR_lookup_dcookie,    sys_lookup_dcookie), // 253
-   NBSDXY(__NR_epoll_create,     sys_epoll_create),   // 254
 
-   NBSDX_(__NR_epoll_ctl,        sys_epoll_ctl),         // 255
-   NBSDXY(__NR_epoll_wait,       sys_epoll_wait),        // 256
-//zz    //   (__NR_remap_file_pages,  sys_remap_file_pages),  // 257 */Linux
-   NBSDX_(__NR_set_tid_address,  sys_set_tid_address),   // 258
    GENXY(__NR_timer_create,      sys_timer_create),      // 259
-
    GENXY(__NR_timer_settime,     sys_timer_settime),  // (timer_create+1)
    GENXY(__NR_timer_gettime,     sys_timer_gettime),  // (timer_create+2)
    GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),//(timer_create+3)
@@ -2312,25 +2276,23 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // (timer_create+6)
    GENXY(__NR_clock_getres,      sys_clock_getres),   // (timer_create+7)
 //zz    //   (__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
-   GENXY(__NR_statfs64,          sys_statfs64),       // 268
-   GENXY(__NR_fstatfs64,         sys_fstatfs64),      // 269
 
-   NBSDX_(__NR_tgkill,           sys_tgkill),         // 270 */Linux
    GENX_(__NR_utimes,            sys_utimes),         // 271
-   NBSDX_(__NR_fadvise64_64,     sys_fadvise64_64),   // 272 */(Linux?)
-   GENX_(__NR_vserver,           sys_ni_syscall),     // 273
-//zz    //   (__NR_mbind,             sys_mbind),          // 274 ?/?
-//zz 
-//zz    //   (__NR_get_mempolicy,     sys_get_mempolicy),  // 275 ?/?
-//zz    //   (__NR_set_mempolicy,     sys_set_mempolicy),  // 276 ?/?
-   GENXY(__NR_mq_open,           sys_mq_open),        // 277
-   GENX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
-   GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
+// XXX:  We don't have message queues?
+//   GENXY(__NR_mq_open,           sys_mq_open),        // 277
+//   GENX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
+//   GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
 
-   GENXY(__NR_mq_timedreceive,   sys_mq_timedreceive),// (mq_open+3)
-   GENX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
-   GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
-   GENX_(__NR_sys_kexec_load,    sys_ni_syscall),     // 283
+//   GENXY(__NR_mq_timedreceive,   sys_mq_timedreceive),// (mq_open+3)
+//   GENX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
+//   GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
+//   GENX_(__NR_sys_kexec_load,    sys_ni_syscall),     // 283
+
+   // XXX: We probably can't just use these existing routines here.. */
+   GENX_(__NR___msync13,         sys_msync),          // 277
+   PLAXY(__NR_compat_16___sigaction14,  sys_sigaction),     // 291
+   GENXY(__NR___sigprocmask14,          sys_sigprocmask),   // 293
+   PLAX_(__NR_compat_16___sigreturn14,  sys_sigreturn),     // 295
 };
 
 const UInt VGP_(syscall_table_size) = 

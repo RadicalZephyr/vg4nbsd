@@ -127,8 +127,6 @@ typedef __vki_kernel_gid32_t	vki_gid_t;
 typedef __vki_kernel_old_uid_t	vki_old_uid_t;
 typedef __vki_kernel_old_gid_t	vki_old_gid_t;
 
-typedef __vki_kernel_loff_t	vki_loff_t;
-
 typedef __vki_kernel_size_t	vki_size_t;
 typedef __vki_kernel_time_t	vki_time_t;
 typedef __vki_kernel_clock_t	vki_clock_t;

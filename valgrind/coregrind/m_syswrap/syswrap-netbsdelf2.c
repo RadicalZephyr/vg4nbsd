@@ -160,35 +160,11 @@ PRE(sys_mount)
    PRE_MEM_RASCIIZ( "mount(type)", ARG3);
 }
 
-PRE(sys_oldumount)
-{
-   PRINT("sys_oldumount( %p )", ARG1);
-   PRE_REG_READ1(long, "umount", char *, path);
-   PRE_MEM_RASCIIZ( "umount(path)", ARG1);
-}
-
-PRE(sys_umount)
+PRE(sys_unmount)
 {
    PRINT("sys_umount( %p )", ARG1);
    PRE_REG_READ2(long, "umount2", char *, path, int, flags);
    PRE_MEM_RASCIIZ( "umount2(path)", ARG1);
-}
-
-PRE(sys_llseek)
-{
-   PRINT("sys_llseek ( %d, 0x%x, 0x%x, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5);
-   PRE_REG_READ5(long, "llseek",
-                 unsigned int, fd, unsigned long, offset_high,
-                 unsigned long, offset_low, vki_loff_t *, result,
-                 unsigned int, whence);
-   PRE_MEM_WRITE( "llseek(result)", ARG4, sizeof(vki_loff_t));
-}
-
-POST(sys_llseek)
-{
-   vg_assert(SUCCESS);
-   if (RES == 0)
-      POST_MEM_WRITE( ARG4, sizeof(vki_loff_t) );
 }
 
 //zz PRE(sys_adjtimex, 0)
@@ -456,40 +432,6 @@ PRE(sys_prctl)
    // PRE_MEM_READs/PRE_MEM_WRITEs as necessary...
 }
 
-PRE(sys_sendfile)
-{
-   *flags |= SfMayBlock;
-   PRINT("sys_sendfile ( %d, %d, %p, %llu )", ARG1,ARG2,ARG3,(ULong)ARG4);
-   PRE_REG_READ4(ssize_t, "sendfile",
-                 int, out_fd, int, in_fd, vki_off_t *, offset,
-                 vki_size_t, count);
-   if (ARG3 != 0)
-      PRE_MEM_WRITE( "sendfile(offset)", ARG3, sizeof(vki_off_t) );
-}
-POST(sys_sendfile)
-{
-   if (ARG3 != 0 ) {
-      POST_MEM_WRITE( ARG3, sizeof( vki_off_t ) );
-   }
-}
-
-PRE(sys_sendfile64)
-{
-   *flags |= SfMayBlock;
-   PRINT("sendfile64 ( %d, %d, %p, %llu )",ARG1,ARG2,ARG3,(ULong)ARG4);
-   PRE_REG_READ4(ssize_t, "sendfile64",
-                 int, out_fd, int, in_fd, vki_loff_t *, offset,
-                 vki_size_t, count);
-   if (ARG3 != 0)
-      PRE_MEM_WRITE( "sendfile64(offset)", ARG3, sizeof(vki_loff_t) );
-}
-POST(sys_sendfile64)
-{
-   if (ARG3 != 0 ) {
-      POST_MEM_WRITE( ARG3, sizeof(vki_loff_t) );
-   }
-}
-
 PRE(sys_futex)
 {
    /*
@@ -654,20 +596,6 @@ POST(sys_tgkill)
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
                    ARG3, ARG1, ARG2);
-}
-
-PRE(sys_fadvise64)
-{
-   PRINT("sys_fadvise64 ( %d, %lld, %lu, %d )", ARG1,ARG2,ARG3);
-   PRE_REG_READ4(long, "fadvise64",
-                 int, fd, vki_loff_t, offset, vki_size_t, len, int, advice)
-}
-
-PRE(sys_fadvise64_64)
-{
-   PRINT("sys_fadvise64_64 ( %d, %lld, %lld, %d )", ARG1,ARG2,ARG3);
-   PRE_REG_READ4(long, "fadvise64_64",
-                 int, fd, vki_loff_t, offset, vki_loff_t, len, int, advice)
 }
 
 // Nb: this wrapper has to pad/unpad memory around the syscall itself,
@@ -844,6 +772,101 @@ POST(sys_getfsstat)
    I_die_here;
 }
 
+PRE(sys_chflags)
+{
+   I_die_here;
+}
+
+PRE(sys_fchflags)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_stat)
+{
+   I_die_here;
+}
+
+POST(sys_compat_stat)
+{
+   I_die_here;
+}
+
+
+PRE(sys_compat_lstat)
+{
+   I_die_here;
+}
+
+POST(sys_compat_lstat)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_sigaction)
+{
+   I_die_here;
+}
+
+POST(sys_compat_sigaction)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_sigprocmask)
+{
+   I_die_here;
+}
+
+POST(sys_compat_sigprocmask)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_sigpending)
+{
+   I_die_here;
+}
+
+POST(sys_compat_sigpending)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_sigaltstack)
+{
+   I_die_here;
+}
+
+POST(sys_compat_sigaltstack)
+{
+   I_die_here;
+}
+
+PRE(sys_getlogin)
+{
+   I_die_here;
+}
+
+PRE(sys_setlogin)
+{
+   I_die_here;
+}
+
+PRE(sys_revoke)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_uname)
+{
+   I_die_here;
+}
+
+POST(sys_compat_uname)
+{
+   I_die_here;
+}
 
 #undef PRE
 #undef POST

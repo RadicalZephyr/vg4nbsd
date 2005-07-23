@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Linux-specific syscalls stuff.          priv_syswrap-linux.h ---*/
+/*--- NetBSD-specific syscalls stuff.        priv_syswrap-netbsd.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -28,8 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PRIV_SYSWRAP_LINUX_H
-#define __PRIV_SYSWRAP_LINUX_H
+#ifndef __PRIV_SYSWRAP_NETBSD_H
+#define __PRIV_SYSWRAP_NETBSD_H
 
 /* requires #include "priv_types_n_macros.h" */
 
@@ -38,9 +38,7 @@ extern VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tid);
 DECL_TEMPLATE(netbsdelf2, sys_set_tid_address);
 DECL_TEMPLATE(netbsdelf2, sys_exit_group);
 DECL_TEMPLATE(netbsdelf2, sys_mount);
-DECL_TEMPLATE(netbsdelf2, sys_oldumount);
-DECL_TEMPLATE(netbsdelf2, sys_umount);
-DECL_TEMPLATE(netbsdelf2, sys_llseek);
+DECL_TEMPLATE(netbsdelf2, sys_unmount);
 DECL_TEMPLATE(netbsdelf2, sys_setfsuid16);
 DECL_TEMPLATE(netbsdelf2, sys_setfsuid);
 DECL_TEMPLATE(netbsdelf2, sys_setfsgid16);
@@ -60,24 +58,32 @@ DECL_TEMPLATE(netbsdelf2, sys_sysinfo);
 DECL_TEMPLATE(netbsdelf2, sys_personality);
 DECL_TEMPLATE(netbsdelf2, sys_sysctl);
 DECL_TEMPLATE(netbsdelf2, sys_prctl);
-DECL_TEMPLATE(netbsdelf2, sys_sendfile);
-DECL_TEMPLATE(netbsdelf2, sys_sendfile64);
 DECL_TEMPLATE(netbsdelf2, sys_futex);
 DECL_TEMPLATE(netbsdelf2, sys_epoll_create);
 DECL_TEMPLATE(netbsdelf2, sys_epoll_ctl);
 DECL_TEMPLATE(netbsdelf2, sys_epoll_wait);
 DECL_TEMPLATE(netbsdelf2, sys_gettid);
 DECL_TEMPLATE(netbsdelf2, sys_tgkill);
-DECL_TEMPLATE(netbsdelf2, sys_fadvise64);
-DECL_TEMPLATE(netbsdelf2, sys_fadvise64_64);
 DECL_TEMPLATE(netbsdelf2, sys_io_setup);
 DECL_TEMPLATE(netbsdelf2, sys_io_destroy);
 DECL_TEMPLATE(netbsdelf2, sys_io_getevents);
 DECL_TEMPLATE(netbsdelf2, sys_io_submit);
 DECL_TEMPLATE(netbsdelf2, sys_io_cancel);
 DECL_TEMPLATE(netbsdelf2, sys_getfsstat);
+DECL_TEMPLATE(netbsdelf2, sys_chflags);
+DECL_TEMPLATE(netbsdelf2, sys_fchflags);
+DECL_TEMPLATE(netbsdelf2, sys_compat_stat);
+DECL_TEMPLATE(netbsdelf2, sys_compat_lstat);
+DECL_TEMPLATE(netbsdelf2, sys_compat_sigaction);
+DECL_TEMPLATE(netbsdelf2, sys_compat_sigprocmask);
+DECL_TEMPLATE(netbsdelf2, sys_compat_sigpending);
+DECL_TEMPLATE(netbsdelf2, sys_compat_sigaltstack);
+DECL_TEMPLATE(netbsdelf2, sys_getlogin);
+DECL_TEMPLATE(netbsdelf2, sys_setlogin);
+DECL_TEMPLATE(netbsdelf2, sys_revoke);
+DECL_TEMPLATE(netbsdelf2, sys_compat_uname);
 
-#endif   // __PRIV_SYSWRAP_LINUX_H
+#endif   // __PRIV_SYSWRAP_NETBSD_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

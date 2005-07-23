@@ -1983,50 +1983,73 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_chmod,             sys_chmod),          // 15
    NBSDX_(__NR_chown,            sys_chown),       // 16 ## P
    GENX_(__NR_break,             sys_ni_syscall),     // 17
-//zz    //   (__NR_oldstat,           sys_stat),           // 18 (obsolete)
-   GENX_(__NR_lseek,             sys_lseek),          // 19
+   NBSDXY(__NR_getffsstat,           sys_getfsstat),           // 18 
+   GENX_(__NR_compat_43_olseek,             sys_compat_lseek),          // 196
 
    GENX_(__NR_getpid,            sys_getpid),         // 20
-   LINX_(__NR_mount,             sys_mount),          // 21
-   LINX_(__NR_umount,            sys_oldumount),      // 22
+   NBSDX_(__NR_mount,             sys_mount),          // 21
+   NBSDX_(__NR_umount,            sys_oldumount),      // 22
    GENX_(__NR_setuid,            sys_setuid16),       // 23 ## P
    GENX_(__NR_getuid,            sys_getuid16),       // 24 ## P
 //zz 
 //zz    //   (__NR_stime,             sys_stime),          // 25 * (SVr4,SVID,X/OPEN)
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
-   GENX_(__NR_alarm,             sys_alarm),          // 27
+   NBSDXY(__NR_recvmsg,             sys_recvmsg),          // 27
+   NBSDX_(__NR_sendmsg, sys_sendmsg), // 28
 //zz    //   (__NR_oldfstat,          sys_fstat),          // 28 * L -- obsolete
-   GENX_(__NR_pause,             sys_pause),          // 29
-
-   GENX_(__NR_utime,             sys_utime),          // 30
-   GENX_(__NR_stty,              sys_ni_syscall),     // 31
-   GENX_(__NR_gtty,              sys_ni_syscall),     // 32
+   NBSDXY(__NR_accept,             sys_accept),          // 29
+   NBSDXY(__NR_getpeername, sys_getpeername), //30
+   NBSDXY(__NR_getsockname, sys_getsockname), //31
    GENX_(__NR_access,            sys_access),         // 33
-   GENX_(__NR_nice,              sys_nice),           // 34
-
-   GENX_(__NR_ftime,             sys_ni_syscall),     // 35
+   NBSDX_(__NR_chflags, sys_chflags), // 34
+   NBSDX_(__NR_fchflags, sys_fchflags), // 35
    GENX_(__NR_sync,              sys_sync),           // 36
    GENX_(__NR_kill,              sys_kill),           // 37
+   NBSDXY(__NR_compat_43_stat43,              sys_compat_stat),           // 34
+   NBSDX_(__NR_getppid,              sys_getppid),           // 37
+   NBSDXY(__NR_compat_43_lstat43,              sys_compat_lstat),           // 34
+   GENXY(__NR_dup,               sys_dup),            // 41
+   GENXY(__NR_pipe,              sys_pipe),           // 42
+   GENX_(__NR_getegid,           sys_getegid16),      // 50
+   GENX_(__NR_profil,            sys_ni_syscall),     // 98
+   GENX_(__NR_ktrace,             sys_ni_syscall),     // 35
+   NBSDXY(__NR_compat_13_sigaction13, sys_compat_sigaction),
+   GENX_(__NR_getgid,            sys_getgid16),       // 47
+   NBSDXY(__NR_compat_13_sigprocmask13, sys_compat_sigprocmask),
+   NETBSDX_(__NR_getlogin, sys_getlogin),
+   NETBSDX_(__NR_setlogin, sys_setlogin),
+   GENX_(__NR_acct,              sys_acct),           // 51
+   NBSDXY(__NR_compat_13_sigpending13, sys_compat_sigpending),
+   NBSDXY(__NR_compat_13_signalstack13, sys_compat_signalstack),
+   GENXY(__NR_ioctl,             sys_ioctl),          // 54
+   NBSDX_(__NR_compat_12_oreboot, sys_ni_syscall), // Might as well , this sounds silly to implement in vgrind
+   NBSDX_(__NR_revoke, sys_revoke), // 55
+   GENX_(__NR_symlink,           sys_symlink),        // 83
+   GENX_(__NR_readlink,          sys_readlink),       // 85
+   NBSDXY(__NR_execve,  sys_execve), 
+   GENX_(__NR_umask,             sys_umask),          // 60
+   GENX_(__NR_chroot,            sys_chroot),         // 61
+
    GENX_(__NR_rename,            sys_rename),         // 38
    GENX_(__NR_mkdir,             sys_mkdir),          // 39
 
    GENX_(__NR_rmdir,             sys_rmdir),          // 40
-   GENXY(__NR_dup,               sys_dup),            // 41
-   GENXY(__NR_pipe,              sys_pipe),           // 42
+
+
    GENXY(__NR_times,             sys_times),          // 43
    GENX_(__NR_prof,              sys_ni_syscall),     // 44
 //zz 
    GENX_(__NR_brk,               sys_brk),            // 45
    GENX_(__NR_setgid,            sys_setgid16),       // 46
-   GENX_(__NR_getgid,            sys_getgid16),       // 47
+
 //zz    //   (__NR_signal,            sys_signal),         // 48 */* (ANSI C)
    GENX_(__NR_geteuid,           sys_geteuid16),      // 49
 
-   GENX_(__NR_getegid,           sys_getegid16),      // 50
-   GENX_(__NR_acct,              sys_acct),           // 51
+
+
    LINX_(__NR_umount2,           sys_umount),         // 52
    GENX_(__NR_lock,              sys_ni_syscall),     // 53
-   GENXY(__NR_ioctl,             sys_ioctl),          // 54
+
 
    GENXY(__NR_fcntl,             sys_fcntl),          // 55
    GENX_(__NR_mpx,               sys_ni_syscall),     // 56
@@ -2034,8 +2057,6 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_ulimit,            sys_ni_syscall),     // 58
 //zz    //   (__NR_oldolduname,       sys_olduname),       // 59 Linux -- obsolete
 //zz 
-   GENX_(__NR_umask,             sys_umask),          // 60
-   GENX_(__NR_chroot,            sys_chroot),         // 61
 //zz    //   (__NR_ustat,             sys_ustat)           // 62 SVr4 -- deprecated
    GENXY(__NR_dup2,              sys_dup2),           // 63
    GENX_(__NR_getppid,           sys_getppid),        // 64
@@ -2061,10 +2082,10 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_getgroups,         sys_getgroups16),    // 80
    GENX_(__NR_setgroups,         sys_setgroups16),    // 81
    PLAX_(__NR_select,            old_select),         // 82
-   GENX_(__NR_symlink,           sys_symlink),        // 83
+
 //zz    //   (__NR_oldlstat,          sys_lstat),          // 84 -- obsolete
 //zz 
-   GENX_(__NR_readlink,          sys_readlink),       // 85
+
 //zz    //   (__NR_uselib,            sys_uselib),         // 86 */Linux
 //zz    //   (__NR_swapon,            sys_swapon),         // 87 */Linux
 //zz    //   (__NR_reboot,            sys_reboot),         // 88 */Linux
@@ -2079,7 +2100,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_fchown,            sys_fchown16),       // 95
    GENX_(__NR_getpriority,       sys_getpriority),    // 96
    GENX_(__NR_setpriority,       sys_setpriority),    // 97
-   GENX_(__NR_profil,            sys_ni_syscall),     // 98
+
    GENXY(__NR_statfs,            sys_statfs),         // 99
 
    GENXY(__NR_fstatfs,           sys_fstatfs),        // 100

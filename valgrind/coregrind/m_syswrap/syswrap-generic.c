@@ -562,8 +562,11 @@ void VG_(init_preopened_fds)()
 {
    int f, ret;
    struct vki_dirent d;
-
+#if defined(VGO_netbsd)
+   f = VG_(open)("/proc/curproc/fd", VKI_O_RDONLY, 0);
+#else
    f = VG_(open)("/proc/self/fd", VKI_O_RDONLY, 0);
+#endif
    if(f == -1) {
       do_hacky_preopened();
       return;

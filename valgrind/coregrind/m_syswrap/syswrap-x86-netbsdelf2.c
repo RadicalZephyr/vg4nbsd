@@ -2052,7 +2052,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
 
 
-   LINX_(__NR_umount2,           sys_umount),         // 52
+   NBSDX_(__NR_umount2,          sys_umount),         // 52
    GENX_(__NR_lock,              sys_ni_syscall),     // 53
 
 
@@ -2109,9 +2109,9 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_statfs,            sys_statfs),         // 99
 
    GENXY(__NR_fstatfs,           sys_fstatfs),        // 100
-   LINX_(__NR_ioperm,            sys_ioperm),         // 101
+   NBSDX_(__NR_ioperm,           sys_ioperm),         // 101
    PLAXY(__NR_socketcall,        sys_socketcall),     // 102 x86/Linux-only
-   LINXY(__NR_syslog,            sys_syslog),         // 103
+   NBSDXY(__NR_syslog,           sys_syslog),         // 103
    GENXY(__NR_setitimer,         sys_setitimer),      // 104
 
    GENXY(__NR_getitimer,         sys_getitimer),      // 105
@@ -2121,13 +2121,13 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 //zz    //   (__NR_olduname,          sys_uname),          // 109 -- obsolete
 //zz 
    GENX_(__NR_iopl,              sys_iopl),           // 110
-   LINX_(__NR_vhangup,           sys_vhangup),        // 111
+   NBSDX_(__NR_vhangup,          sys_vhangup),        // 111
    GENX_(__NR_idle,              sys_ni_syscall),     // 112
 //zz    //   (__NR_vm86old,           sys_vm86old),        // 113 x86/Linux-only
    GENXY(__NR_wait4,             sys_wait4),          // 114
 //zz 
 //zz    //   (__NR_swapoff,           sys_swapoff),        // 115 */Linux 
-   LINXY(__NR_sysinfo,           sys_sysinfo),        // 116
+   NBSDXY(__NR_sysinfo,          sys_sysinfo),        // 116
    PLAXY(__NR_ipc,               sys_ipc),            // 117
    GENX_(__NR_fsync,             sys_fsync),          // 118
    PLAX_(__NR_sigreturn,         sys_sigreturn),      // 119 ?/Linux
@@ -2136,7 +2136,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 //zz    //   (__NR_setdomainname,     sys_setdomainname),  // 121 */*(?)
    GENXY(__NR_uname,             sys_newuname),       // 122
    PLAX_(__NR_modify_ldt,        sys_modify_ldt),     // 123
-//zz    LINXY(__NR_adjtimex,          sys_adjtimex),       // 124
+//zz    NBSDXY(__NR_adjtimex,         sys_adjtimex),       // 124
 //zz 
    GENXY(__NR_mprotect,          sys_mprotect),       // 125
    GENXY(__NR_sigprocmask,       sys_sigprocmask),    // 126
@@ -2153,12 +2153,12 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 //zz    //   (__NR_bdflush,           sys_bdflush),        // 134 */Linux
 //zz 
 //zz    //   (__NR_sysfs,             sys_sysfs),          // 135 SVr4
-   LINX_(__NR_personality,       sys_personality),    // 136
+   NBSDX_(__NR_personality,      sys_personality),    // 136
    GENX_(__NR_afs_syscall,       sys_ni_syscall),     // 137
-   LINX_(__NR_setfsuid,          sys_setfsuid16),     // 138
-   LINX_(__NR_setfsgid,          sys_setfsgid16),     // 139
+   NBSDX_(__NR_setfsuid,         sys_setfsuid16),     // 138
+   NBSDX_(__NR_setfsgid,         sys_setfsgid16),     // 139
  
-   LINXY(__NR__llseek,           sys_llseek),         // 140
+   NBSDXY(__NR__llseek,          sys_llseek),         // 140
    GENXY(__NR_getdents,          sys_getdents),       // 141
    GENX_(__NR__newselect,        sys_select),         // 142
    GENX_(__NR_flock,             sys_flock),          // 143
@@ -2168,7 +2168,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_writev,            sys_writev),         // 146
    GENX_(__NR_getsid,            sys_getsid),         // 147
    GENX_(__NR_fdatasync,         sys_fdatasync),      // 148
-   LINXY(__NR__sysctl,           sys_sysctl),         // 149
+   NBSDXY(__NR__sysctl,          sys_sysctl),         // 149
 
    GENX_(__NR_mlock,             sys_mlock),          // 150
    GENX_(__NR_munlock,           sys_munlock),        // 151
@@ -2186,17 +2186,17 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 //zz    //   (__NR_sched_rr_get_interval,  sys_sched_rr_get_interval), // 161 */*
    GENXY(__NR_nanosleep,         sys_nanosleep),      // 162
    GENX_(__NR_mremap,            sys_mremap),         // 163
-   LINX_(__NR_setresuid,         sys_setresuid16),    // 164
+   NBSDX_(__NR_setresuid,        sys_setresuid16),    // 164
 
-   LINXY(__NR_getresuid,         sys_getresuid16),    // 165
+   NBSDXY(__NR_getresuid,        sys_getresuid16),    // 165
 //zz    //   (__NR_vm86,              sys_vm86),           // 166 x86/Linux-only
    GENX_(__NR_query_module,      sys_ni_syscall),     // 167
    GENXY(__NR_poll,              sys_poll),           // 168
 //zz    //   (__NR_nfsservctl,        sys_nfsservctl),     // 169 */Linux
 //zz 
-   LINX_(__NR_setresgid,         sys_setresgid16),    // 170
-   LINXY(__NR_getresgid,         sys_getresgid16),    // 171
-   LINX_(__NR_prctl,             sys_prctl),          // 172
+   NBSDX_(__NR_setresgid,        sys_setresgid16),    // 170
+   NBSDXY(__NR_getresgid,        sys_getresgid16),    // 171
+   NBSDX_(__NR_prctl,            sys_prctl),          // 172
    PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 173 x86/Linux only?
    GENXY(__NR_rt_sigaction,      sys_rt_sigaction),   // 174
 
@@ -2214,7 +2214,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENX_(__NR_capset,            sys_capset),         // 185
    GENXY(__NR_sigaltstack,       sys_sigaltstack),    // 186
-   LINXY(__NR_sendfile,          sys_sendfile),       // 187
+   NBSDXY(__NR_sendfile,         sys_sendfile),       // 187
    GENXY(__NR_getpmsg,           sys_getpmsg),        // 188
    GENX_(__NR_putpmsg,           sys_putpmsg),        // 189
 
@@ -2240,17 +2240,17 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_getgroups32,       sys_getgroups),      // 205
    GENX_(__NR_setgroups32,       sys_setgroups),      // 206
    GENX_(__NR_fchown32,          sys_fchown),         // 207
-   LINX_(__NR_setresuid32,       sys_setresuid),      // 208
-   LINXY(__NR_getresuid32,       sys_getresuid),      // 209
+   NBSDX_(__NR_setresuid32,      sys_setresuid),      // 208
+   NBSDXY(__NR_getresuid32,      sys_getresuid),      // 209
 
-   LINX_(__NR_setresgid32,       sys_setresgid),      // 210
-   LINXY(__NR_getresgid32,       sys_getresgid),      // 211
+   NBSDX_(__NR_setresgid32,      sys_setresgid),      // 210
+   NBSDXY(__NR_getresgid32,      sys_getresgid),      // 211
    GENX_(__NR_chown32,           sys_chown),          // 212
    GENX_(__NR_setuid32,          sys_setuid),         // 213
    GENX_(__NR_setgid32,          sys_setgid),         // 214
 
-   LINX_(__NR_setfsuid32,        sys_setfsuid),       // 215
-   LINX_(__NR_setfsgid32,        sys_setfsgid),       // 216
+   NBSDX_(__NR_setfsuid32,       sys_setfsuid),       // 215
+   NBSDX_(__NR_setfsgid32,       sys_setfsgid),       // 216
 //zz    //   (__NR_pivot_root,        sys_pivot_root),     // 217 */Linux
    GENXY(__NR_mincore,           sys_mincore),        // 218
    GENX_(__NR_madvise,           sys_madvise),        // 219
@@ -2259,7 +2259,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_fcntl64,           sys_fcntl64),        // 221
    GENX_(222,                    sys_ni_syscall),     // 222
    GENX_(223,                    sys_ni_syscall),     // 223
-   LINX_(__NR_gettid,            sys_gettid),         // 224
+   NBSDX_(__NR_gettid,           sys_gettid),         // 224
 
 //zz    //   (__NR_readahead,         sys_readahead),      // 225 */(Linux?)
    GENX_(__NR_setxattr,          sys_setxattr),       // 226
@@ -2276,31 +2276,31 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_removexattr,       sys_removexattr),    // 235
    GENX_(__NR_lremovexattr,      sys_lremovexattr),   // 236
    GENX_(__NR_fremovexattr,      sys_fremovexattr),   // 237
-//zz    LINX_(__NR_tkill,             sys_tkill),          // 238 */Linux
-   LINXY(__NR_sendfile64,        sys_sendfile64),     // 239
+//zz    NBSDX_(__NR_tkill,            sys_tkill),          // 238 */Linux
+   NBSDXY(__NR_sendfile64,       sys_sendfile64),     // 239
 
-   LINXY(__NR_futex,             sys_futex),             // 240
+   NBSDXY(__NR_futex,            sys_futex),             // 240
    GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
    GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
    PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
    PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
 
-   LINX_(__NR_io_setup,          sys_io_setup),       // 245
-   LINX_(__NR_io_destroy,        sys_io_destroy),     // 246
-   LINXY(__NR_io_getevents,      sys_io_getevents),   // 247
-   LINX_(__NR_io_submit,         sys_io_submit),      // 248
-   LINXY(__NR_io_cancel,         sys_io_cancel),      // 249
+   NBSDX_(__NR_io_setup,         sys_io_setup),       // 245
+   NBSDX_(__NR_io_destroy,       sys_io_destroy),     // 246
+   NBSDXY(__NR_io_getevents,     sys_io_getevents),   // 247
+   NBSDX_(__NR_io_submit,        sys_io_submit),      // 248
+   NBSDXY(__NR_io_cancel,        sys_io_cancel),      // 249
 
-   LINX_(__NR_fadvise64,         sys_fadvise64),      // 250 */(Linux?)
+   NBSDX_(__NR_fadvise64,        sys_fadvise64),      // 250 */(Linux?)
    GENX_(251,                    sys_ni_syscall),     // 251
-   LINX_(__NR_exit_group,        sys_exit_group),     // 252
+   NBSDX_(__NR_exit_group,       sys_exit_group),     // 252
    GENXY(__NR_lookup_dcookie,    sys_lookup_dcookie), // 253
-   LINXY(__NR_epoll_create,      sys_epoll_create),   // 254
+   NBSDXY(__NR_epoll_create,     sys_epoll_create),   // 254
 
-   LINX_(__NR_epoll_ctl,         sys_epoll_ctl),         // 255
-   LINXY(__NR_epoll_wait,        sys_epoll_wait),        // 256
+   NBSDX_(__NR_epoll_ctl,        sys_epoll_ctl),         // 255
+   NBSDXY(__NR_epoll_wait,       sys_epoll_wait),        // 256
 //zz    //   (__NR_remap_file_pages,  sys_remap_file_pages),  // 257 */Linux
-   LINX_(__NR_set_tid_address,   sys_set_tid_address),   // 258
+   NBSDX_(__NR_set_tid_address,  sys_set_tid_address),   // 258
    GENXY(__NR_timer_create,      sys_timer_create),      // 259
 
    GENXY(__NR_timer_settime,     sys_timer_settime),  // (timer_create+1)
@@ -2315,9 +2315,9 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_statfs64,          sys_statfs64),       // 268
    GENXY(__NR_fstatfs64,         sys_fstatfs64),      // 269
 
-   LINX_(__NR_tgkill,            sys_tgkill),         // 270 */Linux
+   NBSDX_(__NR_tgkill,           sys_tgkill),         // 270 */Linux
    GENX_(__NR_utimes,            sys_utimes),         // 271
-   LINX_(__NR_fadvise64_64,      sys_fadvise64_64),   // 272 */(Linux?)
+   NBSDX_(__NR_fadvise64_64,     sys_fadvise64_64),   // 272 */(Linux?)
    GENX_(__NR_vserver,           sys_ni_syscall),     // 273
 //zz    //   (__NR_mbind,             sys_mbind),          // 274 ?/?
 //zz 

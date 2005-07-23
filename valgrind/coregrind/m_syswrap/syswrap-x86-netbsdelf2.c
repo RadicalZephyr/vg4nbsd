@@ -996,7 +996,8 @@ DECL_TEMPLATE(x86_netbsdelf2, sys_get_thread_area);
 DECL_TEMPLATE(x86_netbsdelf2, sys_ptrace);
 DECL_TEMPLATE(x86_netbsdelf2, sys_sigaction);
 DECL_TEMPLATE(x86_netbsdelf2, old_select);
-DECL_TEMPLATE(x86_netbsdelf2, sys_compat_ocreat)
+DECL_TEMPLATE(x86_netbsdelf2, sys_compat_ocreat);
+DECL_TEMPLATE(x86_netbsdelf2, sys_getfsstat);
 
 PRE(old_select)
 {

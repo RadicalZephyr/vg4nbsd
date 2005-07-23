@@ -242,8 +242,8 @@ asm(
 */
 void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
-   VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                    "entering VGP_(main_thread_wrapper_NORETURN)\n");
+	VG_(debugLog)(1, "syswrap-x86-netbsd", 
+		      "entering VGP_(main_thread_wrapper_NORETURN)\n"); 
 
    UWord* esp = allocstack(tid);
 

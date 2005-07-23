@@ -998,6 +998,7 @@ DECL_TEMPLATE(x86_netbsdelf2, sys_sigaction);
 DECL_TEMPLATE(x86_netbsdelf2, old_select);
 DECL_TEMPLATE(x86_netbsdelf2, sys_compat_ocreat);
 DECL_TEMPLATE(x86_netbsdelf2, sys_getfsstat);
+DECL_TEMPLATE(x86_netbsdelf2, sys_compat_lseek);
 
 PRE(old_select)
 {

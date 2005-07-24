@@ -748,6 +748,9 @@
 #define	__NR_getsid	286
 
 #define	__NR___clone	287
+/* XXX: Temporary hack!!! */
+#define	__NR_clone	__NR___clone
+
 #define	__NR_fktrace	288
 #define	__NR_preadv	289
 

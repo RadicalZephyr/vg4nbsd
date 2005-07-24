@@ -73,6 +73,7 @@ DECL_TEMPLATE(netbsdelf2, sys_getfsstat);
 DECL_TEMPLATE(netbsdelf2, sys_chflags);
 DECL_TEMPLATE(netbsdelf2, sys_fchflags);
 DECL_TEMPLATE(netbsdelf2, sys_compat_stat);
+DECL_TEMPLATE(netbsdelf2, sys_compat_fstat);
 DECL_TEMPLATE(netbsdelf2, sys_compat_lstat);
 DECL_TEMPLATE(netbsdelf2, sys_compat_sigaction);
 DECL_TEMPLATE(netbsdelf2, sys_compat_sigprocmask);
@@ -144,6 +145,18 @@ DECL_TEMPLATE(netbsdelf2, sys_pathconf);
 DECL_TEMPLATE(netbsdelf2, sys_fpathconf);
 DECL_TEMPLATE(netbsdelf2, sys_undelete);
 DECL_TEMPLATE(netbsdelf2, sys_futimes);
+DECL_TEMPLATE(netbsdelf2, sys_swapctl);
+DECL_TEMPLATE(netbsdelf2, sys_preadv);
+DECL_TEMPLATE(netbsdelf2, sys_pwritev);
+DECL_TEMPLATE(netbsdelf2, sys_fchroot);
+DECL_TEMPLATE(netbsdelf2, sys_fhopen);
+DECL_TEMPLATE(netbsdelf2, sys_fhstat);
+DECL_TEMPLATE(netbsdelf2, sys_fhstatfs);
+DECL_TEMPLATE(netbsdelf2, sys_issetugid);
+DECL_TEMPLATE(netbsdelf2, sys_kqueue);
+DECL_TEMPLATE(netbsdelf2, sys_kevent);
+DECL_TEMPLATE(netbsdelf2, sys_fsync_range);
+DECL_TEMPLATE(netbsdelf2, sys_uuidgen);
 
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 

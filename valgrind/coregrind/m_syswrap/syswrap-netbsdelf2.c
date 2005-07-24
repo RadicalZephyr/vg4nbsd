@@ -993,6 +993,15 @@ POST(sys_compat_stat)
    I_die_here;
 }
 
+PRE(sys_compat_fstat)
+{
+   I_die_here;
+}
+
+POST(sys_compat_fstat)
+{
+   I_die_here;
+}
 
 PRE(sys_compat_lstat)
 {
@@ -1368,6 +1377,111 @@ PRE(sys_undelete)
 }
 
 PRE(sys_futimes)
+{
+   I_die_here;
+}
+
+PRE(sys_swapctl)
+{
+   I_die_here;
+}
+
+POST(sys_swapctl)
+{
+   I_die_here;
+}
+
+// Hint: See if we can reuse readv/writev from generic functions
+PRE(sys_preadv)
+{
+   I_die_here;
+}
+
+POST(sys_preadv)
+{
+   I_die_here;
+}
+
+PRE(sys_pwritev)
+{
+   I_die_here;
+}
+
+// We can probably just copy chroot and add a descriptor check
+PRE(sys_fchroot)
+{
+   I_die_here;
+}
+
+// We can probably just copy open here and do some funky file handle check?
+// (same goes for the other fh* calls
+PRE(sys_fhopen)
+{
+   I_die_here;
+}
+
+POST(sys_fhopen)
+{
+   I_die_here;
+}
+
+PRE(sys_fhstat)
+{
+   I_die_here;
+}
+
+POST(sys_fhstat)
+{
+   I_die_here;
+}
+
+PRE(sys_fhstatfs)
+{
+   I_die_here;
+}
+
+POST(sys_fhstatfs)
+{
+   I_die_here;
+}
+
+PRE(sys_issetugid)
+{
+   I_die_here;  // Do we even need to do anything here?  I don't think so...
+}
+
+PRE(sys_kqueue)
+{
+   I_die_here;
+}
+
+POST(sys_kqueue)
+{
+   I_die_here;
+}
+
+PRE(sys_kevent)
+{
+   I_die_here;
+}
+
+POST(sys_kevent)
+{
+   I_die_here;
+}
+
+// Just look at sys_fsync
+PRE(sys_fsync_range)
+{
+   I_die_here;
+}
+
+PRE(sys_uuidgen)
+{
+   I_die_here;
+}
+
+POST(sys_uuidgen)
 {
    I_die_here;
 }

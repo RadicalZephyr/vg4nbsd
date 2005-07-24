@@ -1007,6 +1007,38 @@ DECL_TEMPLATE(x86_netbsdelf2, sys_compat_omsgsys);
 DECL_TEMPLATE(x86_netbsdelf2, sys_compat_oshmsys);
 DECL_TEMPLATE(x86_netbsdelf2, sys_syscall);
 DECL_TEMPLATE(x86_netbsdelf2, sys_compat_semctl);
+DECL_TEMPLATE(x86_netbsdelf2, sys_semget);
+DECL_TEMPLATE(x86_netbsdelf2, sys_semop);
+DECL_TEMPLATE(x86_netbsdelf2, sys_semop);
+DECL_TEMPLATE(x86_netbsdelf2, sys_compat_msgctl);
+DECL_TEMPLATE(x86_netbsdelf2, sys_msgget);
+DECL_TEMPLATE(x86_netbsdelf2, sys_msgsnd);
+DECL_TEMPLATE(x86_netbsdelf2, sys_msgrcv);
+DECL_TEMPLATE(x86_netbsdelf2, sys_shmat);
+DECL_TEMPLATE(x86_netbsdelf2, sys_compat_shmctl);
+DECL_TEMPLATE(x86_netbsdelf2, sys_shmdt);
+DECL_TEMPLATE(x86_netbsdelf2, sys_shmget);
+DECL_TEMPLATE(x86_netbsdelf2, sys_minherit);
+DECL_TEMPLATE(x86_netbsdelf2, sys_getcontext);
+DECL_TEMPLATE(x86_netbsdelf2, sys_setcontext);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_create);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_exit);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_self);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_wait);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_suspend);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_continue);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_wakeup);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_getprivate);
+DECL_TEMPLATE(x86_netbsdelf2, sys_lwp_setprivate);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_register);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_stacks);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_enable);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_setconcurrency);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_yield);
+DECL_TEMPLATE(x86_netbsdelf2, sys_sa_preempt);
+DECL_TEMPLATE(x86_netbsdelf2, sys_pmc_get_info);
+DECL_TEMPLATE(x86_netbsdelf2, sys_pmc_control);
+DECL_TEMPLATE(x86_netbsdelf2, sys_rasctl);
 
 PRE(old_select)
 {
@@ -1748,6 +1780,298 @@ POST(sys_compat_semctl)
    I_die_here;
 }
 
+PRE(sys_semget)
+{
+   I_die_here;
+}
+
+PRE(sys_semop)
+{
+   I_die_here;
+}
+
+POST(sys_semop)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_msgctl)
+{
+   I_die_here;
+}
+
+POST(sys_compat_msgctl)
+{
+   I_die_here;
+}
+
+PRE(sys_msgget)
+{
+   I_die_here;
+}
+
+PRE(sys_msgsnd)
+{
+   I_die_here;
+}
+
+PRE(sys_msgrcv)
+{
+   I_die_here;
+}
+
+POST(sys_msgrcv)
+{
+   I_die_here;
+}
+
+PRE(sys_shmat)
+{
+   I_die_here;
+}
+
+POST(sys_shmat)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_shmctl)
+{
+   I_die_here;
+}
+
+POST(sys_compat_shmctl)
+{
+   I_die_here;
+}
+
+PRE(sys_shmdt)
+{
+   I_die_here;
+}
+
+POST(sys_shmdt)
+{
+   I_die_here;
+}
+
+PRE(sys_shmget)
+{
+   I_die_here;
+}
+
+POST(sys_shmget)
+{
+   I_die_here;
+}
+
+// XXX: Maybe we need a POST too
+PRE(sys_minherit)
+{
+   I_die_here;
+}
+
+PRE(sys_getcontext)
+{
+   I_die_here;
+}
+
+POST(sys_getcontext)
+{
+   I_die_here;
+}
+
+PRE(sys_setcontext)
+{
+   I_die_here;
+}
+
+POST(sys_setcontext)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_create)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_create)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_exit)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_exit)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_self)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_self)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_wait)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_wait)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_suspend)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_suspend)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_continue)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_continue)
+{
+   I_die_here;
+}
+ 
+PRE(sys_lwp_wakeup)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_wakeup)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_getprivate)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_getprivate)
+{
+   I_die_here;
+}
+
+PRE(sys_lwp_setprivate)
+{
+   I_die_here;
+}
+
+POST(sys_lwp_setprivate)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_register)
+{
+   I_die_here;
+}
+
+POST(sys_sa_register)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_stacks)
+{
+   I_die_here;
+}
+
+POST(sys_sa_stacks)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_enable)
+{
+   I_die_here;
+}
+
+POST(sys_sa_enable)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_setconcurrency)
+{
+   I_die_here;
+}
+
+POST(sys_sa_setconcurrency)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_yield)
+{
+   I_die_here;
+}
+
+POST(sys_sa_yield)
+{
+   I_die_here;
+}
+
+PRE(sys_sa_preempt)
+{
+   I_die_here;
+}
+
+POST(sys_sa_preempt)
+{
+   I_die_here;
+}
+
+PRE(sys_pmc_get_info)
+{
+   I_die_here;
+}
+
+POST(sys_pmc_get_info)
+{
+   I_die_here;
+}
+
+PRE(sys_pmc_control)
+{
+   I_die_here;
+}
+
+POST(sys_pmc_control)
+{
+   I_die_here;
+}
+
+PRE(sys_rasctl)
+{
+   I_die_here;
+}
+
+POST(sys_rasctl)
+{
+   I_die_here;
+}
+
+
 #undef PRE
 #undef POST
 
@@ -2046,135 +2370,187 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(218,                    sys_ni_syscall),     // 218
    GENX_(219,                    sys_ni_syscall),     // 219
 
-/*  XXX Here's where I left off.  Need to implement these (as I_die_here's)
-   PLAXY(__NR_compat_14_semctl,  sys_compat_semctl),  // 220
+   PLAXY(__NR_compat_14___semctl,sys_compat_semctl),  // 220
    PLAX_(__NR_semget,            sys_semget),         // 221
    PLAXY(__NR_semop,             sys_semop),          // 222   (maybe PLAX_)
    PLAX_(__NR_semconfig,         sys_semop),          // 223   What's this?
    PLAXY(__NR_compat_14_msgctl,  sys_compat_msgctl),  // 224
- */
 
-// XXX: Is the following thing actually the same as brk?
-   PLAX_(__NR_break,             sys_break),          // 45
+   PLAX_(__NR_msgget,            sys_msgget),         // 225
+   PLAX_(__NR_msgsnd,            sys_msgsnd),         // 226
+   PLAXY(__NR_msgrcv,            sys_msgrcv),         // 227
+   PLAXY(__NR_shmat,             sys_shmat),          // 228
+   PLAXY(__NR_compat_14_shmctl,  sys_compat_shmctl),  // 229
 
-//zz    //   (__NR_signal,            sys_signal),         // 48 */* (ANSI C)
-   GENX_(__NR_geteuid,           sys_geteuid16),      // 49
+   PLAXY(__NR_shmdt,             sys_shmdt),          // 230
+   PLAXY(__NR_shmget,            sys_shmget),         // 231
+// XXX: Note: There may be trouble here.  stuff like (timer_create+7) in the
+//       linux versions may indicate a stupid reliance on position of
+//       timer_create in the syscall table.
+   GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232
+   GENX_(__NR_clock_settime,     sys_clock_settime),  // 233
+   GENXY(__NR_clock_getres,      sys_clock_getres),   // 234
 
-//zz 
-//zz    //   (__NR_ustat,             sys_ustat)           // 62 SVr4 -- deprecated
+   GENXY(__NR_timer_create,      sys_timer_create),   // 235
+   GENX_(__NR_timer_delete,      sys_timer_delete),   // 236
+   GENXY(__NR_timer_settime,     sys_timer_settime),  // 237
+   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238
+   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239
 
-//zz    //   (__NR_sgetmask,          sys_sgetmask),       // 68 */* (ANSI C)
-//zz    //   (__NR_ssetmask,          sys_ssetmask),       // 69 */* (ANSI C)
-//zz 
-//zz    GENX_(__NR_sigsuspend,        sys_sigsuspend),     // 72
-   // XXX: Is this good?
-   GENXY(__NR___sigpending14,    sys_sigpending),     // 73
-//zz    //   (__NR_sethostname,       sys_sethostname),    // 74 */*
-//zz 
-//zz NetBSD: vhangup 76 obsolete
-//zz NetBSD: vlimit  77 obsolete
+   GENXY(__NR_nanosleep,         sys_nanosleep),      // 240
+   GENX_(__NR_fdatasync,         sys_fdatasync),      // 241
+   GENX_(__NR_mlockall,          sys_mlockall),       // 242
+   GENX_(__NR_munlockall,        sys_munlockall),     // 243
+// XXX: Is this really the same as rt_sigtimedwait??
+   GENX_(__NR___sigtimedwait,    sys_rt_sigtimedwait),// 244
 
-//zz    //   (__NR_oldlstat,          sys_lstat),          // 84 -- obsolete
-//zz 
+   GENX_(__NR__ksem_init,        sys_ni_syscall),     // 247  XXX: What's this?
+   GENX_(__NR__ksem_open,        sys_ni_syscall),     // 248  XXX: What's this?
+   GENX_(__NR__ksem_unlink,      sys_ni_syscall),     // 249  XXX: What's this?
 
-//zz    //   (__NR_uselib,            sys_uselib),         // 86 */Linux
-//zz    //   (__NR_swapon,            sys_swapon),         // 87 */Linux
-//zz    //   (__NR_readdir,           old_readdir),        // 89 -- superseded
-//zz 
-   GENXY(__NR_munmap,            sys_munmap),         // 91
+   GENX_(__NR__ksem_close,       sys_ni_syscall),     // 250  XXX: What's this?
+   GENX_(__NR__ksem_post,        sys_ni_syscall),     // 251  XXX: What's this?
+   GENX_(__NR__ksem_wait,        sys_ni_syscall),     // 252  XXX: What's this?
+   GENX_(__NR__ksem_trywait,     sys_ni_syscall),     // 253  XXX: What's this?
+   GENX_(__NR__ksem_getvalue,    sys_ni_syscall),     // 254  XXX: What's this?
 
+   GENX_(__NR__ksem_destroy,     sys_ni_syscall),     // 255  XXX: What's this?
+   GENX_(256,                    sys_ni_syscall),     // 256
+   GENX_(257,                    sys_ni_syscall),     // 257
+   GENX_(258,                    sys_ni_syscall),     // 258
+   GENX_(259,                    sys_ni_syscall),     // 259
+
+   GENX_(260,                    sys_ni_syscall),     // 260
+   GENX_(261,                    sys_ni_syscall),     // 261
+   GENX_(262,                    sys_ni_syscall),     // 262
+   GENX_(263,                    sys_ni_syscall),     // 263
+   GENX_(264,                    sys_ni_syscall),     // 264
+
+   GENX_(265,                    sys_ni_syscall),     // 265
+   GENX_(266,                    sys_ni_syscall),     // 266
+   GENX_(267,                    sys_ni_syscall),     // 267
+   GENX_(268,                    sys_ni_syscall),     // 268
+   GENX_(269,                    sys_ni_syscall),     // 269
+
+// Only slightly different semantics from normal rename call
+   GENX_(__NR___posix_rename,    sys_rename),         // 270
+   NBSDXY(__NR_swapctl,          sys_swapctl),        // 271
+   GENXY(__NR_getdents,          sys_getdents),       // 272
+   PLAX_(__NR_minherit,          sys_minherit),       // 273
+   PLAX_(__NR_minherit,          sys_minherit),       // 273
+// The following 3 funcs only differ in behaviour on symlinks from their
+// non-l-prefixed versions (so valgrind doesn't have to do anything else)
+   GENX_(__NR_lchmod,            sys_chmod),          // 274
+
+   GENX_(__NR_lchown,            sys_lchown),         // 275
+   GENX_(__NR_lutimes,           sys_utimes),         // 276
+// XXX: Can we just use the normal versions of these functions?
+   GENX_(__NR___msync13,         sys_msync),          // 277
    GENXY(__NR___stat13,          sys_newstat),        // 278
    GENXY(__NR___lstat13,         sys_newlstat),       // 279
-   GENXY(__NR___fstat13,         sys_newfstat),       // 300
-//zz    //   (__NR_vm86old,           sys_vm86old),        // 113 x86/Linux-only
-   GENXY(__NR_wait4,             sys_wait4),          // 114
-//zz 
-//zz    //   (__NR_swapoff,           sys_swapoff),        // 115 */Linux 
 
-   PLAX_(__NR_clone,             sys_clone),          // 120
-//zz    //   (__NR_setdomainname,     sys_setdomainname),  // 121 */*(?)
-// XXX: WTF is this?
-//zz PLAX_(__NR_modify_ldt,        sys_modify_ldt),     // 123
-//zz 
-   GENXY(__NR_mprotect,          sys_mprotect),       // 125
-   GENX_(__NR_fchdir,            sys_fchdir),         // 133
+   GENXY(__NR___fstat13,         sys_newfstat),       // 280
+// XXX: Same thing?
+   GENXY(__NR___sigaltstack14,   sys_sigaltstack),    // 281
+// XXX: Can we just use the normal vfork routine (which is fork)?
+   GENX_(__NR___vfork14,         sys_fork),           // 282
+// Only slightly different semantics from normal chown/fchown/lchown call
+   GENX_(__NR___posix_chown,     sys_chown),          // 283
+   GENX_(__NR___posix_fchown,    sys_fchown16),       // 284
+
+   GENX_(__NR___posix_lchown,    sys_lchown),         // 285
+   GENX_(__NR_getsid,            sys_getsid),         // 286
+   PLAX_(__NR___clone,           sys_clone),          // 287
+   GENX_(__NR_fktrace,           sys_ni_syscall),     // 288 XXX: ktrace too ni_
+   NBSDXY(__NR_preadv,           sys_preadv),         // 289
+
+   NBSDX_(__NR_pwritev,          sys_pwritev),        // 290
+// XXX: Are the following funcs the same thing?
+   PLAXY(__NR_compat_16___sigaction14, sys_sigaction),// 291
+   GENXY(__NR___sigpending14,    sys_sigpending),     // 292
+   GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293
+   GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294
+
+   PLAX_(__NR_compat_16___sigreturn14, sys_sigreturn),// 295
+   GENXY(__NR___getcwd,          sys_getcwd),         // 296
+   NBSDX_(__NR_fchroot,          sys_fchroot),        // 297
+   NBSDXY(__NR_fhopen,           sys_fhopen),         // 298
+   NBSDXY(__NR_fhstat,           sys_fhstat),         // 299
+
+   NBSDXY(__NR_fhstatfs,         sys_fhstatfs),       // 300
+// XXX: Same thing?
+   PLAXY(__NR_____semctl13,      sys_compat_semctl),  // 301
+   PLAXY(__NR___msgctl13,        sys_compat_msgctl),  // 302
+   PLAXY(__NR___shmctl13,        sys_compat_shmctl),  // 303
+// Again, just slightly diff semantics on symlinks..
+   NBSDX_(__NR_lchflags,         sys_chflags),        // 304
+
+   NBSDX_(__NR_issetugid,        sys_issetugid),      // 305
+   GENX_(__NR_utrace,            sys_ni_syscall),     // 306
+   PLAXY(__NR_getcontext,        sys_getcontext),     // 307
+   PLAXY(__NR_setcontext,        sys_setcontext),     // 308
+   PLAXY(__NR__lwp_create,       sys_lwp_create),     // 309
+
+   PLAXY(__NR__lwp_exit,         sys_lwp_exit),       // 310
+   PLAXY(__NR__lwp_self,         sys_lwp_self),       // 311
+   PLAXY(__NR__lwp_wait,         sys_lwp_wait),       // 312
+   PLAXY(__NR__lwp_suspend,      sys_lwp_suspend),    // 313
+   PLAXY(__NR__lwp_continue,     sys_lwp_continue),   // 314
  
-   GENXY(__NR_getdents,          sys_getdents),       // 141
+   PLAXY(__NR__lwp_wakeup,       sys_lwp_wakeup),     // 315
+   PLAXY(__NR__lwp_getprivate,   sys_lwp_getprivate), // 316
+   PLAXY(__NR__lwp_setprivate,   sys_lwp_setprivate), // 317
+   GENX_(318,                    sys_ni_syscall),     // 318
+   GENX_(319,                    sys_ni_syscall),     // 319
 
-   GENX_(__NR_getsid,            sys_getsid),         // 147
-   GENX_(__NR_fdatasync,         sys_fdatasync),      // 148
+   GENX_(320,                    sys_ni_syscall),     // 320
+   GENX_(321,                    sys_ni_syscall),     // 321
+   GENX_(322,                    sys_ni_syscall),     // 322
+   GENX_(323,                    sys_ni_syscall),     // 323
+   GENX_(324,                    sys_ni_syscall),     // 324
 
-   GENX_(__NR_mlockall,          sys_mlockall),       // 152
-   GENX_(__NR_munlockall,        sys_munlockall),     // 153
+   GENX_(325,                    sys_ni_syscall),     // 325
+   GENX_(326,                    sys_ni_syscall),     // 326
+   GENX_(327,                    sys_ni_syscall),     // 327
+   GENX_(328,                    sys_ni_syscall),     // 328
+   GENX_(329,                    sys_ni_syscall),     // 329
 
-// XXX: Find sa_ stuff for all this  (maybe look into pthread and see what
-//       it calls to implement these)
-//   GENXY(__NR_sched_setparam,    sys_sched_setparam), // 154
-//   GENXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
-//   GENX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
-//   GENX_(__NR_sched_getscheduler,     sys_sched_getscheduler),    // 157
-//   GENX_(__NR_sched_yield,            sys_sched_yield),           // 158
-//   GENX_(__NR_sched_get_priority_max, sys_sched_get_priority_max),// 159
+// XXX: Prolly some of these can be PLAX_  (not sure if it's PLA* or NBSD* or
+//        even GEN*, though (scheduler activations are theoretically not nbsd
+//        specific, but this API may be...))
+   PLAXY(__NR_sa_register,       sys_sa_register),    // 330
+   PLAXY(__NR_sa_stacks,         sys_sa_stacks),      // 331
+   PLAXY(__NR_sa_enable,         sys_sa_enable),      // 332
+   PLAXY(__NR_sa_setconcurrency, sys_sa_setconcurrency),  // 333
+   PLAXY(__NR_sa_yield,          sys_sa_yield),       // 334
 
-//   GENX_(__NR_sched_get_priority_min, sys_sched_get_priority_min),// 160
-//zz    //   (__NR_sched_rr_get_interval,  sys_sched_rr_get_interval), // 161 */*
-//   GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
-//   GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
-//   PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
-//   PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
-//   NBSDX_(__NR_exit_group,       sys_exit_group),     // 252
+   PLAXY(__NR_sa_preempt,        sys_sa_preempt),     // 335
+   GENX_(336,                    sys_ni_syscall),     // 336
+   GENX_(337,                    sys_ni_syscall),     // 337
+   GENX_(338,                    sys_ni_syscall),     // 338
+   GENX_(339,                    sys_ni_syscall),     // 339
 
-   GENXY(__NR_nanosleep,         sys_nanosleep),      // 162
+// XXX: What to do with the trampoline stuff?
+   GENX_(__NR___sigaction_sigtramp, sys_ni_syscall),  // 340
+   PLAXY(__NR_pmc_get_info,      sys_pmc_get_info),   // 341
+// XXX: Looks like this can just be a PLAX_ instead
+   PLAXY(__NR_pmc_control,       sys_pmc_control),    // 342
+   PLAXY(__NR_rasctl,            sys_rasctl),         // 343
+   NBSDXY(__NR_kqueue,           sys_kqueue),         // 344
 
-//zz    //   (__NR_nfsservctl,        sys_nfsservctl),     // 169 */Linux
-//zz 
+   NBSDXY(__NR_kevent,           sys_kevent),         // 345
+   GENX_(346,                    sys_ni_syscall),     // 346
+   GENX_(347,                    sys_ni_syscall),     // 347
+   GENX_(348,                    sys_ni_syscall),     // 348
+   GENX_(349,                    sys_ni_syscall),     // 349
 
-   GENX_(__NR_chown,             sys_chown16),        // 182
-   GENXY(__NR___getcwd,          sys_getcwd),         // 183
+   GENX_(350,                    sys_ni_syscall),     // 350
+   GENX_(351,                    sys_ni_syscall),     // 351
+   GENX_(352,                    sys_ni_syscall),     // 352
+   GENX_(353,                    sys_ni_syscall),     // 353
+   NBSDX_(__NR_fsync_range,      sys_fsync_range),    // 354
 
-/// XXX: Same thing?
-   GENXY(__NR___sigaltstack14,   sys_sigaltstack),    // 186
-
-   // Nb: we treat vfork as fork
-   GENX_(__NR_vfork,             sys_fork),           // 190
-
-// XXX: ?
-   GENXY(__NR_compat_43_ommap,   sys_mmap2),          // 192
-
-//zz    //   (__NR_pivot_root,        sys_pivot_root),     // 217 */Linux
-   GENX_(__NR_madvise,           sys_madvise),        // 219
-
-   GENX_(222,                    sys_ni_syscall),     // 222
-   GENX_(223,                    sys_ni_syscall),     // 223
-
-   GENX_(251,                    sys_ni_syscall),     // 251
-
-   GENXY(__NR_timer_create,      sys_timer_create),      // 259
-   GENXY(__NR_timer_settime,     sys_timer_settime),  // (timer_create+1)
-   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // (timer_create+2)
-   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),//(timer_create+3)
-   GENX_(__NR_timer_delete,      sys_timer_delete),   // (timer_create+4)
-   GENX_(__NR_clock_settime,     sys_clock_settime),  // (timer_create+5)
-
-   GENXY(__NR_clock_gettime,     sys_clock_gettime),  // (timer_create+6)
-   GENXY(__NR_clock_getres,      sys_clock_getres),   // (timer_create+7)
-//zz    //   (__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
-
-// XXX:  We don't have message queues?
-//   GENXY(__NR_mq_open,           sys_mq_open),        // 277
-//   GENX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
-//   GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
-
-//   GENXY(__NR_mq_timedreceive,   sys_mq_timedreceive),// (mq_open+3)
-//   GENX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
-//   GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
-//   GENX_(__NR_sys_kexec_load,    sys_ni_syscall),     // 283
-
-   // XXX: We probably can't just use these existing routines here.. */
-   GENX_(__NR___msync13,         sys_msync),          // 277
-   PLAXY(__NR_compat_16___sigaction14,  sys_sigaction),     // 291
-   GENXY(__NR___sigprocmask14,          sys_sigprocmask),   // 293
-   PLAX_(__NR_compat_16___sigreturn14,  sys_sigreturn),     // 295
+   NBSDXY(__NR_uuidgen,          sys_uuidgen)         // 355
 };
 
 const UInt VGP_(syscall_table_size) = 

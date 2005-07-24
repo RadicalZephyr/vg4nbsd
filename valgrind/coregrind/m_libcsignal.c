@@ -146,39 +146,56 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
+#else
+   I_die_here;
+#endif
 }
 
 
 Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigaction,
                                  signum, (UWord)act, (UWord)oldact, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
+#else
+   I_die_here;
+#endif
 }
 
 
 Int VG_(sigaltstack)( const vki_stack_t* ss, vki_stack_t* oss )
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall2)(__NR_sigaltstack, (UWord)ss, (UWord)oss);
    return res.isError ? -1 : 0;
+#else
+   I_die_here;
+#endif
 }
 
 Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info, 
                        const struct vki_timespec *timeout )
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)timeout, sizeof(*set));
    return res.isError ? -1 : res.val;
+#else
+   I_die_here;
+#endif
 }
  
 Int VG_(signal)(Int signum, void (*sighandler)(Int))
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res;
    Int    n;
    struct vki_sigaction sa;
@@ -190,6 +207,9 @@ Int VG_(signal)(Int signum, void (*sighandler)(Int))
    res = VG_(do_syscall4)(__NR_rt_sigaction, signum, (UWord)&sa, (UWord)NULL,
                            _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
+#else
+   I_die_here;
+#endif
 }
 
 
@@ -202,6 +222,7 @@ Int VG_(kill)( Int pid, Int signo )
 
 Int VG_(tkill)( ThreadId tid, Int signo )
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
 
 #if 0
@@ -216,10 +237,15 @@ Int VG_(tkill)( ThreadId tid, Int signo )
       res = VG_(do_syscall2)(__NR_kill, tid, signo);
 
    return res.isError ? -1 : 0;
+#else
+   I_die_here;
+#endif
 }
 
 Int VG_(sigpending) ( vki_sigset_t* set )
 {
+#  if !defined(VGP_x86_netbsdelf2)
+
 // Nb: AMD64/Linux doesn't have __NR_sigpending;  it only provides
 // __NR_rt_sigpending.  This function will have to be abstracted in some
 // way to account for this.  In the meantime, the easy option is to forget
@@ -229,6 +255,10 @@ Int VG_(sigpending) ( vki_sigset_t* set )
 #else
    SysRes res = VG_(do_syscall1)(__NR_sigpending, (UWord)set);
    return res.isError ? -1 : 0;
+#endif
+
+#else
+   I_die_here;
 #endif
 }
 

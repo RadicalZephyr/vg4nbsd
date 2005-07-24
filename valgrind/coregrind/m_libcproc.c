@@ -337,6 +337,7 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
+#  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
    if (res.isError && res.val == VKI_ENOSYS) {
@@ -364,6 +365,9 @@ Int VG_(gettid)(void)
    }
 
    return res.val;
+#else
+   I_die_here;
+#endif
 }
 
 /* You'd be amazed how many places need to know the current pid. */

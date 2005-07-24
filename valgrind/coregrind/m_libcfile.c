@@ -367,6 +367,9 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
 #  else
    // AMD64/Linux doesn't define __NR_socketcall... see comment above
    // VG_(sigpending)() for more details.
+   //
+   // NOTE: Remember to put the Int flags in the Linux block if we're not going
+   // to use it here.
    I_die_here;
 #  endif
 }
@@ -389,6 +392,9 @@ Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen)
    return res.isError ? -1 : res.val;
 
 #  else
+   //
+   // NOTE: Remember to put the SysRes res in #ifndef blahblah if we don't
+   // intend to use it here.
    I_die_here;
 #  endif
 }
@@ -437,6 +443,9 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
    return res.isError ? -1 : res.val;
 
 #  else
+   //
+   // NOTE: Remember to put the SysRes res in #ifndef blahblah if we don't
+   // intend to use it here.
    I_die_here;
 #  endif
 }

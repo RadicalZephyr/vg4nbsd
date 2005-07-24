@@ -29,6 +29,15 @@
 
 // From $SRCDIR/sys/sys/syscall.h generated from sys/sys/syscalls.master 
 
+/*
+ * NOTE: You will find RENAME_HACK at some places in this file.  This means
+ * valgrind requires a definition (for example __NR_stat) which NetBSD does
+ * not have.  The equivalent NetBSD syscall is aliased by the required name.
+ * (in the __NR_stat case __NR___stat13).  I'm not sure if this really is
+ * a hack... anyway, you can spot them easily if a better idea is thought of
+ * to fix this situation.
+ */
+
 #define	__NR_syscall	0
 
 /* syscall: "exit" ret: "void" args: "int" */
@@ -730,9 +739,12 @@
 
 
 #define	__NR___stat13	278
+/* RENAME_HACK */
+#define __NR_stat  __NR___stat13
 
 
 #define	__NR___fstat13	279
+#define __NR_fstat  __NR___fstat13
 
 
 #define	__NR___lstat13	280
@@ -748,7 +760,7 @@
 #define	__NR_getsid	286
 
 #define	__NR___clone	287
-/* XXX: Temporary hack!!! */
+/* RENAME_HACK */
 #define	__NR_clone	__NR___clone
 
 #define	__NR_fktrace	288
@@ -774,6 +786,8 @@
 
 
 #define	__NR___getcwd	296
+// RENAME_HACK
+#define __NR_getcwd  __NR___getcwd
 
 
 #define	__NR_fchroot	297

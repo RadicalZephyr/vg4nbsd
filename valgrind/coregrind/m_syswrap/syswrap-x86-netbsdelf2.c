@@ -1792,7 +1792,18 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_execve,           sys_execve), 
    GENX_(__NR_umask,             sys_umask),          // 60
    GENX_(__NR_chroot,            sys_chroot),         // 61
-
+   NBSDX_(__NR_compat_43_fstat43, sys_ni_syscall),
+   NBSDX_(__NR_compat_43_ogetkerninfo,sys_ni_syscall),   
+   NBSDX_(	__NR_compat_43_ogetpagesize,sys_ni_syscall),
+   NBSDX_(__NR_compat_12_msync,sys_ni_syscall),
+   NBSDX_(__NR_vfork, sys_vfork),
+   NBSDX_(__NR_sbrk, sys_ni_syscall),
+   NBSDX_(__NR_sstk,sys_ni_syscall),
+   NBSDX_(__NR_compat_43_ommap,sys_ni_syscall), // XXX
+   NBSDX_(__NR_vadvise,sys_ni_syscall),  // Whats this? investigate
+   NBSDX_(	__NR_munmap,sys_munmap),
+   NBSDX_(	__NR_mprotect,sys_mprotect),
+   NBSDX_(	__NR_madvise, sys_madvise),
    GENX_(__NR_rename,            sys_rename),         // 38
    GENX_(__NR_mkdir,             sys_mkdir),          // 39
 

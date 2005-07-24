@@ -332,6 +332,20 @@ PRE(sys_ioperm)
    PRE_REG_READ3(long, "ioperm",
                  unsigned long, from, unsigned long, num, int, turn_on);
 }
+PRE(sys_vfork)
+{ 
+	I_die_here;
+}
+PRE(sys_munmap){
+	I_die_here;
+}
+PRE(sys_mprotect){
+	I_die_here;
+}
+PRE(sys_madvise){
+	I_die_here;
+}
+
 PRE(sys_recvmsg)
 {
    I_die_here;

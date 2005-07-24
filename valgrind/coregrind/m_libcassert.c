@@ -64,7 +64,9 @@
 /* Pull down the entire world */
 void VG_(exit)( Int status )
 {
+#if defined(VGO_linux)
    (void)VG_(do_syscall1)(__NR_exit_group, status );
+#endif
    (void)VG_(do_syscall1)(__NR_exit, status );
    /* Why are we still alive here? */
    /*NOTREACHED*/

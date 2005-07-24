@@ -87,6 +87,11 @@ DECL_TEMPLATE(netbsdelf2, sys_sendmsg);
 DECL_TEMPLATE(netbsdelf2, sys_accept);
 DECL_TEMPLATE(netbsdelf2, sys_getpeername);
 DECL_TEMPLATE(netbsdelf2, sys_getsockname);
+DECL_TEMPLATE(netbsdelf2, sys_ni_syscall);
+DECL_TEMPLATE(netbsdelf2, sys_vfork);
+DECL_TEMPLATE(netbsdelf2, sys_munmap);
+DECL_TEMPLATE(netbsdelf2, sys_mprotect);
+DECL_TEMPLATE(netbsdelf2, sys_madvise);
 
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 

@@ -194,6 +194,17 @@ PRE(sys_unmount)
 //zz    POST_MEM_WRITE( ARG1, sizeof(struct vki_timex) );
 //zz }
 
+/* Copy from above, maybe? */
+PRE(sys_adjtime)
+{
+    I_die_here;
+}
+
+POST(sys_adjtime)
+{
+    I_die_here;
+}
+
 PRE(sys_setfsuid16)
 {
    PRINT("sys_setfsuid16 ( %d )", ARG1);
@@ -356,13 +367,23 @@ POST(sys_recvmsg)
    I_die_here;
 }
 
+PRE(sys_compat_orecvmsg)
+{
+   I_die_here;
+}
+
+POST(sys_compat_orecvmsg)
+{
+   I_die_here;
+}
+
 /* From sys_socketcall */
 PRE(sys_sendmsg)
 {
    I_die_here;
 }
 
-POST(sys_sendmsg)
+PRE(sys_compat_osendmsg)
 {
    I_die_here;
 }
@@ -379,12 +400,113 @@ POST(sys_accept)
 }
 
 /* From sys_socketcall */
+PRE(sys_bind)
+{
+   I_die_here;
+}
+
+POST(sys_bind)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall? */
+PRE(sys_setsockopt)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall? */
+PRE(sys_getsockopt)
+{
+   I_die_here;
+}
+
+POST(sys_getsockopt)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_listen)
+{
+   I_die_here;
+}
+
+POST(sys_listen)
+{
+   I_die_here;
+}
+
+
+/* Maybe this can be simply a call to sys_accept instead? */
+PRE(sys_compat_oaccept)
+{
+   I_die_here;
+}
+
+POST(sys_compat_oaccept)
+{
+   I_die_here;
+}
+
+/* Same here, maybe we can just call sys_send? */
+PRE(sys_compat_osend)
+{
+   I_die_here;
+}
+
+/* ?? */
+PRE(sys_compat_orecv)
+{
+   I_die_here;
+}
+
+POST(sys_compat_orecv)
+{
+   I_die_here;
+}
+
+
+/* From sys_socketcall */
+PRE(sys_socket)
+{
+   I_die_here;
+}
+
+POST(sys_socket)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_connect)
+{
+   I_die_here;
+}
+
+POST(sys_connect)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
 PRE(sys_getpeername)
 {
    I_die_here;
 }
 
 POST(sys_getpeername)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogetpeername)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogetpeername)
 {
    I_die_here;
 }
@@ -397,6 +519,16 @@ PRE(sys_getsockname)
 }
 
 POST(sys_getsockname)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogetsockname)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogetsockname)
 {
    I_die_here;
 }
@@ -933,6 +1065,309 @@ PRE(sys_compat_uname)
 }
 
 POST(sys_compat_uname)
+{
+   I_die_here;
+}
+
+PRE(sys_recvfrom)
+{
+   I_die_here;
+}
+
+POST(sys_recvfrom)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_orecvfrom)
+{
+   I_die_here;
+}
+
+POST(sys_compat_orecvfrom)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_owait)
+{
+   I_die_here;
+}
+
+POST(sys_compat_owait)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_oswapon)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogethostname)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogethostname)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_osethostname)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogetdtablesize)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_otruncate)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_oftruncate)
+{
+   I_die_here;
+}
+
+PRE(sys_mkfifo)
+{
+   I_die_here;
+}
+
+PRE(sys_sendto)
+{
+   I_die_here;
+}
+
+/* Hint: Look at sys_close */
+PRE(sys_shutdown)
+{
+   I_die_here;
+}
+
+POST(sys_shutdown)
+{
+   I_die_here;
+}
+
+/* Hint: Look at sys_open */
+PRE(sys_socketpair)
+{
+   I_die_here;
+}
+
+POST(sys_socketpair)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogethostid)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogethostid)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_osethostid)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_okillpg)
+{
+   I_die_here;
+}
+
+// ??
+PRE(sys_compat_oquota)
+{
+   I_die_here;
+}
+
+PRE(sys_nfssvc)
+{
+   I_die_here;
+}
+
+POST(sys_nfssvc)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogetdirentries)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogetdirentries)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_getdirentries)
+{
+   I_die_here;
+}
+
+POST(sys_compat_getdirentries)
+{
+   I_die_here;
+}
+
+PRE(sys_getfh)
+{
+   I_die_here;
+}
+
+POST(sys_getfh)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_ogetdomainname)
+{
+   I_die_here;
+}
+
+POST(sys_compat_ogetdomainname)
+{
+   I_die_here;
+}
+
+PRE(sys_compat_osetdomainname)
+{
+   I_die_here;
+}
+
+PRE(sys_sysarch)
+{
+   I_die_here;
+}
+
+POST(sys_sysarch)
+{
+   I_die_here;
+}
+
+PRE(sys_pread)
+{
+   I_die_here;
+}
+
+POST(sys_pread)
+{
+   I_die_here;
+}
+
+PRE(sys_pwrite)
+{
+   I_die_here;
+}
+
+PRE(sys_ntp_gettime)
+{
+   I_die_here;
+}
+
+POST(sys_ntp_gettime)
+{
+   I_die_here;
+}
+
+PRE(sys_ntp_adjtime)
+{
+   I_die_here;
+}
+
+POST(sys_ntp_adjtime)
+{
+   I_die_here;
+}
+
+PRE(sys_setegid)
+{
+   I_die_here;
+}
+
+PRE(sys_seteuid)
+{
+   I_die_here;
+}
+
+PRE(sys_lfs_bmapv)
+{
+   I_die_here;
+}
+
+POST(sys_lfs_bmapv)
+{
+   I_die_here;
+}
+
+PRE(sys_lfs_markv)
+{
+   I_die_here;
+}
+
+POST(sys_lfs_markv)
+{
+   I_die_here;
+}
+
+PRE(sys_lfs_segclean)
+{
+   I_die_here;
+}
+
+POST(sys_lfs_segclean)
+{
+   I_die_here;
+}
+
+PRE(sys_lfs_segwait)
+{
+   I_die_here;
+}
+
+POST(sys_lfs_segwait)
+{
+   I_die_here;
+}
+
+PRE(sys_pathconf)
+{
+   I_die_here;
+}
+
+POST(sys_pathconf)
+{
+   I_die_here;
+}
+
+PRE(sys_fpathconf)
+{
+   I_die_here;
+}
+
+POST(sys_fpathconf)
+{
+   I_die_here;
+}
+
+PRE(sys_undelete)
+{
+   I_die_here;
+}
+
+PRE(sys_futimes)
 {
    I_die_here;
 }

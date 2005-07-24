@@ -86,11 +86,6 @@
 /* syscall: "compat_43_olseek" ret: "long" args: "int" "long" "int" */
 #define	__NR_compat_43_olseek	19
 
-
-/* syscall: "getpid" ret: "pid_t" args: */
-#define	__NR_getpid	20
-
-
 /* syscall: "getpid" ret: "pid_t" args: */
 #define	__NR_getpid	20
 

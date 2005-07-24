@@ -174,9 +174,9 @@ PRE(sys_unmount)
 //zz    PRE_REG_READ1(long, "adjtimex", struct timex *, buf);
 //zz    PRE_MEM_READ( "adjtimex(timex->modes)", ARG1, sizeof(tx->modes));
 //zz
-//zz #define ADJX(bit,field) 				\
-//zz    if (tx->modes & bit)					\
-//zz       PRE_MEM_READ( "adjtimex(timex->"#field")",	\
+//zz #define ADJX(bit,field) 				
+//zz    if (tx->modes & bit)					
+//zz       PRE_MEM_READ( "adjtimex(timex->"#field")",  
 //zz 		    (Addr)&tx->field, sizeof(tx->field))
 //zz    ADJX(ADJ_FREQUENCY, freq);
 //zz    ADJX(ADJ_MAXERROR, maxerror);
@@ -332,6 +332,61 @@ PRE(sys_ioperm)
    PRE_REG_READ3(long, "ioperm",
                  unsigned long, from, unsigned long, num, int, turn_on);
 }
+PRE(sys_recvmsg)
+{
+   I_die_here;
+}
+
+POST(sys_recvmsg)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_sendmsg)
+{
+   I_die_here;
+}
+
+POST(sys_sendmsg)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_accept)
+{
+   I_die_here;
+}
+
+POST(sys_accept)
+{
+   I_die_here;
+}
+
+/* From sys_socketcall */
+PRE(sys_getpeername)
+{
+   I_die_here;
+}
+
+POST(sys_getpeername)
+{
+   I_die_here;
+}
+
+
+/* From sys_socketcall */
+PRE(sys_getsockname)
+{
+   I_die_here;
+}
+
+POST(sys_getsockname)
+{
+   I_die_here;
+}
+
 
 PRE(sys_syslog)
 {

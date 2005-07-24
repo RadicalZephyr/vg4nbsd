@@ -98,13 +98,9 @@
 /* syscall: "setuid" ret: "int" args: "uid_t" */
 #define	__NR_setuid	23
 
-
 /* syscall: "getuid" ret: "uid_t" args: */
 #define	__NR_getuid	24
 
-
-/* syscall: "getuid" ret: "uid_t" args: */
-#define	__NR_getuid	24
 
 /* syscall: "geteuid" ret: "uid_t" args: */
 #define	__NR_geteuid	25
@@ -172,9 +168,6 @@
 
 /* syscall: "compat_13_sigaction13" ret: "int" args: "int" "const struct sigaction13 *" "struct sigaction13 *" */
 #define	__NR_compat_13_sigaction13	46
-
-/* syscall: "getgid" ret: "gid_t" args: */
-#define	__NR_getgid	47
 
 /* syscall: "getgid" ret: "gid_t" args: */
 #define	__NR_getgid	47
@@ -711,15 +704,6 @@
 
 #define	__NR__ksem_destroy	255
 
-				/* 247 is excluded sys__ksem_init */
-				/* 248 is excluded sys__ksem_open */
-				/* 249 is excluded sys__ksem_unlink */
-				/* 250 is excluded sys__ksem_close */
-				/* 251 is excluded sys__ksem_post */
-				/* 252 is excluded sys__ksem_wait */
-				/* 253 is excluded sys__ksem_trywait */
-				/* 254 is excluded sys__ksem_getvalue */
-				/* 255 is excluded sys__ksem_destroy */
 
 #define	__NR___posix_rename	270
 
@@ -764,8 +748,6 @@
 #define	__NR_getsid	286
 
 #define	__NR___clone	287
-/* XXX: Is this OK?  It's WEAK_ALIASed in __clone.S so probably it's alright */
-#define	__NR_clone	__NR___clone
 #define	__NR_fktrace	288
 #define	__NR_preadv	289
 

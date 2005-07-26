@@ -106,6 +106,12 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
 
 #define PRE(name)       DEFN_PRE_TEMPLATE(netbsdelf2, name)
 #define POST(name)      DEFN_POST_TEMPLATE(netbsdelf2, name)
+PRE(sys_ni_syscall)
+{
+   PRINT("non-existent syscall! (ni_syscall)");
+   PRE_REG_READ0(long, "ni_syscall");
+   SET_STATUS_Failure( VKI_ENOSYS );
+}
 
 PRE(sys_set_tid_address)
 {

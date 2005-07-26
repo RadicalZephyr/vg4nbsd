@@ -5201,7 +5201,11 @@ PRE(sys_pause)
    PRINT("sys_pause ( )");
    PRE_REG_READ0(long, "pause");
 }
-
+PRE(sys_sigsuspend)
+{
+	I_die_here;
+}
+ /* for netbsd we need this */
 //zz // XXX: x86-specific
 //zz PRE(sys_sigsuspend, SfMayBlock)
 //zz {

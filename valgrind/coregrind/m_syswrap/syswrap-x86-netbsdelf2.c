@@ -2071,7 +2071,6 @@ POST(sys_rasctl)
    I_die_here;
 }
 
-
 #undef PRE
 #undef POST
 
@@ -2112,7 +2111,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_unlink,            sys_unlink),         // 10
 //   GENX_(__NR_execve,            sys_execve),       // 11 obsolete 
    GENX_(__NR_chdir,             sys_chdir),          // 12
-   GENXY(__NR_fchdir,            sys_fchdir),         // 13
+   GENX_(__NR_fchdir,            sys_fchdir),         // 13
    GENX_(__NR_mknod,             sys_mknod),          // 14
 
    GENX_(__NR_chmod,             sys_chmod),          // 15
@@ -2278,7 +2277,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_compat_43_ogetrlimit, sys_getrlimit),   // 144
 
 // XXX?
-   GENXY(__NR_compat_43_osetrlimit, sys_setrlimit),   // 145
+   GENX_(__NR_compat_43_osetrlimit, sys_ni_syscall),   // 145
    NBSDX_(__NR_compat_43_okillpg,sys_compat_okillpg), // 146
    GENX_(__NR_setsid,            sys_setsid),         // 147
    GENX_(__NR_quotactl,          sys_quotactl),       // 148

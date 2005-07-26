@@ -412,10 +412,15 @@ extern void my_sigreturn(void);
 #  error Unknown platform
 #endif
 
-#define MYSIG(name)  _MYSIG(name)
-asm(
-   MYSIG(__NR_rt_sigreturn)
-);
+
+#define MYSIG(name)  _MYSIG(name) 
+	asm(
+#if defined (VGO_netbsdelf2)
+		MYSIG(__NR_compat_16___sigreturn14)
+#else
+		MYSIG(__NR_rt_sigreturn)
+#endif
+		);
 /* XXX - netbsd */
 
 static void handle_SCSS_change ( Bool force_update )

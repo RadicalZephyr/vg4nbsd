@@ -86,28 +86,39 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    
    /* find the beginning of the AUXV table */
    auxv = find_auxv(v_init_esp);
-
+   printf("auxv[0].u.a_val : %d, auxv[0].a_type : %d\n",auxv[0].u.a_val, auxv[0].a_type);
    /* Work out how we should move things to make space for the new
       auxv entry. It seems that ld.so wants a 16-byte aligned stack on
       entry, so make sure that's the case. */
+#if defined(VGO_netbsdelf2)
+   newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)));
+#else
    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)) & ~0xf);
+#endif
    delta = (char *)v_init_esp - (char *)newesp;
 
    memmove(newesp, v_init_esp, (char *)auxv - (char *)v_init_esp);
    
    v_init_esp = (void *)newesp;
-   auxv -= delta/sizeof(*auxv);
+/* we need to see whats the size of delta, we are freeing up space to
+   throw our own auxv headers in 3, */
+   printf("Space for auxv %d\n",delta/sizeof(*auxv));
+   printf("sizeof delta :%d , sizeof auxv : %d\n",delta, sizeof(*auxv));
+   auxv -= delta/sizeof(*auxv) ;
 
    /* stage2 needs this so it can clean up the padding we leave in
       place when we start it */
    auxv[0].a_type = AT_UME_PADFD;
    auxv[0].u.a_val = padfile;
-
    /* This will be needed by valgrind itself so that it can
       subsequently execve() children.  This needs to be done here
       because /proc/self/exe will go away once we unmap stage1. */
    auxv[1].a_type = AT_UME_EXECFD;
+#if defined(VGO_netbsdelf2)
+  auxv[1].u.a_val = open("/proc/curproc/file", O_RDONLY);
+#else
    auxv[1].u.a_val = open("/proc/self/exe", O_RDONLY);
+#endif
 
    /* make sure the rest are sane */
    for(i = new_entries; i < delta/sizeof(*auxv); i++) {
@@ -119,49 +130,44 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
       executable */
    seen = 0;
    for(; auxv->a_type != AT_NULL; auxv++) {
-      if (0)
-	 printf("doing auxv %p %5lld: %lld %p\n",
-                auxv, (Long)auxv->a_type, (Long)auxv->u.a_val, auxv->u.a_ptr);
+	   //    if (0)
+	   printf("doing auxv %p %5lld: %lld \n",
+		  auxv, (Long)auxv->a_type, (Long)auxv->u.a_val);
 
-      switch(auxv->a_type) {
-      case AT_PHDR:
-	 seen |= 1;
-	 auxv->u.a_val = info->phdr;
-	 break;
+	   switch(auxv->a_type) {
+	   case AT_PHDR:
+		   printf("seen 1\n");
+		   seen |= 1;
+		   auxv[i].u.a_val = info->phdr;
+		   break;
 
-      case AT_PHNUM:
-	 seen |= 2;
-	 auxv->u.a_val = info->phnum;
-	 break;
+	   case AT_PHNUM:
+		   printf("seen 2\n");
+		   seen |= 2;
+		   auxv[i].u.a_val = info->phnum;
+		   break;
 
-      case AT_BASE:
-	 seen |= 4;
-	 auxv->u.a_val = info->interp_base;
-	 break;
+	   case AT_BASE:
+		   printf("seen 4\n");
+		   seen |= 4;
+		   auxv[i].u.a_val = info->interp_base;
+		   break;
 
-      case AT_ENTRY:
-	 seen |= 8;
-	 auxv->u.a_val = info->entry;
-	 break;
-
-#if (defined(AT_SYSINFO) || defined(AT_SYSINFO_EHDR))
-#ifdef AT_SYSINFO
-      case AT_SYSINFO:
-#endif
-#ifdef AT_SYSINFO_EHDR
-      case AT_SYSINFO_EHDR:
-#endif
-	 auxv->a_type = AT_IGNORE;
-	 break;
-#endif
-      }
+	   case AT_ENTRY:
+		   printf("seen 8\n");
+		   seen |= 8;
+		   auxv[i].u.a_val = info->entry;
+		   break;
+	   default:
+		   break;
+	   }
    }
 
    /* If we didn't see all the entries we need to fix up, then we
       can't make the new executable viable. */
    if (seen != 0xf) {
-      fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen);
-      exit(1);
+	   fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen);
+	   exit(1);
    }
 
    return v_init_esp;

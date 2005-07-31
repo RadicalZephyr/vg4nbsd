@@ -81,9 +81,9 @@ EXTRA_DIST = \
 	valgrind.vs \
 	README_MODULES.txt
 
-BUILT_SOURCES = stage2.lds
-CLEANFILES = stage2.lds
-	
+# BUILT_SOURCES = stage2.lds
+# CLEANFILES = stage2.lds
+
 valgrind_SOURCES = \
 	ume.c \
 	\
@@ -181,12 +181,12 @@ vg_preload_core_so_LDFLAGS = \
 # Extract ld's default linker script and hack it to our needs.
 # This relies on finding "executable_start" and replacing the address on
 # that line with kickstart_base.
-stage2.lds: Makefile
-	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/d' \
-		-e '/executable_start/s/0x[0-9A-Fa-f]\+/kickstart_base/g' > $@ \
-	|| rm -f $@
+# stage2.lds: Makefile
+# 	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
+# 		-e '1,/^=====\+$$/d' \
+# 		-e '/^=====\+$$/d' \
+# 		-e '/executable_start/s/0x[0-9A-Fa-f]\+/kickstart_base/g' > $@ \
+# 	|| rm -f $@
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS)
 

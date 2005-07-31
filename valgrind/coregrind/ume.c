@@ -180,7 +180,24 @@ asm(
 /*------------------------------------------------------------*/
 /*--- Finding auxv on the stack                            ---*/
 /*------------------------------------------------------------*/
+#if defined(VGO_netbsdelf2)
+/* in netbsd ld_elf.so this calculation is defined using Elf_Addr
+ */
+struct ume_auxv *find_auxv(UWord* sp)
+{
+	char ** argu;
+	long argc = 0;
+	//sp+= 2; /* skip over return argument space */
+	argu = ( const char **) &sp[1];
+	printf("The argu is %s\n",argu[0]);
+	argc = *(long *)sp;
+	sp+=2+argc ; /* skip over argc arguments and null terminator */
+        while(*sp++!=0) { } /* skip over environment and null terminator */
+//	sp+=2;	
+	return (struct ume_auxv *)sp;
+}
 
+#else
 struct ume_auxv *find_auxv(UWord* sp)
 {
    sp++;                // skip argc (Nb: is word-sized, not int-sized!)
@@ -196,6 +213,7 @@ struct ume_auxv *find_auxv(UWord* sp)
    return (struct ume_auxv *)sp;
 }
 
+#endif
 /*------------------------------------------------------------*/
 /*--- Loading ELF files                                    ---*/
 /*------------------------------------------------------------*/
@@ -362,8 +380,8 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    ESZ(Word) interp_align = VKI_PAGE_SIZE;
    int i;
    void *entry;
+//   ESZ(Addr) ebase = 0;
    ESZ(Addr) ebase = 0;
-
 #ifdef HAVE_PIE
    ebase = info->exe_base;
 #endif
@@ -386,8 +404,11 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 break;
 
       case PT_LOAD:
-	 if (ph->p_vaddr < minaddr)
-	    minaddr = ph->p_vaddr;
+      printf ("in pt_load\n");
+	 if (ph->p_vaddr < minaddr) {
+	    minaddr = ph->p_vaddr; 
+	    printf("minaddr: %x\n",minaddr);
+      }
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
 	    maxaddr = ph->p_vaddr+ph->p_memsz;
 	 break;
@@ -443,7 +464,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       }
       }
    }
-
+#if !defined(VGO_netbsdelf2)
    if (info->phdr == 0)
       info->phdr = minaddr + e->e.e_phoff;
 
@@ -458,7 +479,11 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 return ENOMEM;
       }
    }
-
+#endif /*XXX-  for netbsd I am not sure if this check is right ,
+   info->exe_end etc are based on  some assumptions which are not
+      valid for linux, for example it assumes stack on top i think ,
+      this warrants more investigation. 
+       */
    info->brkbase = mapelf(e, ebase);	/* map the executable */
 
    if (info->brkbase == 0)

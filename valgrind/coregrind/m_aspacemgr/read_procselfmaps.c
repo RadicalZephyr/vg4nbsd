@@ -101,7 +101,11 @@ static void read_procselfmaps ( void )
    Int n_chunk, fd;
    
    /* Read the initial memory mapping from the /proc filesystem. */
-   fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
+#if defined (VGO_netbsdelf2)
+  fd = VG_(open) ( "/proc/curproc/maps", VKI_O_RDONLY, 0 );
+#else
+  fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
+#endif
    if (fd < 0) {
       VG_(message)(Vg_UserMsg, "FATAL: can't open /proc/self/maps");
       VG_(exit)(1);

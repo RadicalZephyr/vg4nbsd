@@ -95,15 +95,15 @@ extern int do_exec(const char *exe, struct exeinfo *info);
 /*------------------------------------------------------------*/
 /*--- Finding and dealing with auxv                        ---*/
 /*------------------------------------------------------------*/
-
 struct ume_auxv
 {
    Word a_type;
-   union {
+  union {
       void *a_ptr;
       Word a_val;
    } u;
 };
+
 
 extern struct ume_auxv *find_auxv(UWord* orig_esp);
 

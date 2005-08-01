@@ -9,7 +9,7 @@ SEARCH_DIR("/usr/i386--netbsdelf/lib"); SEARCH_DIR("/usr/lib");
 SECTIONS
 {
   /* Read-only sections, merged into text segment: */
-  . = kickstart_base + SIZEOF_HEADERS;
+  . =  kickstart_base + SIZEOF_HEADERS;
   .interp         : { *(.interp) }
   .hash           : { *(.hash) }
   .dynsym         : { *(.dynsym) }

@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- Startup: preliminaries                              stage1.c ---*/
 /*--------------------------------------------------------------------*/
@@ -80,7 +79,6 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    int delta;
    int i;
    static const int new_entries = 2;
-
    /* make sure we're running on the private stack */
    assert(&delta >= stack && &delta < &stack[sizeof(stack)/sizeof(*stack)]);
    
@@ -90,11 +88,11 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    /* Work out how we should move things to make space for the new
       auxv entry. It seems that ld.so wants a 16-byte aligned stack on
       entry, so make sure that's the case. */
-#if defined(VGO_netbsdelf2)
-   newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)));
-#else
+/* #if defined(VGO_netbsdelf2) */
+/*    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv))); */
+/* #else */
    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)) & ~0xf);
-#endif
+/* #endif */
    delta = (char *)v_init_esp - (char *)newesp;
 
    memmove(newesp, v_init_esp, (char *)auxv - (char *)v_init_esp);
@@ -130,15 +128,17 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
       executable */
    seen = 0;
    for(; auxv->a_type != AT_NULL; auxv++) {
-	   //    if (0)
-	   printf("doing auxv %p %5lld: %lld \n",
+	       if (1)
+	   printf("doing auxv %p %5lld: %p \n",
 		  auxv, (Long)auxv->a_type, (Long)auxv->u.a_val);
-
+/* 	   if(seen == 0xf) */
+/* 		   break; */
 	   switch(auxv->a_type) {
 	   case AT_PHDR:
 		   printf("seen 1\n");
 		   seen |= 1;
 		   auxv[i].u.a_val = info->phdr;
+		   
 		   break;
 
 	   case AT_PHNUM:
@@ -158,9 +158,15 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
 		   seen |= 8;
 		   auxv[i].u.a_val = info->entry;
 		   break;
+
 	   default:
 		   break;
+
 	   }
+	       if (1)
+	   printf("new auxv %p %5lld: %p \n",
+		  auxv, (Long)auxv->a_type, (Long)auxv->u.a_val);
+
    }
 
    /* If we didn't see all the entries we need to fix up, then we
@@ -273,22 +279,25 @@ static void main2(void)
    extern char _end;
    int *esp;
    char buf[strlen(valgrind_lib) + sizeof(stage2) + 16];
-   info.exe_end  = VG_PGROUNDDN(init_sp);
+   info.exe_end  = VG_PGROUNDDN(init_sp); // rounding down
+   printf("info.exe_end = %p\n", info.exe_end);
 #ifdef HAVE_PIE
    info.exe_base = VG_ROUNDDN(info.exe_end - 0x02000000, 0x10000000);
    assert(info.exe_base >= VG_PGROUNDUP(&_end));
-   info.map_base = info.exe_base + 0x01000000;
+   info.map_base = info.exe_base + 0x01000000  ;
 #else
    // If this system doesn't have PIE (position-independent executables),
    // we have to choose a hardwired location for stage2.
    info.exe_base = VG_PGROUNDUP(&_end);
-   info.map_base = KICKSTART_BASE + 0x01000000;
+   printf("info.exe_base = %p\n", info.exe_base);
+   info.map_base = KICKSTART_BASE /*  + 0x01000000 */;
+   printf("info.map_base = %p\n", info.map_base);
 #endif
 
    info.argv = NULL;
 
    snprintf(buf, sizeof(buf), "%s/%s", valgrind_lib, stage2);
-
+	  printf("valgrind_lib = %s\n",valgrind_lib);
    err = do_exec(buf, &info);
 
    if (err != 0) {
@@ -300,9 +309,11 @@ static void main2(void)
    /* Make sure stage2's dynamic linker can't tromp on the lower part
       of the address space. */
    padfile = as_openpadfile();
-   as_pad(0, (void *)info.map_base, padfile);
-   
+   as_pad(0, (void *)info.map_base, padfile); // map base is the start of our stuff 
+   printf("init sp : %x\n", init_sp);
+
    esp = fix_auxv(init_sp, &info, padfile);
+   printf("after fix_auxb\n");
 
    if (0) {
       printf("---------- launch stage 2 ----------\n");
@@ -311,9 +322,12 @@ static void main2(void)
    }
 
    VG_(debugLog)(1, "stage1", "main2(): starting stage2\n");
+   printf("jumping to stage 2 \n");
+   printf("esp : %x \n eip : %x\n",esp, info.init_eip);
    jump_and_switch_stacks(
-      (Addr) esp,           /* stack */
-      (Addr) info.init_eip  /* where to */
+         (Addr) esp, /* where to */
+   (Addr) info.init_eip           /* stack */
+
    );
 
    /*NOTREACHED*/
@@ -345,12 +359,16 @@ int main(int argc, char** argv)
 
    // Initial stack pointer is to argc, which is immediately before argv[0]
    // on the stack.  Nb: Assumes argc is word-aligned.
+// in case of netbsd initial stack pointer will beeeeeeee return argc argv 
+#if defined(VGO_netbsdelf2)
+   init_sp = argv - 1;
+#else
    init_sp = argv - 1;
 
    /* The Linux libc startup sequence leaves this in an apparently
       undefined state, but it really is defined, so mark it so. */
    VALGRIND_MAKE_READABLE(init_sp, sizeof(int));
-
+#endif
    cp = getenv(VALGRINDLIB);
 
    if (cp != NULL)
@@ -372,7 +390,8 @@ int main(int argc, char** argv)
    VG_(debugLog)(1, "stage1", "main(): running main2() on new stack\n");
    jump_and_switch_stacks(
       (Addr) stack + sizeof(stack),  /* stack */
-      (Addr) main2                   /* where to */
+       (Addr) main2                   /* where to */
+
    );
 
    /*NOTREACHED*/

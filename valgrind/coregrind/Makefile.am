@@ -90,7 +90,7 @@ valgrind_SOURCES = \
 	stage1.c \
 	m_debuglog.c
 valgrind_DEPENDENCIES =
-valgrind_LDFLAGS=-static -g
+valgrind_LDFLAGS= -g
 valgrind_LDADD=
 
 stage2_SOURCES = \

@@ -80,7 +80,7 @@ void foreach_map(int (*fn)(char *start, char *end,
    static char buf[10240];
    char *bufptr = buf;
    int ret, fd;
-#ifdef VGO_netbsdelf2
+#if defined(VGO_netbsdelf2)
    fd = open("/proc/curproc/maps", O_RDONLY);
 #else
    fd = open("/proc/self/maps", O_RDONLY);
@@ -128,7 +128,7 @@ void foreach_map(int (*fn)(char *start, char *end,
 
 // __attribute__((noreturn))
 // void jump_and_switch_stacks ( Addr stack, Addr dst );
-#if defined(VGA_x86)
+#if defined(VGA_x86) 
 // 4(%esp) == stack
 // 8(%esp) == dst
 asm(
@@ -187,7 +187,7 @@ struct ume_auxv *find_auxv(UWord* sp)
 {
 	char ** argu;
 	long argc = 0;
-	//sp+= 2; /* skip over return argument space */
+//	sp+= 2; /* skip over return argument space */
 	argu = ( const char **) &sp[1];
 	printf("The argu is %s\n",argu[0]);
 	argc = *(long *)sp;
@@ -380,12 +380,11 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    ESZ(Word) interp_align = VKI_PAGE_SIZE;
    int i;
    void *entry;
-//   ESZ(Addr) ebase = 0;
    ESZ(Addr) ebase = 0;
 #ifdef HAVE_PIE
    ebase = info->exe_base;
 #endif
-
+   printf("In load_ELF!\n");
    e = readelf(fd, name);
 
    if (e == NULL)
@@ -464,7 +463,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       }
       }
    }
-#if !defined(VGO_netbsdelf2)
+
    if (info->phdr == 0)
       info->phdr = minaddr + e->e.e_phoff;
 
@@ -479,7 +478,8 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 return ENOMEM;
       }
    }
-#endif /*XXX-  for netbsd I am not sure if this check is right ,
+   printf("yay! acceptable!\n");
+ /*XXX-  for netbsd I am not sure if this check is right ,
    info->exe_end etc are based on  some assumptions which are not
       valid for linux, for example it assumes stack on top i think ,
       this warrants more investigation. 
@@ -488,7 +488,10 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
    if (info->brkbase == 0)
       return ENOMEM;
-
+   if(!interp)
+	   printf("interp is null\n");
+   else 
+	   printf("interp =  %x\n",interp);
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
       void* res;
@@ -521,7 +524,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
    info->exe_base = minaddr + ebase;
    info->exe_end  = maxaddr + ebase;
-
+   printf("e_entry %x, base %x\n", interp->e.e_entry,info->interp_base);
    info->init_eip = (Addr)entry;
 
    free(e->p);

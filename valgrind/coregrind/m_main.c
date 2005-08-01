@@ -2544,6 +2544,7 @@ int main(int argc, char **argv, char **envp)
    //--------------------------------------------------------------
    /* Start the debugging-log system ASAP.  First find out how many 
       "-d"s were specified.  This is a pre-scan of the command line. */
+   printf("In stage 2 main!\n");
    loglevel = 0;
    for (i = 1; i < argc; i++) {
       if (argv[i][0] != '-')

@@ -137,26 +137,25 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
 	   case AT_PHDR:
 		   printf("seen 1\n");
 		   seen |= 1;
-		   auxv[i].u.a_val = info->phdr;
-		   
+		   auxv->u.a_val = info->phdr;
 		   break;
 
 	   case AT_PHNUM:
 		   printf("seen 2\n");
 		   seen |= 2;
-		   auxv[i].u.a_val = info->phnum;
+		   auxv->u.a_val = info->phnum;
 		   break;
 
 	   case AT_BASE:
 		   printf("seen 4\n");
 		   seen |= 4;
-		   auxv[i].u.a_val = info->interp_base;
+		   auxv->u.a_val = info->interp_base;
 		   break;
 
 	   case AT_ENTRY:
 		   printf("seen 8\n");
 		   seen |= 8;
-		   auxv[i].u.a_val = info->entry;
+		   auxv->u.a_val = info->entry;
 		   break;
 
 	   default:

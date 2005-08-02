@@ -397,7 +397,9 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
       switch(ph->p_type) {
       case PT_PHDR:
+      printf("in pt_hdr\n");
 	 info->phdr = ph->p_vaddr + ebase;
+	 printf("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
 	 break;
 
       case PT_LOAD:
@@ -409,6 +411,17 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
 	    maxaddr = ph->p_vaddr+ph->p_memsz;
 	 break;
+
+      case PT_DYNAMIC:
+      printf ("in pt_dynamic\n");
+	 if (ph->p_vaddr < minaddr) {
+	    minaddr = ph->p_vaddr; 
+	    printf("minaddr: %x\n",minaddr);
+      }
+	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
+	    maxaddr = ph->p_vaddr+ph->p_memsz;
+	 printf("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
+	 break;
 			
       case PT_INTERP: {
 	 char *buf = malloc(ph->p_filesz+1);
@@ -416,6 +429,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 int intfd;
 	 int baseaddr_set;
 
+      printf("in pt_interp\n");
          assert(buf);
 	 pread(fd, buf, ph->p_filesz, ph->p_offset);
 	 buf[ph->p_filesz] = '\0';

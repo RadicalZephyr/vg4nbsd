@@ -187,13 +187,11 @@ struct ume_auxv *find_auxv(UWord* sp)
 {
 	char ** argu;
 	long argc = 0;
-//	sp+= 2; /* skip over return argument space */
 	argu = ( const char **) &sp[1];
 	printf("The argu is %s\n",argu[0]);
 	argc = *(long *)sp;
 	sp+=2+argc ; /* skip over argc arguments and null terminator */
         while(*sp++!=0) { } /* skip over environment and null terminator */
-//	sp+=2;	
 	return (struct ume_auxv *)sp;
 }
 

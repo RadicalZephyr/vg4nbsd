@@ -359,15 +359,11 @@ int main(int argc, char** argv)
    // Initial stack pointer is to argc, which is immediately before argv[0]
    // on the stack.  Nb: Assumes argc is word-aligned.
 // in case of netbsd initial stack pointer will beeeeeeee return argc argv 
-#if defined(VGO_netbsdelf2)
-   init_sp = argv - 1;
-#else
    init_sp = argv - 1;
 
    /* The Linux libc startup sequence leaves this in an apparently
       undefined state, but it really is defined, so mark it so. */
    VALGRIND_MAKE_READABLE(init_sp, sizeof(int));
-#endif
    cp = getenv(VALGRINDLIB);
 
    if (cp != NULL)

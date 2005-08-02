@@ -2,7 +2,7 @@
 OUTPUT_FORMAT("elf32-i386", "elf32-i386",
 	      "elf32-i386")
 OUTPUT_ARCH(i386)
-ENTRY(_ume_entry)
+ENTRY(_start)
 SEARCH_DIR("/usr/i386--netbsdelf/lib"); SEARCH_DIR("/usr/lib");
 /* Do we need any of these for elf?
    __DYNAMIC = 0;    */

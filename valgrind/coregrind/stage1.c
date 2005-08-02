@@ -88,11 +88,11 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    /* Work out how we should move things to make space for the new
       auxv entry. It seems that ld.so wants a 16-byte aligned stack on
       entry, so make sure that's the case. */
-/* #if defined(VGO_netbsdelf2) */
-/*    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv))); */
-/* #else */
+#if defined(VGO_netbsdelf2)
+   newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)));
+#else
    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)) & ~0xf);
-/* #endif */
+#endif
    delta = (char *)v_init_esp - (char *)newesp;
 
    memmove(newesp, v_init_esp, (char *)auxv - (char *)v_init_esp);
@@ -324,9 +324,8 @@ static void main2(void)
    printf("jumping to stage 2 \n");
    printf("esp : %x \n eip : %x\n",esp, info.init_eip);
    jump_and_switch_stacks(
-         (Addr) esp, /* where to */
-   (Addr) info.init_eip           /* stack */
-
+         (Addr) esp,            /* stack */
+         (Addr) info.init_eip   /* Where to jump */
    );
 
    /*NOTREACHED*/

@@ -401,10 +401,9 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 info->phdr = ph->p_vaddr + ebase;
 	 printf("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
 	 break;
-
       case PT_LOAD:
-      printf ("in pt_load\n");
-	 if (ph->p_vaddr < minaddr) {
+	      printf ("in pt_load\n");
+	      if (ph->p_vaddr < minaddr) {
 	    minaddr = ph->p_vaddr; 
 	    printf("minaddr: %x\n",minaddr);
       }
@@ -490,7 +489,6 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 return ENOMEM;
       }
    }
-   printf("yay! acceptable!\n");
  /*XXX-  for netbsd I am not sure if this check is right ,
    info->exe_end etc are based on  some assumptions which are not
       valid for linux, for example it assumes stack on top i think ,
@@ -519,7 +517,6 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       res = mmap(base, interp_size, PROT_NONE, flags, -1, 0);
       check_mmap(res, base, interp_size);
       base = res;
-
       baseoff = base - interp_addr;
 
       mapelf(interp, (ESZ(Addr))baseoff);
@@ -533,12 +530,10 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       free(interp);
    } else
       entry = (void *)e->e.e_entry;
-
    info->exe_base = minaddr + ebase;
    info->exe_end  = maxaddr + ebase;
-   printf("e_entry %x, base %x\n", interp->e.e_entry,info->interp_base);
    info->init_eip = (Addr)entry;
-
+   printf("info->init_eip: %x",info->init_eip);
    free(e->p);
    free(e);
 

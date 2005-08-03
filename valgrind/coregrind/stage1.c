@@ -88,11 +88,11 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    /* Work out how we should move things to make space for the new
       auxv entry. It seems that ld.so wants a 16-byte aligned stack on
       entry, so make sure that's the case. */
-#if defined(VGO_netbsdelf2)
-   newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)));
-#else
+/* #if defined(VGO_netbsdelf2) */
+/*    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv))); */
+/* #else */
    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)) & ~0xf);
-#endif
+/* #endif */
    delta = (char *)v_init_esp - (char *)newesp;
 
    memmove(newesp, v_init_esp, (char *)auxv - (char *)v_init_esp);
@@ -102,7 +102,22 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    throw our own auxv headers in 3, */
    printf("Space for auxv %d\n",delta/sizeof(*auxv));
    printf("sizeof delta :%d , sizeof auxv : %d\n",delta, sizeof(*auxv));
-   auxv -= delta/sizeof(*auxv) ;
+/* if auxv is not aligned, we move it backward till its aligned. We
+   find out how much space is required, walk tmp_auxv to the last auxv
+   entry.  then move the junk forward. Remeber that the AT_NULL entry
+   also needs to be moved forward. */
+
+   if( ( delta%sizeof(*auxv) ) != 0 )
+    {	    int i = 0;
+    printf("adjusting auxv\n");
+	    struct ume_auxv* tmp = auxv; /* to top */
+	    void * new_auxv = (void *) auxv - delta%(sizeof(*auxv));
+	    for (i=0; tmp->a_type != AT_NULL;i++,tmp++ );
+	    memmove( new_auxv,auxv,(i+1)* sizeof(*auxv) );
+	    auxv = (struct ume_auxv *)new_auxv;
+    }
+   auxv -= delta/sizeof(*auxv) ; /* move it back even further for 2
+				  * new */
 
    /* stage2 needs this so it can clean up the padding we leave in
       place when we start it */
@@ -155,7 +170,7 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
 	   case AT_ENTRY:
 		   printf("seen 8\n");
 		   seen |= 8;
-		   auxv->u.a_val = info->entry;
+		   auxv->u.a_val = info->entry; 
 		   break;
 
 	   default:
@@ -170,10 +185,10 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
 
    /* If we didn't see all the entries we need to fix up, then we
       can't make the new executable viable. */
-   if (seen != 0xf) {
-	   fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen);
-	   exit(1);
-   }
+/*    if (seen != 0xf) { */
+/* 	   fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen); */
+/* 	   exit(1); */
+/*    } */
 
    return v_init_esp;
 }
@@ -323,6 +338,7 @@ static void main2(void)
    VG_(debugLog)(1, "stage1", "main2(): starting stage2\n");
    printf("jumping to stage 2 \n");
    printf("esp : %x \n eip : %x\n",esp, info.init_eip);
+
    jump_and_switch_stacks(
          (Addr) esp,            /* stack */
          (Addr) info.init_eip   /* Where to jump */

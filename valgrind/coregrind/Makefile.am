@@ -151,7 +151,7 @@ st2_DEPS_common = \
 	$(stage2_extra2)
 
 st2_LDFLAGS_common = \
-	-Wl,--export-dynamic -g \
+	-Wl,-static --export-dynamic -g \
 	-Wl,-version-script $(srcdir)/valgrind.vs
 
 if USE_PIE

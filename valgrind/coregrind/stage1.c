@@ -88,11 +88,11 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    /* Work out how we should move things to make space for the new
       auxv entry. It seems that ld.so wants a 16-byte aligned stack on
       entry, so make sure that's the case. */
-/* #if defined(VGO_netbsdelf2) */
-/*    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv))); */
-/* #else */
+#if defined(VGO_netbsdelf2)
+   newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)));
+#else
    newesp = (int *)(((unsigned long)v_init_esp - new_entries * sizeof(*auxv)) & ~0xf);
-/* #endif */
+#endif
    delta = (char *)v_init_esp - (char *)newesp;
 
    memmove(newesp, v_init_esp, (char *)auxv - (char *)v_init_esp);
@@ -107,15 +107,15 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    entry.  then move the junk forward. Remeber that the AT_NULL entry
    also needs to be moved forward. */
 
-   if( ( delta%sizeof(*auxv) ) != 0 )
-    {	    int i = 0;
-    printf("adjusting auxv\n");
-	    struct ume_auxv* tmp = auxv; /* to top */
-	    void * new_auxv = (void *) auxv - delta%(sizeof(*auxv));
-	    for (i=0; tmp->a_type != AT_NULL;i++,tmp++ );
-	    memmove( new_auxv,auxv,(i+1)* sizeof(*auxv) );
-	    auxv = (struct ume_auxv *)new_auxv;
-    }
+/*    if( ( delta%sizeof(*auxv) ) != 0 ) */
+/*     {	    int j = 0; */
+/*     printf("adjusting auxv\n"); */
+/* 	    struct ume_auxv* tmp = auxv; /\* to top *\/ */
+/* 	    void * new_auxv = (void *) auxv - delta%(sizeof(*auxv)); */
+/* 	    for (j=0; tmp->a_type != AT_NULL;j++,tmp++ ); */
+/* 	    memmove( new_auxv,auxv,(j+1)* sizeof(*auxv) ); */
+/* 	    auxv = (struct ume_auxv *)new_auxv; */
+/*     } */
    auxv -= delta/sizeof(*auxv) ; /* move it back even further for 2
 				  * new */
 

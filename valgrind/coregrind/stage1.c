@@ -142,20 +142,21 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    auxv[4].u.a_val = info->interp_base;
    auxv[5].a_type = AT_ENTRY;
    auxv[5].u.a_val = info->entry;
-   auxv[7].a_type = AT_PAGESZ;
-   auxv[7].u.a_val = 4096;
-   auxv[8].a_type = AT_PHENT;
-   auxv[8].u.a_val = 32; /*sizeof(info->phdr);*/
-   auxv[9].a_type = AT_FLAGS;
-   auxv[9].u.a_val = 0; /* ? */
-   auxv[10].a_type = AT_EUID;
-   auxv[10].u.a_val = geteuid();
-   auxv[11].a_type = AT_RUID;
-   auxv[11].u.a_val = getuid();
-   auxv[12].a_type = AT_EGID;
-   auxv[12].u.a_val = getegid();
-   auxv[13].a_type = AT_RGID;
-   auxv[13].u.a_val = getgid();
+   auxv[6].a_type = AT_PAGESZ;
+   auxv[6].u.a_val = 4096;
+   auxv[7].a_type = AT_PHENT;
+   auxv[7].u.a_val = 32; /*sizeof(info->phdr);*/
+   auxv[8].a_type = AT_FLAGS;
+   auxv[8].u.a_val = 0; /* ? */
+   auxv[9].a_type = AT_EUID;
+   auxv[9].u.a_val = geteuid();
+   auxv[10].a_type = AT_RUID;
+   auxv[10].u.a_val = getuid();
+   auxv[11].a_type = AT_EGID;
+   auxv[11].u.a_val = getegid();
+   auxv[12].a_type = AT_RGID;
+   auxv[12].u.a_val = getgid();
+   auxv[13].a_type = AT_NULL;
 #else
    auxv[1].u.a_val = open("/proc/self/exe", O_RDONLY);
 #endif

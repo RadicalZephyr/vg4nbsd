@@ -78,7 +78,11 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    int seen;
    int delta;
    int i;
+#if defined(VGO_netbsdelf2)
+   static const int new_entries = 7;
+#else
    static const int new_entries = 2;
+#endif
    /* make sure we're running on the private stack */
    assert(&delta >= stack && &delta < &stack[sizeof(stack)/sizeof(*stack)]);
    
@@ -129,6 +133,17 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
    auxv[1].a_type = AT_UME_EXECFD;
 #if defined(VGO_netbsdelf2)
   auxv[1].u.a_val = open("/proc/curproc/file", O_RDONLY);
+/* fill in the rest */
+   auxv[2].a_type= AT_PHDR;
+   auxv[2].u.a_val = 0;
+   auxv[3].a_type = AT_PHNUM;
+   auxv[3].u.a_val = 0;
+   auxv[4].a_type = AT_BASE;
+   auxv[4].u.a_val = 0;
+   auxv[5].a_type = AT_ENTRY;
+   auxv[5].u.a_val = 0;
+   auxv[6].a_type = AT_NULL;
+   auxv[6].u.a_val = 0;
 #else
    auxv[1].u.a_val = open("/proc/self/exe", O_RDONLY);
 #endif
@@ -185,10 +200,10 @@ static void *fix_auxv(void *v_init_esp, const struct exeinfo *info,
 
    /* If we didn't see all the entries we need to fix up, then we
       can't make the new executable viable. */
-/*    if (seen != 0xf) { */
-/* 	   fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen); */
-/* 	   exit(1); */
-/*    } */
+   if (seen != 0xf) {
+	   fprintf(stderr, "valgrind: we didn't see enough auxv entries (seen=%x)\n", seen);
+	   exit(1);
+   }
 
    return v_init_esp;
 }
@@ -329,7 +344,7 @@ static void main2(void)
    esp = fix_auxv(init_sp, &info, padfile);
    printf("after fix_auxb\n");
 
-   if (0) {
+   if (1) {
       printf("---------- launch stage 2 ----------\n");
       printf("eip=%p esp=%p\n", (void *)info.init_eip, esp);
       foreach_map(prmap, /*dummy*/NULL);

@@ -90,7 +90,7 @@ valgrind_SOURCES = \
 	stage1.c \
 	m_debuglog.c
 valgrind_DEPENDENCIES =
-valgrind_LDFLAGS= -g
+valgrind_LDFLAGS= -g -Wl,-static
 valgrind_LDADD=
 
 stage2_SOURCES = \
@@ -151,7 +151,7 @@ st2_DEPS_common = \
 	$(stage2_extra2)
 
 st2_LDFLAGS_common = \
-	-Wl,-static --export-dynamic -g \
+	--export-dynamic -g \
 	-Wl,-version-script $(srcdir)/valgrind.vs
 
 if USE_PIE

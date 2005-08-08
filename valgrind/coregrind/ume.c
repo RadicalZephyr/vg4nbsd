@@ -374,6 +374,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    ESZ(Addr) minaddr = ~0;	/* lowest mapped address */
    ESZ(Addr) maxaddr = 0;	/* highest mapped address */
    ESZ(Addr) interp_addr = 0;	/* interpreter (ld.so) address */
+   ESZ(Addr) dyn_addr = 0;	/* interpreter (ld.so) address */
    ESZ(Word) interp_size = 0;	/* interpreter size */
    ESZ(Word) interp_align = VKI_PAGE_SIZE;
    int i;
@@ -420,6 +421,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
 	    maxaddr = ph->p_vaddr+ph->p_memsz;
 	 printf("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
+	 dyn_addr = ph->p_vaddr;
 	 break;
 			
       case PT_INTERP: {
@@ -428,7 +430,10 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 int intfd;
 	 int baseaddr_set;
 
-      printf("in pt_interp\n");
+/*       printf("in pt_interp\n"); */
+/* 	       interp_addr  = ph->p_vaddr; */
+/* 	       printf("interp_addr 1 %p\n",ph->p_vaddr); */
+
          assert(buf);
 	 pread(fd, buf, ph->p_filesz, ph->p_offset);
 	 buf[ph->p_filesz] = '\0';
@@ -455,7 +460,6 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	       continue;
 	    
 	    if (!baseaddr_set) {
-	       interp_addr  = iph->p_vaddr;
 	       interp_align = iph->p_align;
 	       baseaddr_set = 1;
 	    }
@@ -474,7 +478,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       }
       }
    }
-
+   printf("interp_addr = %p\n", interp_addr);
    if (info->phdr == 0)
       info->phdr = minaddr + e->e.e_phoff;
 
@@ -501,7 +505,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    if(!interp)
 	   printf("interp is null\n");
    else 
-	   printf("interp =  %x\n",interp);
+	   printf("interp =  %p\n",interp);
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
       void* res;
@@ -513,18 +517,19 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 base = (char *)VG_ROUNDUP(info->map_base, interp_align);
 	 flags |= MAP_FIXED;
       }
-
-      res = mmap(base, interp_size, PROT_NONE, flags, -1, 0);
-      check_mmap(res, base, interp_size);
+      printf("doing mmap here\n");
+           res = mmap(base, interp_size, PROT_NONE, flags, -1, 0);
+           check_mmap(res, base, interp_size);
       base = res;
       baseoff = base - interp_addr;
 
       mapelf(interp, (ESZ(Addr))baseoff);
-
+      printf("after  mmap and mapelf here\n");
       close(interp->fd);
 
       entry = baseoff + interp->e.e_entry;
       info->interp_base = (ESZ(Addr))base;
+      printf("info interp_base = %p\n " ,info->interp_base);
 
       free(interp->p);
       free(interp);

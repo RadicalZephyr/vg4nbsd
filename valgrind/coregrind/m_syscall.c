@@ -92,7 +92,15 @@ static UWord do_syscall_WRK (
           UWord a1, UWord a2, UWord a3,
           UWord a4, UWord a5, UWord a6
        );
-#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2) /* XXX - NetBSD */
+#if defined(VGP_x86_netbsdelf2)
+/* All args on the stack, syscall number in %eax */
+asm(
+"do_syscall_WRK:\n"
+"	popl	%eax\n"
+"	int	$0x80\n"
+"	ret\n"
+);
+#elif defined(VGP_x86_linux)
 /* Incoming args (syscall number + up to 6 args) come on the stack.
    (ie. the C calling convention).
 

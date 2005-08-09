@@ -147,6 +147,39 @@ ULong VG_(bbs_done) = 0;
 /* Counts pertaining to internal sanity checking. */
 static UInt sanity_fast_count = 0;
 static UInt sanity_slow_count = 0;
+#if defined (VGO_netbsdelf2)  
+extern char _end[];
+const char* curbrk = _end;
+
+int
+brk( void* newbrk)
+{
+   char* oldpg = (char*) VG_PGROUNDUP(curbrk);
+   char* newpg = (char*) VG_PGROUNDUP(newbrk);
+
+   if (newpg < oldpg) {
+      munmap(newpg, oldpg - newpg);
+   } else if (newpg > oldpg) {
+      mmap(oldpg, newpg - oldpg, PROT_READ|PROT_WRITE|PROT_EXEC,
+	   MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0);
+   }
+   curbrk = newbrk;
+   return 0;
+}
+
+void*
+sbrk(intptr_t incr)
+{
+   int res;
+   printf("in sbk\n");
+   res = brk(curbrk + incr);
+   if (res < 0)
+      return (void*) -1;
+   else
+      return (void*) curbrk;
+}
+
+#endif
 
 static void print_all_stats ( void )
 {
@@ -2545,7 +2578,7 @@ int main(int argc, char **argv, char **envp)
    /* Start the debugging-log system ASAP.  First find out how many 
       "-d"s were specified.  This is a pre-scan of the command line. */
    printf("In stage 2 main!\n");
-   loglevel = 0;
+   loglevel = 5;
    for (i = 1; i < argc; i++) {
       if (argv[i][0] != '-')
          break;
@@ -2554,11 +2587,11 @@ int main(int argc, char **argv, char **envp)
       if (0 == local_strcmp(argv[i], "-d")) 
          loglevel++;
    }
-
+   printf("dooing debuglog startup\n");
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
-
+   printf("after debuglog startup\n");
    //============================================================
    // Command line argument handling order:
    // * If --help/--help-debug are present, show usage message 

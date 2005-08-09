@@ -93,32 +93,51 @@ static UWord do_syscall_WRK (
           UWord a4, UWord a5, UWord a6
        );
 #if defined(VGP_x86_netbsdelf2)
+asm(
+    /* its easier for us, we need syscall number in eax, and its
+       argument in stack, do_syscall pushes the arguments into the
+          stack, then the syscall number, then ..something , pop that
+          something into ecx , pop the syscall number into eax. push
+          back that something onto the stack and we are good to go */
+      
+    "do_syscall_WRK:\n"
+    "popl %ecx\n"
+    "popl %eax\n"
+    "push %ecx\n"
+    "int $0x80\n"
+    "push %ecx\n"
+    "jae 1f\n"
+    "movl $-1,%eax\n"
+    "1:\n"
+    "ret\n"
+    );
+
 /*
  * All args on the stack, syscall number in %eax.
  */
-asm(
-"do_syscall_WRK:\n"
-"	movl	4+ 1(%esp),%eax\n"	/* Put syscall no in eax and */
-"	movl	4+ 4(%esp),%ebx\n"	/* copy all other arguments over */
-"	push	%ebx\n"			/* to form a new stack for the */
-"	movl	8+ 8(%esp),%ebx\n"	/* syscall.  I don't really like */
-"	push	%ebx\n"			/* this.  But hey, who likes x86 */
-"	movl	16+ 16(%esp),%ebx\n"	/* asm at all? */
-"	push	%ebx\n"
-"	movl	20+ 20(%esp),%ebx\n"
-"	push	%ebx\n"
-"	movl	24+ 24(%esp),%ebx\n"
-"	push	%ebx\n"
-"	movl	28+ 28(%esp),%ebx\n"
-"	push	%ebx\n"
-"	pushl	do_syscall_WRK_ret\n"	/* Push new return value */
-"	int	$0x80\n"
-"do_syscall_WRK_ret:\n"
-"	popl    %ebx\n"			/* Pop return value */
-"	addl	24, %esp\n"		/* Remove all 6 args */
-"	pushl	%ebx\n"			/* Before returning, re-push retval */
-"	ret\n"
-);
+/* asm( */
+/* "do_syscall_WRK:\n" */
+/* "	movl	4+ 1(%esp),%eax\n"	/\* Put syscall no in eax and *\/ */
+/* "	movl	4+ 4(%esp),%ebx\n"	/\* copy all other arguments over *\/ */
+/* "	push	%ebx\n"			/\* to form a new stack for the *\/ */
+/* "	movl	8+ 8(%esp),%ebx\n"	/\* syscall.  I don't really like *\/ */
+/* "	push	%ebx\n"			/\* this.  But hey, who likes x86 *\/ */
+/* "	movl	16+ 16(%esp),%ebx\n"	/\* asm at all? *\/ */
+/* "	push	%ebx\n" */
+/* "	movl	20+ 20(%esp),%ebx\n" */
+/* "	push	%ebx\n" */
+/* "	movl	24+ 24(%esp),%ebx\n" */
+/* "	push	%ebx\n" */
+/* "	movl	28+ 28(%esp),%ebx\n" */
+/* "	push	%ebx\n" */
+/* "	pushl	do_syscall_WRK_ret\n"	/\* Push new return value *\/ */
+/* "	int	$0x80\n" */
+/* "do_syscall_WRK_ret:\n" */
+/* "	popl    %ebx\n"			/\* Pop return value *\/ */
+/* "	addl	24, %esp\n"		/\* Remove all 6 args *\/ */
+/* "	pushl	%ebx\n"			/\* Before returning, re-push retval *\/ */
+/* "	ret\n" */
+/* ); */
 #elif defined(VGP_x86_linux)
 /* Incoming args (syscall number + up to 6 args) come on the stack.
    (ie. the C calling convention).

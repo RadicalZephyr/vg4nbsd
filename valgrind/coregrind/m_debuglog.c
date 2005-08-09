@@ -103,7 +103,7 @@ static UInt local_sys_write_stderr (HChar * buf, Int n)
       "pushl local_sys_write_stderr_ret\n"   /* Push return value */
       "int   $0x80\n"		/* write(stderr, buf, n) */
       "local_sys_write_stderr_ret:\n"
-      "addl  16, %%esp\n"	/* Clean up stack (3 args + retval) */
+      "addl  $16, %%esp\n"	/* Clean up stack (3 args + retval) */
       "movl  %%eax, %0\n"	/* __res = eax */
       : "=mr" (__res)
       : "g" (buf), "g" (n)

@@ -93,11 +93,30 @@ static UWord do_syscall_WRK (
           UWord a4, UWord a5, UWord a6
        );
 #if defined(VGP_x86_netbsdelf2)
-/* All args on the stack, syscall number in %eax */
+/*
+ * All args on the stack, syscall number in %eax.
+ */
 asm(
 "do_syscall_WRK:\n"
-"	popl	%eax\n"
+"	movl	4+ 1(%esp),%eax\n"	/* Put syscall no in eax and */
+"	movl	4+ 4(%esp),%ebx\n"	/* copy all other arguments over */
+"	push	%ebx\n"			/* to form a new stack for the */
+"	movl	8+ 8(%esp),%ebx\n"	/* syscall.  I don't really like */
+"	push	%ebx\n"			/* this.  But hey, who likes x86 */
+"	movl	16+ 16(%esp),%ebx\n"	/* asm at all? */
+"	push	%ebx\n"
+"	movl	20+ 20(%esp),%ebx\n"
+"	push	%ebx\n"
+"	movl	24+ 24(%esp),%ebx\n"
+"	push	%ebx\n"
+"	movl	28+ 28(%esp),%ebx\n"
+"	push	%ebx\n"
+"	pushl	do_syscall_WRK_ret\n"	/* Push new return value */
 "	int	$0x80\n"
+"do_syscall_WRK_ret:\n"
+"	popl    %ebx\n"			/* Pop return value */
+"	addl	24, %esp\n"		/* Remove all 6 args */
+"	pushl	%ebx\n"			/* Before returning, re-push retval */
 "	ret\n"
 );
 #elif defined(VGP_x86_linux)

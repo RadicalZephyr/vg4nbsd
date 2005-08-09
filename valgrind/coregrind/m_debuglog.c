@@ -97,8 +97,13 @@ static UInt local_sys_write_stderr (HChar * buf, Int n)
    UInt __res;
    __asm__ volatile (
       "movl  $4, %%eax\n"	/* %eax = __NR_write */
-      "pushl $2\n"		/* First arg = stderr */
+      "pushl %2\n"		/* Third arg  = n */
+      "pushl %1\n"		/* Second arg = buf */
+      "pushl $2\n"		/* First arg  = stderr */
+      "pushl local_sys_write_stderr_ret\n"   /* Push return value */
       "int   $0x80\n"		/* write(stderr, buf, n) */
+      "local_sys_write_stderr_ret:\n"
+      "addl  16, %%esp\n"	/* Clean up stack (3 args + retval) */
       "movl  %%eax, %0\n"	/* __res = eax */
       : "=mr" (__res)
       : "g" (buf), "g" (n)

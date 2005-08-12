@@ -31,16 +31,17 @@
 #include "pub_core_basics.h"
 #include "pub_core_execontext.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcprint.h"
+#include "pub_core_libcprint.h"     // For VG_(message)()
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
+#include "pub_core_stacktrace.h"
 
 /*------------------------------------------------------------*/
 /*--- Low-level ExeContext storage.                        ---*/
 /*------------------------------------------------------------*/
 
-/* The first 4 IP values are used in comparisons do remove duplicate errors,
+/* The first 4 IP values are used in comparisons to remove duplicate errors,
    and for comparing against suppression specifications.  The rest are
    purely informational (but often important). */
 

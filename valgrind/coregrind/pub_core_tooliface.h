@@ -84,14 +84,13 @@ typedef
       Bool core_errors;
       Bool tool_errors;
       Bool basic_block_discards;
-      Bool no_longer_used_1;     // for backwards compatibility
       Bool command_line_options;
       Bool client_requests;
-      Bool no_longer_used_0;     // for backwards compatibility
       Bool syscall_wrapper;
       Bool sanity_checks;
       Bool data_syms;
       Bool shadow_memory;
+      Bool malloc_replacement;
    } 
    VgNeeds;
 
@@ -141,6 +140,18 @@ typedef struct {
    Bool (*tool_cheap_sanity_check)(void);
    Bool (*tool_expensive_sanity_check)(void);
 
+   // VG_(needs).malloc_replacement
+   void* (*tool_malloc)              (ThreadId, SizeT);
+   void* (*tool___builtin_new)       (ThreadId, SizeT);
+   void* (*tool___builtin_vec_new)   (ThreadId, SizeT);
+   void* (*tool_memalign)            (ThreadId, SizeT, SizeT);
+   void* (*tool_calloc)              (ThreadId, SizeT, SizeT);
+   void  (*tool_free)                (ThreadId, void*);
+   void  (*tool___builtin_delete)    (ThreadId, void*);
+   void  (*tool___builtin_vec_delete)(ThreadId, void*);
+   void* (*tool_realloc)             (ThreadId, void*, SizeT);
+   SizeT tool_client_redzone_szB;
+
    // -- Event tracking functions ------------------------------------
    void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool);
    void (*track_new_mem_stack_signal)(Addr, SizeT);
@@ -153,18 +164,18 @@ typedef struct {
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
 
-   void VGA_REGPARM(1) (*track_new_mem_stack_4) (Addr);
-   void VGA_REGPARM(1) (*track_new_mem_stack_8) (Addr);
-   void VGA_REGPARM(1) (*track_new_mem_stack_12)(Addr);
-   void VGA_REGPARM(1) (*track_new_mem_stack_16)(Addr);
-   void VGA_REGPARM(1) (*track_new_mem_stack_32)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_4) (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_8) (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_12)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_16)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_32)(Addr);
    void (*track_new_mem_stack)(Addr, SizeT);
 
-   void VGA_REGPARM(1) (*track_die_mem_stack_4) (Addr);
-   void VGA_REGPARM(1) (*track_die_mem_stack_8) (Addr);
-   void VGA_REGPARM(1) (*track_die_mem_stack_12)(Addr);
-   void VGA_REGPARM(1) (*track_die_mem_stack_16)(Addr);
-   void VGA_REGPARM(1) (*track_die_mem_stack_32)(Addr);
+   void VG_REGPARM(1) (*track_die_mem_stack_4) (Addr);
+   void VG_REGPARM(1) (*track_die_mem_stack_8) (Addr);
+   void VG_REGPARM(1) (*track_die_mem_stack_12)(Addr);
+   void VG_REGPARM(1) (*track_die_mem_stack_16)(Addr);
+   void VG_REGPARM(1) (*track_die_mem_stack_32)(Addr);
    void (*track_die_mem_stack)(Addr, SizeT);
 
    void (*track_ban_mem_stack)(Addr, SizeT);
@@ -190,19 +201,6 @@ typedef struct {
    void (*track_pre_deliver_signal) (ThreadId, Int sigNo, Bool);
    void (*track_post_deliver_signal)(ThreadId, Int sigNo);
 
-   void (*track_init_shadow_page)(Addr);
-
-   // -- malloc/free replacements -----------------------------------
-   void* (*malloc_malloc)              (ThreadId, SizeT);
-   void* (*malloc___builtin_new)       (ThreadId, SizeT);
-   void* (*malloc___builtin_vec_new)   (ThreadId, SizeT);
-   void* (*malloc_memalign)            (ThreadId, SizeT, SizeT);
-   void* (*malloc_calloc)              (ThreadId, SizeT, SizeT);
-   void  (*malloc_free)                (ThreadId, void*);
-   void  (*malloc___builtin_delete)    (ThreadId, void*);
-   void  (*malloc___builtin_vec_delete)(ThreadId, void*);
-   void* (*malloc_realloc)             (ThreadId, void*, SizeT);
-
 } VgToolInterface;
 
 extern VgToolInterface VG_(tdict);
@@ -211,7 +209,7 @@ extern VgToolInterface VG_(tdict);
    Miscellaneous functions
    ------------------------------------------------------------------ */
 
-void VG_(sanity_check_needs)(void);
+Bool VG_(sanity_check_needs) ( Bool non_zero_shadow_memory, Char** failmsg );
 
 #endif   // __PUB_CORE_TOOLIFACE_H
 

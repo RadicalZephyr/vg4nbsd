@@ -29,40 +29,12 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
-#include "pub_core_syscall.h"
-#include "vki_unistd.h"
-
-SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
-                        UInt fd, OffT offset)
-{
-   SysRes res;
-#  if defined(VGP_x86_linux)
-   { 
-      UWord args[6];
-      args[0] = (UWord)start;
-      args[1] = length;
-      args[2] = prot;
-      args[3] = flags;
-      args[4] = fd;
-      args[5] = offset;
-      res = VG_(do_syscall1)(__NR_mmap, (UWord)args );
-   }
-#  elif defined(VGP_amd64_linux)
-   res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
-                         prot, flags, fd, offset);
-#elif defined(VGP_x86_netbsdelf2)
-   I_die_here;
-#  else
-#    error Unknown platform
-#  endif
-   return res;
-}
 
 /* Returns -1 on failure. */
 void* VG_(mmap)( void* start, SizeT length,
@@ -72,14 +44,12 @@ void* VG_(mmap)( void* start, SizeT length,
 
    if (!(flags & VKI_MAP_FIXED)) {
       start = (void *)VG_(find_map_space)((Addr)start, length, !!(flags & VKI_MAP_CLIENT));
-
-      flags |= VKI_MAP_FIXED;
    }
    if (start == 0)
       return (void *)-1;
 
    res = VG_(mmap_native)(start, length, prot, 
-                          flags & ~(VKI_MAP_NOSYMS | VKI_MAP_CLIENT),
+                          (flags | VKI_MAP_FIXED) & ~(VKI_MAP_NOSYMS | VKI_MAP_CLIENT),
                           fd, offset);
 
    // Check it ended up in the right place.
@@ -93,7 +63,6 @@ void* VG_(mmap)( void* start, SizeT length,
       }
 
       sf_flags |= SF_MMAP;
-      if (  flags & VKI_MAP_FIXED)      sf_flags |= SF_FIXED;
       if (  flags & VKI_MAP_SHARED)     sf_flags |= SF_SHARED;
       if (!(flags & VKI_MAP_ANONYMOUS)) sf_flags |= SF_FILE;
       if (!(flags & VKI_MAP_CLIENT))    sf_flags |= SF_VALGRIND;
@@ -105,26 +74,16 @@ void* VG_(mmap)( void* start, SizeT length,
    return res.isError ? (void*)-1 : (void*)res.val;
 }
 
-static SysRes munmap_native(void *start, SizeT length)
-{
-   return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
-}
-
 /* Returns -1 on failure. */
 Int VG_(munmap)( void* start, SizeT length )
 {
-   SysRes res = munmap_native(start, length);
+   SysRes res = VG_(munmap_native)(start, length);
    if (!res.isError) {
       VG_(unmap_range)((Addr)start, length);
       return 0;
    } else {
       return -1;
    }
-}
-
-SysRes VG_(mprotect_native)( void *start, SizeT length, UInt prot )
-{
-   return VG_(do_syscall3)(__NR_mprotect, (UWord)start, length, prot );
 }
 
 Int VG_(mprotect)( void *start, SizeT length, UInt prot )
@@ -144,7 +103,7 @@ void* VG_(get_memory_from_mmap) ( SizeT nBytes, Char* who )
    void* p;
    p = VG_(mmap)(0, nBytes,
                  VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC,
-                 VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 0, -1, 0);
+                 VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, SF_VALGRIND, -1, 0);
 
    if (p != ((void*)(-1))) {
       vg_assert((void*)VG_(valgrind_base) <= p && p <= (void*)VG_(valgrind_last));
@@ -167,6 +126,24 @@ void* VG_(get_memory_from_mmap) ( SizeT nBytes, Char* who )
    VG_(printf)("\n");
    VG_(exit)(1);
 }
+
+// Returns 0 on failure.
+Addr VG_(get_memory_from_mmap_for_client) (SizeT len)
+{
+   Addr addr;
+
+   len = VG_PGROUNDUP(len);
+
+   addr = (Addr)VG_(mmap)(NULL, len, 
+                          VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC,
+                          VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_CLIENT,
+                          SF_CORE, -1, 0);
+   if ((Addr)-1 != addr)
+      return addr;
+   else
+      return 0;
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

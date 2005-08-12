@@ -47,6 +47,9 @@ Int    VG_(client_argc);
 Char** VG_(client_argv);
 Char** VG_(client_envp);
 
+/* client executable file descriptor */
+Int VG_(clexecfd) = -1;
+
 /* Path to library directory */
 const Char *VG_(libdir) = VG_LIBDIR;
 
@@ -236,7 +239,7 @@ Int VG_(poll)( struct vki_pollfd *ufds, UInt nfds, Int timeout)
 }
 
 /* clone the environment */
-static Char **env_clone ( Char **oldenv )
+Char **VG_(env_clone) ( Char **oldenv )
 {
    Char **oldenvp;
    Char **newenvp;
@@ -281,7 +284,7 @@ Int VG_(system) ( Char* cmd )
       /* restore the DATA rlimit for the child */
       VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
 
-      envp = env_clone(VG_(client_envp));
+      envp = VG_(env_clone)(VG_(client_envp));
       VG_(env_remove_valgrind_env_stuff)( envp ); 
 
       argv[0] = "/bin/sh";
@@ -337,7 +340,7 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
-#  if !defined(VGP_x86_netbsdelf2)
+#if !defined(VGO_x86_netbsdelf2)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
    if (res.isError && res.val == VKI_ENOSYS) {
@@ -389,11 +392,18 @@ Int VG_(getppid) ( void )
    return VG_(do_syscall0)(__NR_getppid) . val;
 }
 
-Int VG_(setpgid) ( Int pid, Int pgrp )
+Int VG_(geteuid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall2)(__NR_setpgid, pid, pgrp) . val;
+   return VG_(do_syscall0)(__NR_geteuid) . val;
 }
+
+Int VG_(getegid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getegid) . val;
+}
+
 
 /* ---------------------------------------------------------------------
    Timing stuff
@@ -423,67 +433,26 @@ void VG_(nanosleep)(struct vki_timespec *ts)
 }
 
 /* ---------------------------------------------------------------------
-   A simple atfork() facility for Valgrind's internal use
+   A trivial atfork() facility for Valgrind's internal use
    ------------------------------------------------------------------ */
 
-struct atfork {
-   vg_atfork_t	pre;
-   vg_atfork_t	parent;
-   vg_atfork_t	child;
-};
+// Trivial because it only supports a single post-fork child action, which
+// is all we need.
 
-#define VG_MAX_ATFORK	10
+static vg_atfork_t atfork_child = NULL;
 
-static struct atfork atforks[VG_MAX_ATFORK];
-static Int n_atfork;
-
-void VG_(atfork)(vg_atfork_t pre, vg_atfork_t parent, vg_atfork_t child)
+void VG_(atfork_child)(vg_atfork_t child)
 {
-   Int i;
+   if (NULL != atfork_child)
+      VG_(core_panic)("More than one atfork_child handler requested");
 
-   for(i = 0; i < n_atfork; i++) {
-      if (atforks[i].pre == pre &&
-          atforks[i].parent == parent &&
-          atforks[i].child == child)
-         return;
-   }
-
-   if (n_atfork >= VG_MAX_ATFORK)
-      VG_(core_panic)("Too many VG_(atfork) handlers requested: "
-                      "raise VG_MAX_ATFORK");
-
-   atforks[n_atfork].pre    = pre;
-   atforks[n_atfork].parent = parent;
-   atforks[n_atfork].child  = child;
-
-   n_atfork++;
-}
-
-void VG_(do_atfork_pre)(ThreadId tid)
-{
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].pre != NULL)
-	 (*atforks[i].pre)(tid);
-}
-
-void VG_(do_atfork_parent)(ThreadId tid)
-{
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].parent != NULL)
-	 (*atforks[i].parent)(tid);
+   atfork_child = child;
 }
 
 void VG_(do_atfork_child)(ThreadId tid)
 {
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].child != NULL)
-	 (*atforks[i].child)(tid);
+   if (NULL != atfork_child)
+      (*atfork_child)(tid);
 }
 
 /*--------------------------------------------------------------------*/

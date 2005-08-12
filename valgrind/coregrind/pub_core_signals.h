@@ -40,6 +40,10 @@
 /* Highest signal the kernel will let us use */
 extern Int VG_(max_signal);
 
+/* Use high signals because native pthreads wants to use low */
+#define VG_SIGVGKILL       (VG_(max_signal)-0)
+#define VG_SIGVGRTUSERMAX  (VG_(max_signal)-1)
+
 extern void VG_(sigstartup_actions) ( void );
 
 /* Poll a thread's set of pending signals, and update the Thread's
@@ -71,9 +75,6 @@ extern void VG_(synth_sigill)       (ThreadId tid, Addr addr);
 
 /* Extend the stack to cover addr, if possible */
 extern Bool VG_(extend_stack)(Addr addr, UInt maxsize);
-
-/* Returns True if the signal is OK for the client to use */
-extern Bool VG_(client_signal_OK)(Int sigNo);
 
 /* Forces the client's signal handler to SIG_DFL - generally just
    before using that signal to kill the process. */

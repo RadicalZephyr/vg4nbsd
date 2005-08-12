@@ -30,15 +30,13 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_debuginfo.h"
+#include "pub_core_machine.h"    // ppc32: VG_(cache_line_size_ppc32)
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcmman.h"
+#include "pub_core_libcmman.h"   // For VG_(get_memory_from_mmap)()
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
-#include "pub_core_tooliface.h"
-// XXX: this module should not depend on m_translate!
-#include "pub_core_translate.h"
+#include "pub_core_tooliface.h"  // For VG_(details).avg_translation_sizeB
 #include "pub_core_transtab.h"
 
 /* #define DEBUG_TRANSTAB */
@@ -227,10 +225,12 @@ ULong n_fast_updates = 0;
 ULong n_full_lookups = 0;
 ULong n_lookup_probes = 0;
 
-/* Number/osize/tsize of translations entered. */
-ULong n_in_count = 0;
-ULong n_in_osize = 0;
-ULong n_in_tsize = 0;
+/* Number/osize/tsize of translations entered; also the number of
+   those for which self-checking was requested. */
+ULong n_in_count    = 0;
+ULong n_in_osize    = 0;
+ULong n_in_tsize    = 0;
+ULong n_in_sc_count = 0;
 
 /* Number/osize of translations discarded due to lack of space. */
 ULong n_dump_count = 0;
@@ -327,6 +327,36 @@ static void initialiseSector ( Int sno )
    invalidateFastCache();
 }
 
+static void invalidate_icache ( void *ptr, Int nbytes )
+{
+#  if defined(VGA_ppc32)
+   Addr startaddr = (Addr) ptr;
+   Addr endaddr   = startaddr + nbytes;
+   Addr cls       = VG_(cache_line_size_ppc32);
+   Addr addr;
+
+   /* Stay sane .. */
+   vg_assert(cls == 32 || cls == 128);
+
+   startaddr &= ~(cls - 1);
+   for (addr = startaddr; addr < endaddr; addr += cls)
+      asm volatile("dcbst 0,%0" : : "r" (addr));
+   asm volatile("sync");
+   for (addr = startaddr; addr < endaddr; addr += cls)
+      asm volatile("icbi 0,%0" : : "r" (addr));
+   asm volatile("sync; isync");
+
+#  elif defined(VGA_x86)
+   /* no need to do anything, hardware provides coherence */
+
+#  elif defined(VGA_amd64)
+   /* no need to do anything, hardware provides coherence */
+
+#  else
+#    error "Unknown ARCH"
+#  endif
+}
+
 
 /* Add a translation of vge to TT/TC.  The translation is temporarily
    in code[0 .. code_len-1].
@@ -337,7 +367,8 @@ static void initialiseSector ( Int sno )
 void VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
-                           UInt             code_len )
+                           UInt             code_len,
+                           Bool             is_self_checking )
 {
    Int    tcAvailQ, reqdQ, y, i;
    ULong  *tce, *tce2;
@@ -355,6 +386,8 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
    n_in_count++;
    n_in_tsize += code_len;
    n_in_osize += vge_osize(vge);
+   if (is_self_checking)
+      n_in_sc_count++;
 
    y = youngest_sector;
    vg_assert(isValidSector(y));
@@ -405,6 +438,8 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
       dstP[i] = srcP[i];
    sectors[y].tc_next += reqdQ;
    sectors[y].tt_n_inuse++;
+
+   invalidate_icache( dstP, code_len );
 
    /* more paranoia */
    tce2 = sectors[y].tc_next;
@@ -502,17 +537,17 @@ Bool VG_(search_transtab) ( /*OUT*/AddrH* result,
 */
 
 static inline
-Bool overlap1 ( Addr64 s1, UInt r1, Addr64 s2, UInt r2 )
+Bool overlap1 ( Addr64 s1, ULong r1, Addr64 s2, ULong r2 )
 {
-   Addr64 e1 = s1 + (ULong)r1 - 1ULL;
-   Addr64 e2 = s2 + (ULong)r1 - 1ULL;
+   Addr64 e1 = s1 + r1 - 1ULL;
+   Addr64 e2 = s2 + r2 - 1ULL;
    if (e1 < s2 || e2 < s1) 
       return False;
    return True;
 }
 
 static inline
-Bool overlaps ( Addr64 start, UInt range, VexGuestExtents* vge )
+Bool overlaps ( Addr64 start, ULong range, VexGuestExtents* vge )
 {
    if (overlap1(start, range, vge->base[0], (UInt)vge->len[0]))
       return True;
@@ -528,7 +563,7 @@ Bool overlaps ( Addr64 start, UInt range, VexGuestExtents* vge )
 }
 
 
-void VG_(discard_translations) ( Addr64 guest_start, UInt range )
+void VG_(discard_translations) ( Addr64 guest_start, ULong range )
 {
    Int sno, i;
    Bool anyDeleted = False;
@@ -552,15 +587,6 @@ void VG_(discard_translations) ( Addr64 guest_start, UInt range )
 
    if (anyDeleted)
       invalidateFastCache();
-}
-
-
-/*------------------------------------------------------------*/
-/*--- Sanity checking                                      ---*/
-/*------------------------------------------------------------*/
-
-void VG_(sanity_check_tt_tc) ( Char* who )
-{
 }
 
 
@@ -642,9 +668,11 @@ void VG_(print_tt_tc_stats) ( void )
       n_fast_updates, n_fast_flushes );
 
    VG_(message)(Vg_DebugMsg,
-                "translate: new        %lld (%lld -> %lld; ratio %lld:10)",
+                "translate: new        %lld "
+                "(%lld -> %lld; ratio %lld:10) [%lld scs]",
                 n_in_count, n_in_osize, n_in_tsize,
-                safe_idiv(10*n_in_tsize, n_in_osize));
+                safe_idiv(10*n_in_tsize, n_in_osize),
+                n_in_sc_count);
    VG_(message)(Vg_DebugMsg,
                 "translate: dumped     %lld (%lld -> ?" "?)",
                 n_dump_count, n_dump_osize );
@@ -657,60 +685,23 @@ void VG_(print_tt_tc_stats) ( void )
 /*--- Printing out of profiling results.                   ---*/
 /*------------------------------------------------------------*/
 
-/* Only the top N_MAX bbs will be displayed. */
-#define N_MAX 200
-
-static TTEntry* tops[N_MAX];
-
 static ULong score ( TTEntry* tte )
 {
    return ((ULong)tte->weight) * ((ULong)tte->count);
 }
 
-static Bool heavier ( TTEntry* t1, TTEntry* t2 )
+ULong VG_(get_BB_profile) ( BBProfEntry tops[], UInt n_tops )
 {
-   return score(t1) > score(t2);
-}
-
-/* Print n/m in form xx.yy% */
-static
-void percentify ( ULong n, ULong m, Int field_width, Char* buf)
-{
-   Int i, len, space;
-   ULong lo, hi;
-   if (m == 0) m = 1; /* stay sane */
-   hi = (n * 100) / m;
-   lo = (((n * 100) - hi * m) * 100) / m;
-   vg_assert(lo < 100);
-   if (lo < 10)
-      VG_(sprintf)(buf, "%lld.0%lld%%", hi, lo);
-   else
-      VG_(sprintf)(buf, "%lld.%lld%%", hi, lo);
-
-   len = VG_(strlen)(buf);
-   space = field_width - len;
-   if (space < 0) space = 0;     /* Allow for v. small field_width */
-   i = len;
-
-   /* Right justify in field */
-   for (     ; i >= 0;    i--)  buf[i + space] = buf[i];
-   for (i = 0; i < space; i++)  buf[i] = ' ';
-}
-
-
-void VG_(show_BB_profile) ( void )
-{
-   Char  name[64];
    Int   sno, i, r, s;
-   ULong score_total, score_cumul, score_here;
-   Char  buf_cumul[10];
-   Char  buf_here[10];
+   ULong score_total;
 
    /* First, compute the total weighted count, and find the top N
-      ttes.  tops contains pointers to the most-used N_MAX blocks, in
+      ttes.  tops contains pointers to the most-used n_tops blocks, in
       descending order (viz, tops[0] is the highest scorer). */
-   for (i = 0; i < N_MAX; i++)
-      tops[i] = NULL;
+   for (i = 0; i < n_tops; i++) {
+      tops[i].addr  = 0;
+      tops[i].score = 0;
+   }
 
    score_total = 0;
 
@@ -722,94 +713,35 @@ void VG_(show_BB_profile) ( void )
             continue;
          score_total += score(&sectors[sno].tt[i]);
          /* Find the rank for sectors[sno].tt[i]. */
-         r = N_MAX-1;
+         r = n_tops-1;
          while (True) {
             if (r == -1)
                break;
-             if (tops[r] == NULL) {
+             if (tops[r].addr == 0) {
                r--; 
                continue;
              }
-             if (heavier(&sectors[sno].tt[i], tops[r])) {
+             if ( score(&sectors[sno].tt[i]) > tops[r].score ) {
                 r--;
                 continue;
              }
              break;
          }
          r++;
-         vg_assert(r >= 0 && r <= N_MAX);
+         vg_assert(r >= 0 && r <= n_tops);
          /* This bb should be placed at r, and bbs above it shifted
             upwards one slot. */
-         if (r < N_MAX) {
-            for (s = N_MAX-1; s > r; s--)
+         if (r < n_tops) {
+            for (s = n_tops-1; s > r; s--)
                tops[s] = tops[s-1];
-            tops[r] = &sectors[sno].tt[i];
+            tops[r].addr  = sectors[sno].tt[i].entry;
+            tops[r].score = score( &sectors[sno].tt[i] );
          }
       }
    }
 
-   VG_(printf)("\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("--- BEGIN BB Profile (summary of scores)                 ---\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("\n");
-
-   VG_(printf)("Total score = %lld\n\n", score_total);
-
-   score_cumul = 0;
-   for (r = 0; r < N_MAX; r++) {
-      if (tops[r] == NULL)
-         continue;
-      name[0] = 0;
-      VG_(get_fnname_w_offset)(tops[r]->entry, name, 64);
-      name[63] = 0;
-      score_here = score(tops[r]);
-      score_cumul += score_here;
-      percentify(score_cumul, score_total, 6, buf_cumul);
-      percentify(score_here,  score_total, 6, buf_here);
-      VG_(printf)("%3d: (%9lld %s)   %9lld %s      0x%llx %s\n",
-                  r,
-                  score_cumul, buf_cumul,
-                  score_here,  buf_here, tops[r]->entry, name );
-   }
-
-   VG_(printf)("\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("--- BB Profile (BB details)                              ---\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("\n");
-
-   score_cumul = 0;
-   for (r = 0; r < N_MAX; r++) {
-      if (tops[r] == NULL)
-         continue;
-      name[0] = 0;
-      VG_(get_fnname_w_offset)(tops[r]->entry, name, 64);
-      name[63] = 0;
-      score_here = score(tops[r]);
-      score_cumul += score_here;
-      percentify(score_cumul, score_total, 6, buf_cumul);
-      percentify(score_here,  score_total, 6, buf_here);
-      VG_(printf)("\n");
-      VG_(printf)("=-=-=-=-=-=-=-=-=-=-=-=-=-= begin BB rank %d "
-                  "=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n", r);
-      VG_(printf)("%3d: (%9lld %s)   %9lld %s      0x%llx %s\n",
-                  r,
-                  score_cumul, buf_cumul,
-                  score_here,  buf_here, tops[r]->entry, name );
-      VG_(printf)("\n");
-      VG_(translate)(0, tops[r]->entry, True, VG_(clo_profile_flags));
-      VG_(printf)("=-=-=-=-=-=-=-=-=-=-=-=-=-=  end BB rank %d  "
-                  "=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n", r);
-   }
-
-   VG_(printf)("\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("--- END BB Profile                                       ---\n");
-   VG_(printf)("------------------------------------------------------------\n");
-   VG_(printf)("\n");
+   return score_total;
 }
-
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

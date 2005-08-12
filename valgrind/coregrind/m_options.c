@@ -44,10 +44,12 @@ Int    VG_(clo_gen_suppressions) = 0;
 Int    VG_(clo_sanity_level)   = 1;
 Int    VG_(clo_verbosity)      = 1;
 Bool   VG_(clo_xml)            = False;
+HChar* VG_(clo_xml_user_comment) = NULL;
 Bool   VG_(clo_demangle)       = True;
 Bool   VG_(clo_trace_children) = False;
 Int    VG_(clo_log_fd)         = 2;
 Char*  VG_(clo_log_name)       = NULL;
+Char*  VG_(clo_log_file_qualifier) = NULL;
 Bool   VG_(clo_time_stamp)     = False;
 Int    VG_(clo_input_fd)       = 0; /* stdin */
 Int    VG_(clo_n_suppressions) = 0;
@@ -70,14 +72,13 @@ Bool   VG_(clo_run_libc_freeres) = True;
 Bool   VG_(clo_track_fds)      = False;
 Bool   VG_(clo_show_below_main)= False;
 Bool   VG_(clo_pointercheck)   = True;
-Bool   VG_(clo_support_elan3)  = False;
-Bool   VG_(clo_branchpred)     = False;
 Bool   VG_(clo_model_pthreads) = False;
 Bool   VG_(clo_show_emwarns)   = False;
 Int    VG_(clo_max_stackframe) = 2000000;
 Bool   VG_(clo_wait_for_gdb)   = False;
+VgSmc  VG_(clo_smc_check)      = Vg_SmcStack;
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                              m_options.c ---*/
 /*--------------------------------------------------------------------*/
-

@@ -40,45 +40,57 @@
 #include "pub_tool_machine.h"
 
 #if defined(VGA_x86)
-#  define VGA_ELF_ENDIANNESS  ELFDATA2LSB
-#  define VGA_ELF_MACHINE     EM_386
-#  define VGA_ELF_CLASS       ELFCLASS32
+#  define VG_ELF_DATA2XXX     ELFDATA2LSB
+#  define VG_ELF_MACHINE      EM_386
+#  define VG_ELF_CLASS        ELFCLASS32
 #elif defined(VGA_amd64)
-#  define VGA_ELF_ENDIANNESS  ELFDATA2LSB
-#  define VGA_ELF_MACHINE     EM_X86_64
-#  define VGA_ELF_CLASS       ELFCLASS64
-#elif defined(VGA_arm)
-#  define VGA_ELF_ENDIANNESS  ELFDATA2LSB
-#  define VGA_ELF_MACHINE     EM_ARM
-#  define VGA_ELF_CLASS       ELFCLASS32
+#  define VG_ELF_DATA2XXX     ELFDATA2LSB
+#  define VG_ELF_MACHINE      EM_X86_64
+#  define VG_ELF_CLASS        ELFCLASS64
+#elif defined(VGA_ppc32)
+#  define VG_ELF_DATA2XXX     ELFDATA2MSB
+#  define VG_ELF_MACHINE      EM_PPC
+#  define VG_ELF_CLASS        ELFCLASS32
 #else
 #  error Unknown arch
 #endif
 
 #if defined(VGA_x86)
-#  define VGA_INSTR_PTR       guest_EIP
-#  define VGA_STACK_PTR       guest_ESP
-#  define VGA_FRAME_PTR       guest_EBP
+#  define VG_INSTR_PTR        guest_EIP
+#  define VG_STACK_PTR        guest_ESP
+#  define VG_FRAME_PTR        guest_EBP
 #elif defined(VGA_amd64)
-#  define VGA_INSTR_PTR       guest_RIP
-#  define VGA_STACK_PTR       guest_RSP
-#  define VGA_FRAME_PTR       guest_RBP
-#elif defined(VGA_arm)
-   // XXX: Not sure, but I think:
-   //   r11 = frame pointer
-   //   r12 = "implicit parameter" (neither caller-save, nor callee-save)
-   //   r13 = stack pointer
-   //   r14 = link register
-   //   r15 = program counter
-#  define VGA_INSTR_PTR       guest_R15
-#  define VGA_STACK_PTR       guest_R13
-#  define VGA_FRAME_PTR       guest_R11
+#  define VG_INSTR_PTR        guest_RIP
+#  define VG_STACK_PTR        guest_RSP
+#  define VG_FRAME_PTR        guest_RBP
+#elif defined(VGA_ppc32)
+#  define VG_INSTR_PTR        guest_CIA
+#  define VG_STACK_PTR        guest_GPR1
+#  define VG_FRAME_PTR        guest_GPR1   // No frame ptr for PPC
 #else
 #  error Unknown arch
 #endif
 
+
 // Offsets for the Vex state
-#define O_STACK_PTR        (offsetof(VexGuestArchState, VGA_STACK_PTR))
+#define VG_O_STACK_PTR        (offsetof(VexGuestArchState, VG_STACK_PTR))
+
+
+// Architecture specifics
+
+// PPC: what is the cache line size (for dcbz etc) ?
+// This info is harvested on Linux at startup from the AT_SYSINFO
+// entries.
+#if defined(VGA_ppc32)
+extern Int VG_(cache_line_size_ppc32);
+#endif
+
+// X86: set to 1 if the host is able to do {ld,st}mxcsr (load/store
+// the SSE control/status register. 
+#if defined(VGA_x86)
+extern Int VG_(have_mxcsr_x86);
+#endif
+
 
 #endif   // __PUB_CORE_MACHINE_H
 

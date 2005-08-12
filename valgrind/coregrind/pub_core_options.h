@@ -42,8 +42,6 @@
 /* The max number of suppression files. */
 #define VG_CLO_MAX_SFILES 10
 
-/* Vex iropt control */
-extern VexControl VG_(clo_vex_control);
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
 /* Enquire about whether to attach to a debugger at errors?   default: NO */
@@ -71,6 +69,12 @@ extern Bool  VG_(clo_trace_children);
    made to hold the relevant file id, by opening clo_log_name
    (concatenated with the process ID) for writing.
 
+   With --log-file, there is an additional twist: if
+   clo_log_file_qualifier is non-NULL, the contents of the environment
+   variable specified by clo_log_file_qualifier is incorporated into
+   the logfile name.  This is useful in that it allows the logfile
+   name to incorporate environmental information.
+
    With --log-socket, clo_log_name holds the hostname:portnumber pair,
    and is taken from the command line.  clo_log_fd is then made to hold
    the relevant file handle, by opening a connection to that
@@ -78,8 +82,9 @@ extern Bool  VG_(clo_trace_children);
 
    Global default is to set log_to == VgLogTo_Fd and log_fd == 2
    (stderr). */
-extern Int     VG_(clo_log_fd);
-extern Char*   VG_(clo_log_name);
+extern Int   VG_(clo_log_fd);
+extern Char* VG_(clo_log_name);
+extern Char* VG_(clo_log_file_qualifier);
 
 /* Add timestamps to log messages?  default: NO */
 extern Bool  VG_(clo_time_stamp);
@@ -128,8 +133,6 @@ extern Bool  VG_(clo_track_fds);
    is ignored.  Ie if a tool says no, I don't want this to run, that
    cannot be overridden from the command line. */
 extern Bool  VG_(clo_run_libc_freeres);
-/* Generate branch-prediction hints? */
-extern Bool VG_(clo_branchpred);
 /* Continue stack traces below main()?  Default: NO */
 extern Bool VG_(clo_show_below_main);
 /* Test each client pointer dereference to check it's within the
@@ -137,9 +140,6 @@ extern Bool VG_(clo_show_below_main);
 extern Bool VG_(clo_pointercheck);
 /* Model the pthread library */
 extern Bool VG_(clo_model_pthreads);
-
-/* HACK: Use hacked version of clone for Quadrics Elan3 drivers */
-extern Bool VG_(clo_support_elan3);
 
 /* Should we show VEX emulation warnings?  Default: NO */
 extern Bool VG_(clo_show_emwarns);
@@ -150,6 +150,22 @@ extern Int VG_(clo_max_stackframe);
 
 /* Delay startup to allow GDB to be attached?  Default: NO */
 extern Bool VG_(clo_wait_for_gdb);
+
+/* To what extent should self-checking translations be made?  These
+   are needed to deal with self-modifying code on uncooperative
+   platforms. */
+typedef 
+   enum { 
+      Vg_SmcNone,  // never generate self-checking translations
+      Vg_SmcStack, // generate s-c-t's for code found in stacks
+                   // (segments with SF_GROWDOWN, to be precise)
+                   // (this is the default)
+      Vg_SmcAll    // make all translations self-checking.
+   } 
+   VgSmc;
+
+extern VgSmc VG_(clo_smc_check);
+
 
 #endif   // __PUB_CORE_OPTIONS_H
 

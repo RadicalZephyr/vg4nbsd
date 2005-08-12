@@ -34,9 +34,9 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_machine.h"
 
-#define INSTR_PTR(regs)    ((regs).vex.VGA_INSTR_PTR)
-#define STACK_PTR(regs)    ((regs).vex.VGA_STACK_PTR)
-#define FRAME_PTR(regs)    ((regs).vex.VGA_FRAME_PTR)
+#define INSTR_PTR(regs)    ((regs).vex.VG_INSTR_PTR)
+#define STACK_PTR(regs)    ((regs).vex.VG_STACK_PTR)
+#define FRAME_PTR(regs)    ((regs).vex.VG_FRAME_PTR)
 
 Addr VG_(get_SP) ( ThreadId tid )
 {
@@ -123,6 +123,43 @@ static void apply_to_GPs_of_tid(VexGuestArchState* vex, void (*f)(Addr))
    (*f)(vex->guest_R13);
    (*f)(vex->guest_R14);
    (*f)(vex->guest_R15);
+#elif defined(VGA_ppc32)
+   /* XXX ask tool about validity? */
+   (*f)(vex->guest_GPR0);
+   (*f)(vex->guest_GPR1);
+   (*f)(vex->guest_GPR2);
+   (*f)(vex->guest_GPR3);
+   (*f)(vex->guest_GPR4);
+   (*f)(vex->guest_GPR5);
+   (*f)(vex->guest_GPR6);
+   (*f)(vex->guest_GPR7);
+   (*f)(vex->guest_GPR8);
+   (*f)(vex->guest_GPR9);
+   (*f)(vex->guest_GPR10);
+   (*f)(vex->guest_GPR11);
+   (*f)(vex->guest_GPR12);
+   (*f)(vex->guest_GPR13);
+   (*f)(vex->guest_GPR14);
+   (*f)(vex->guest_GPR15);
+   (*f)(vex->guest_GPR16);
+   (*f)(vex->guest_GPR17);
+   (*f)(vex->guest_GPR18);
+   (*f)(vex->guest_GPR19);
+   (*f)(vex->guest_GPR20);
+   (*f)(vex->guest_GPR21);
+   (*f)(vex->guest_GPR22);
+   (*f)(vex->guest_GPR23);
+   (*f)(vex->guest_GPR24);
+   (*f)(vex->guest_GPR25);
+   (*f)(vex->guest_GPR26);
+   (*f)(vex->guest_GPR27);
+   (*f)(vex->guest_GPR28);
+   (*f)(vex->guest_GPR29);
+   (*f)(vex->guest_GPR30);
+   (*f)(vex->guest_GPR31);
+   (*f)(vex->guest_CTR);
+   (*f)(vex->guest_LR);
+
 #else
 #  error Unknown arch
 #endif
@@ -141,6 +178,52 @@ void VG_(apply_to_GP_regs)(void (*f)(UWord))
    }
 }
 
+// Try and identify a thread whose stack satisfies the predicate p, or
+// return VG_INVALID_THREADID if none do.
+ThreadId VG_(first_matching_thread_stack)
+              ( Bool (*p) ( Addr stack_min, Addr stack_max, void* d ),
+                void* d )
+{
+   ThreadId tid;
+
+   for (tid = 1; tid < VG_N_THREADS; tid++) {
+      if (VG_(threads)[tid].status == VgTs_Empty) continue;
+
+      if ( p ( VG_(get_SP)(tid),
+               VG_(threads)[tid].client_stack_highest_word, d ) )
+         return tid;
+   }
+   return VG_INVALID_THREADID;
+}
+
+
+//////////////////////////////////////////////////////////////////
+// Architecture specifics
+
+// PPC: what is the cache line size (for dcbz etc) ?  This info is
+// harvested on Linux at startup from the AT_SYSINFO entries.  0 means
+// not-yet-set.
+#if defined(VGA_ppc32)
+Int VG_(cache_line_size_ppc32) = 0;
+#endif
+
+// X86: set to 1 if the host is able to do {ld,st}mxcsr (load/store
+// the SSE control/status register.  For most modern CPUs this will be
+// 1.  It is set to 1, if possible, by m_translate.getArchAndArchInfo.
+// The value is read by m_dispatch.dispatch-x86.S, which is why it
+// is an Int rather than a Bool.
+//
+// Ugly hack: this has to start as 0 and be set to 1 in the normal
+// case, rather than the other way round, because the dispatch
+// loop needs it, and it runs before the first translation is 
+// made.  Yet it is the act of making that first translation which
+// causes getArchAndArchInfo to set this value to its final value.
+// So it is necessary to start this value off at 0 as only that
+// guarantees that the dispatch loop will not SIGILL on its first
+// attempt.
+#if defined(VGA_x86)
+Int VG_(have_mxcsr_x86) = 0;
+#endif
 
 
 /*--------------------------------------------------------------------*/

@@ -58,6 +58,9 @@
    client environment.  */
 #define VALGRINDCLO	"_VALGRIND_CLO"
 
+// Client's executable file descriptor.
+extern Int VG_(clexecfd);
+
 // Client's original rlimit data and rlimit stack
 extern struct vki_rlimit VG_(client_rlimit_data);
 extern struct vki_rlimit VG_(client_rlimit_stack);
@@ -67,6 +70,7 @@ extern Char **VG_(env_setenv)   ( Char ***envp, const Char* varname,
                                   const Char *val );
 extern void   VG_(env_unsetenv) ( Char **env, const Char *varname );
 extern void   VG_(env_remove_valgrind_env_stuff) ( Char** env ); 
+extern Char **VG_(env_clone)    ( Char **env_clone );
 
 // misc
 extern Int VG_(poll)( struct vki_pollfd *, UInt nfds, Int timeout);
@@ -74,10 +78,8 @@ extern void VG_(nanosleep) ( struct vki_timespec * );
 
 // atfork
 typedef void (*vg_atfork_t)(ThreadId);
-extern void VG_(atfork)(vg_atfork_t pre, vg_atfork_t parent, vg_atfork_t child);
-extern void VG_(do_atfork_pre)    ( ThreadId tid );
-extern void VG_(do_atfork_parent) ( ThreadId tid );
-extern void VG_(do_atfork_child)  ( ThreadId tid );
+extern void VG_(atfork_child)    ( vg_atfork_t child_action );
+extern void VG_(do_atfork_child) ( ThreadId tid );
 
 #endif   // __PUB_CORE_LIBCPROC_H
 

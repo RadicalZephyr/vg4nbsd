@@ -52,11 +52,17 @@
 #  include "libvex_guest_x86.h"
 #elif defined(VGA_amd64)
 #  include "libvex_guest_amd64.h"
+#elif defined(VGA_ppc32)
+#  include "libvex_guest_ppc32.h"
 #else
 #  error Unknown arch
 #endif
 
+// For jmp_buf
 #include <setjmp.h>
+
+// Autoconf-generated settings
+#include "config.h"
 
 #endif   // __PUB_CORE_BASICS_H
 

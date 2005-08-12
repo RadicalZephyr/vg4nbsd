@@ -43,9 +43,7 @@ extern void* VG_(mmap)   ( void* start, SizeT length, UInt prot, UInt flags,
 extern Int VG_(munmap)   ( void* start, SizeT length );
 extern Int VG_(mprotect) ( void *start, SizeT length, UInt prot );
 
-extern SysRes VG_(mmap_native)     ( void* start, SizeT length, UInt prot,
-                                     UInt flags, UInt fd, OffT offset );
-extern SysRes VG_(mprotect_native) ( void *start, SizeT length, UInt prot );
+extern Addr VG_(get_memory_from_mmap_for_client)(SizeT len);
 
 #endif   // __PUB_CORE_LIBCMMAN_H
 

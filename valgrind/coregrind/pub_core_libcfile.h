@@ -46,6 +46,9 @@ extern Int VG_(fd_hard_limit);
 extern Int VG_(safe_fd) ( Int oldfd );
 extern Int VG_(fcntl)   ( Int fd, Int cmd, Int arg );
 
+/* Convert an fd into a filename */
+extern Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf );
+
 /* Default destination port to be used in logging over a network, if
    none specified. */
 #define VG_CLO_DEFAULT_LOGPORT 1500
@@ -56,6 +59,10 @@ extern Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, void *optval,
                               Int *optlen );
+
+extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
+
+extern SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset );
 
 #endif   // __PUB_CORE_LIBCFILE_H
 

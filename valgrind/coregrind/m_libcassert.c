@@ -33,12 +33,10 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
-#include "pub_core_main.h"          // for VG_(bbs_done) -- stupid!
-#include "pub_core_options.h"       // for VG_(bbs_done) -- stupid!
+#include "pub_core_libcproc.h"      // For VG_(gettid)()
 #include "pub_core_stacktrace.h"
 #include "pub_core_syscall.h"
-#include "pub_core_tooliface.h"
+#include "pub_core_tooliface.h"     // For VG_(details).{name,bug_reports_to}
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
@@ -57,9 +55,17 @@
           "movq %%rbp, %1;" \
           : "=r" (sp),\
             "=r" (fp));
+#elif defined(VGP_ppc32_linux)
+#  define GET_REAL_SP_AND_FP(sp, fp) \
+      asm("mr %0,1;" \
+          "mr %1,1;" \
+          : "=r" (sp),\
+            "=r" (fp));
 #else
 #  error Unknown platform
 #endif
+
+#define BACKTRACE_DEPTH    100         // nice and deep!
 
 /* Pull down the entire world */
 void VG_(exit)( Int status )
@@ -84,7 +90,7 @@ static void pp_sched_status ( void )
       if (VG_(threads)[i].status == VgTs_Empty) continue;
       VG_(printf)( "\nThread %d: status = %s\n", i, 
                    VG_(name_of_ThreadStatus)(VG_(threads)[i].status) );
-      VG_(get_and_pp_StackTrace)( i, VG_(clo_backtrace_size) );
+      VG_(get_and_pp_StackTrace)( i, BACKTRACE_DEPTH );
    }
    VG_(printf)("\n");
 }
@@ -92,12 +98,10 @@ static void pp_sched_status ( void )
 __attribute__ ((noreturn))
 static void report_and_quit ( const Char* report, Addr ip, Addr sp, Addr fp )
 {
-   #define BACKTRACE_DEPTH    100         // nice and deep!
-   Addr stacktop, ips[BACKTRACE_DEPTH];
-   ThreadState *tst;
-
-   tst = VG_(get_ThreadState)( VG_(get_lwp_tid)(VG_(gettid)()) );
-
+   Addr stacktop;
+   Addr ips[BACKTRACE_DEPTH];
+   ThreadState *tst = VG_(get_ThreadState)( VG_(get_lwp_tid)(VG_(gettid)()) );
+ 
    // If necessary, fake up an ExeContext which is of our actual real CPU
    // state.  Could cause problems if we got the panic/exception within the
    // execontext/stack dump/symtab code.  But it's better than nothing.
@@ -105,14 +109,16 @@ static void report_and_quit ( const Char* report, Addr ip, Addr sp, Addr fp )
        ip = (Addr)__builtin_return_address(0);
        GET_REAL_SP_AND_FP(sp, fp);
    }
-
+ 
    stacktop = tst->os_state.valgrind_stack_base + 
               tst->os_state.valgrind_stack_szB;
-
+ 
    VG_(get_StackTrace2)(ips, BACKTRACE_DEPTH, ip, sp, fp, sp, stacktop);
    VG_(pp_StackTrace)  (ips, BACKTRACE_DEPTH);
-
-   VG_(printf)("\nBasic block ctr is approximately %llu\n", VG_(bbs_done) );
+ 
+   // Don't print this, as it's not terribly interesting and avoids a
+   // dependence on m_scheduler/, which would be crazy.
+   //VG_(printf)("\nBasic block ctr is approximately %llu\n", VG_(bbs_done) );
 
    pp_sched_status();
    VG_(printf)("\n");

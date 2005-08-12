@@ -30,7 +30,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_aspacemgr.h"
+#include "pub_core_aspacemgr.h"     // For VG_(is_addressable)()
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
@@ -45,14 +45,19 @@
 /*------------------------------------------------------------*/
 
 // Stack frame layout and linkage
-#if defined(VGA_x86)
+// XXX NetBSD?
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
 #  define FIRST_STACK_FRAME(ebp)    (ebp)
 #  define STACK_FRAME_RET(ebp)      (((UWord*)ebp)[1])
 #  define STACK_FRAME_NEXT(ebp)     (((UWord*)ebp)[0])
-#elif defined(VGA_amd64)
+#elif defined(VGP_amd64_linux)
 #  define FIRST_STACK_FRAME(rbp)    (rbp)
 #  define STACK_FRAME_RET(rbp)      (((UWord*)rbp)[1])
 #  define STACK_FRAME_NEXT(rbp)     (((UWord*)rbp)[0])
+#elif defined(VGP_ppc32_linux)
+#  define FIRST_STACK_FRAME(sp)     (((UWord*)(sp))[0])
+#  define STACK_FRAME_RET(sp)       (((UWord*)(sp))[1])
+#  define STACK_FRAME_NEXT(sp)      (((UWord*)(sp))[0])
 #else
 #  error Unknown platform
 #endif
@@ -104,9 +109,7 @@ UInt VG_(get_StackTrace2) ( Addr* ips, UInt n_ips,
          user-space threads package work. JRS 20021001 */
    } else {
 
-      // XXX: I think this line is needed for PPC to work, but I'm not
-      // certain, so I'm commenting it out for the moment.
-      //fp = FIRST_STACK_FRAME(fp)
+      fp = FIRST_STACK_FRAME(fp)
 
       while (True) {
 
@@ -170,7 +173,7 @@ UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips )
    Addr sp                 = VG_(get_SP)(tid);
    Addr stack_highest_word = VG_(threads)[tid].client_stack_highest_word;
 
-#if defined(VGP_x86_linux)
+#  if defined(VGP_x86_linux)
    /* Nasty little hack to deal with sysinfo syscalls - if libc is
       using the sysinfo page for syscalls (the TLS version does), then
       ip will always appear to be in that page when doing a syscall,
@@ -179,13 +182,14 @@ UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips )
       off the stack so that ip is placed within the library function
       calling the syscall.  This makes stack backtraces much more
       useful.  */
-   if (ip >= VG_(client_trampoline_code)+VG_(tramp_syscall_offset) &&
-       ip < VG_(client_trampoline_code)+VG_(trampoline_code_length) &&
-       VG_(is_addressable)(sp, sizeof(Addr), VKI_PROT_READ)) {
+   if (ip >= (Addr)&VG_(trampoline_stuff_start) 
+       && ip < (Addr)&VG_(trampoline_stuff_end)
+       &&  VG_(is_addressable)(sp, sizeof(Addr), VKI_PROT_READ)) {
       ip = *(Addr *)sp;
       sp += sizeof(Addr);
    }
-#endif
+#  endif
+
    if (0)
       VG_(printf)("tid %d: stack_highest=%p ip=%p sp=%p fp=%p\n",
 		  tid, stack_highest_word, ip, sp, fp);
@@ -244,7 +248,7 @@ void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
    do {
       Addr ip = ips[i];
       if (i > 0) 
-         ip -= VGA_MIN_INSTR_SZB;   // point to calling line
+         ip -= VG_MIN_INSTR_SZB;   // point to calling line
 
       // Stop after "main";  if main() is recursive, stop after last main().
       if ( ! VG_(clo_show_below_main)) {
@@ -266,5 +270,5 @@ void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
 
 
 /*--------------------------------------------------------------------*/
-/*--- end                                           m_stacktrace.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

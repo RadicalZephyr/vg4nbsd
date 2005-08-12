@@ -61,23 +61,22 @@ extern SysRes VG_(do_syscall) ( UWord sysno,
 #define vgPlain_do_syscall6(s,a,b,c,d,e,f) VG_(do_syscall)((s),(a),(b),\
                                                            (c),(d),(e),(f))
 
-extern SysRes VG_(mk_SysRes)         ( UWord val );
-extern SysRes VG_(mk_SysRes_Error)   ( UWord val );
-extern SysRes VG_(mk_SysRes_Success) ( UWord val );
+extern SysRes VG_(mk_SysRes_x86_linux)   ( Word val );
+extern SysRes VG_(mk_SysRes_amd64_linux) ( Word val );
+extern SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag );
+extern SysRes VG_(mk_SysRes_Error)       ( UWord val );
+extern SysRes VG_(mk_SysRes_Success)     ( UWord val );
 
-// The _WRK function is handwritten assembly.  It has some very magic
-// properties.  See comments at the top of
-// VG_(fixup_guest_state_after_syscall_interrupted) below for details.
-extern
-void VG_(do_syscall_for_client_WRK)( Int syscallno, 
-                                     void* guest_state,
-                                     const vki_sigset_t *syscall_mask,
-                                     const vki_sigset_t *restore_mask,
-                                     Int nsigwords );
+
+/* Return a string which gives the name of an error value.  Note,
+   unlike the standard C syserror fn, the returned string is not
+   malloc-allocated or writable -- treat it as a constant. */
+
+extern const HChar* VG_(strerror) ( UWord errnum );
+
 
 #endif   // __PUB_CORE_SYSCALL_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-

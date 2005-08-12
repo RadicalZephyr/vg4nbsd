@@ -1,7 +1,7 @@
 
-##--------------------------------------------------------------------##
-##--- Trampoline code page stuff.                   m_trampoline.S ---##
-##--------------------------------------------------------------------##
+/*--------------------------------------------------------------------*/
+/*--- Trampoline code page stuff.                   m_trampoline.S ---*/
+/*--------------------------------------------------------------------*/
 
 /*
   This file is part of Valgrind, a dynamic binary instrumentation
@@ -32,22 +32,19 @@
 #include "vki_unistd.h"
 
 /* ------------------ SIMULATED CPU HELPERS ------------------ */
-/* Stubs for returns which we want to catch.
-   This code isn't used in-place.  It is copied into the client address
-   space at an arbitary address.  Therefore, this code must be completely
-   position-independent.
+/* 
+   Replacements for some functions to do with vsyscalls and signals.
+   This code runs on the simulated CPU.
 */
-.global VG_(trampoline_code_start)
-.global VG_(trampoline_code_length)
-.global VG_(tramp_sigreturn_offset)
-.global VG_(tramp_rt_sigreturn_offset)
-.global VG_(tramp_syscall_offset)
-.global VG_(tramp_gettimeofday_offset)
-.global VG_(tramp_time_offset)
-	
-VG_(trampoline_code_start):
+
+/*---------------- x86-linux ----------------*/
 #if defined(VGP_x86_linux)
-    sigreturn_start:
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(x86_linux_SUBST_FOR_sigreturn)
+VG_(x86_linux_SUBST_FOR_sigreturn):
         /* This is a very specific sequence which GDB uses to
            recognize signal handler frames. */
         popl    %eax
@@ -55,79 +52,94 @@ VG_(trampoline_code_start):
         int     $0x80
         ud2
 
-    rt_sigreturn_start:
+.global VG_(x86_linux_SUBST_FOR_rt_sigreturn)
+VG_(x86_linux_SUBST_FOR_rt_sigreturn):
         /* Likewise for rt signal frames */
         movl    $__NR_rt_sigreturn, %eax
         int     $0x80
         ud2
 
-	# We can point our sysinfo stuff here
-	.align 16
-    syscall_start:	
+.global VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80)
+VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80):
+	/* We can point our sysinfo stuff here */
 	int	$0x80
 	ret
+	
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
 
-    gettimeofday_start:
-    time_start:
-	/* unused on x86 */
+	
+/*---------------- amd64-linux ----------------*/
+#else
+#if defined(VGP_amd64_linux)
 
-#elif defined(VGP_amd64_linux)
-    rt_sigreturn_start:
-        /* Likewise for rt signal frames */
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(amd64_linux_SUBST_FOR_rt_sigreturn)
+VG_(amd64_linux_SUBST_FOR_rt_sigreturn):
+        /* This is a very specific sequence which GDB uses to
+           recognize signal handler frames. */
         movq    $__NR_rt_sigreturn, %rax
         syscall
         ud2
 
-        .align 16
-    gettimeofday_start:
+.global VG_(amd64_linux_REDIR_FOR_vgettimeofday)
+VG_(amd64_linux_REDIR_FOR_vgettimeofday):
         movq    $__NR_gettimeofday, %rax
         syscall
         ret
 
-        .align 16
-    time_start:
+.global VG_(amd64_linux_REDIR_FOR_vtime)
+VG_(amd64_linux_REDIR_FOR_vtime):
         movq    $__NR_time, %rax
         syscall
         ret
 
-	.align 16
-    sigreturn_start:
-    syscall_start:
-	/* unused on amd64 */
-#elif defined(VGP_x86_netbsdelf2)
-    syscall_start:	
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+
+/*---------------- ppc32-linux ----------------*/
+#else
+#if defined(VGP_ppc32_linux)
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+
+/*---------------- x86-netbsdelf2 ----------------*/
+#else
+#if defined(VGP_x86_netbsdelf2)
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(x86_netbsdelf2_SUBST_FOR_sigreturn)
+VG_(x86_netbsdelf2_SUBST_FOR_sigreturn):
 	int	$0x80
 	ret
-    sigreturn_start:
-    rt_sigreturn_start:
-    gettimeofday_start:
-    time_start:
-	/* unused on x86 */
 
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+/*---------------- unknown ----------------*/
 #else
-#	error Unknown platform
+#  error Unknown platform
+
 #endif
+#endif
+#endif
+
 tramp_code_end:
-			
-.data
-VG_(trampoline_code_length):
-	.long tramp_code_end - VG_(trampoline_code_start)
-VG_(tramp_sigreturn_offset):
-	.long sigreturn_start - VG_(trampoline_code_start)
-VG_(tramp_rt_sigreturn_offset):
-        .long rt_sigreturn_start - VG_(trampoline_code_start)
-VG_(tramp_syscall_offset):
-	.long syscall_start - VG_(trampoline_code_start)
-VG_(tramp_gettimeofday_offset):
-	.long gettimeofday_start - VG_(trampoline_code_start)
-VG_(tramp_time_offset):
-	.long time_start - VG_(trampoline_code_start)
-.text
 
 
 /* Let the linker know we don't need an executable stack */
 .section .note.GNU-stack,"",@progbits
 		
-##--------------------------------------------------------------------##
-##--- end                                                          ---##
-##--------------------------------------------------------------------##
+/*--------------------------------------------------------------------*/
+/*--- end                                                          ---*/
+/*--------------------------------------------------------------------*/

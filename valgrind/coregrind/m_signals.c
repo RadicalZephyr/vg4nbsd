@@ -1,3 +1,4 @@
+
 /*--------------------------------------------------------------------*/
 /*--- Implementation of POSIX signals.                 m_signals.c ---*/
 /*--------------------------------------------------------------------*/
@@ -80,7 +81,9 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
+#include "pub_core_debugger.h"      // For VG_(start_debugger)
 #include "pub_core_errormgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -89,13 +92,13 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
 #include "pub_core_machine.h"
-#include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
-#include "pub_core_sigframe.h"
-#include "pub_core_stacktrace.h"
+#include "pub_core_sigframe.h"      // For VG_(sigframe_create)()
+#include "pub_core_stacks.h"        // For VG_(change_stack)()
+#include "pub_core_stacktrace.h"    // For VG_(get_and_pp_StackTrace)()
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
@@ -127,29 +130,33 @@ typedef struct SigQueue {
 } SigQueue;
 
 #if defined(VGP_x86_linux)
-#  define VGP_UCONTEXT_INSTR_PTR(uc)      ((uc)->uc_mcontext.eip)
-#  define VGP_UCONTEXT_STACK_PTR(uc)      ((uc)->uc_mcontext.esp)
-#  define VGP_UCONTEXT_FRAME_PTR(uc)      ((uc)->uc_mcontext.ebp)
-#  define VGP_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.eax)
-#  define VGP_UCONTEXT_SYSCALL_SYSRES(uc)                       \
+#  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.eip)
+#  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.esp)
+#  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.ebp)
+#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.eax)
+#  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                       \
       /* Convert the value in uc_mcontext.eax into a SysRes. */ \
-      VG_(mk_SysRes)( (uc)->uc_mcontext.eax )
+      VG_(mk_SysRes_x86_linux)( (uc)->uc_mcontext.eax )
 
 #elif defined(VGP_amd64_linux)
-#  define VGP_UCONTEXT_INSTR_PTR(uc)      ((uc)->uc_mcontext.rip)
-#  define VGP_UCONTEXT_STACK_PTR(uc)      ((uc)->uc_mcontext.rsp)
-#  define VGP_UCONTEXT_FRAME_PTR(uc)      ((uc)->uc_mcontext.rbp)
-#  define VGP_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.rax)
-#  define VGP_UCONTEXT_SYSCALL_SYSRES(uc)                       \
+#  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.rip)
+#  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.rsp)
+#  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.rbp)
+#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.rax)
+#  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                       \
       /* Convert the value in uc_mcontext.rax into a SysRes. */ \
-      VG_(mk_SysRes)( (uc)->uc_mcontext.rax )
+      VG_(mk_SysRes_amd64_linux)( (uc)->uc_mcontext.rax )
 
-#elif defined(VGP_arm_linux)
-#  define VGP_UCONTEXT_INSTR_PTR(uc)     ((uc)->uc_mcontext.arm_pc)
-#  define VGP_UCONTEXT_STACK_PTR(uc)     ((uc)->uc_mcontext.arm_sp)
-#  define VGP_UCONTEXT_FRAME_PTR(uc)     ((uc)->uc_mcontext.arm_fp)
-#  define VGP_UCONTEXT_SYSCALL_NUM(uc)   ((uc)->uc_mcontext.arm_r0)
-#  error VGP_UCONTEXT_SYSCALL_RET undefined for ARM/Linux
+#elif defined(VGP_ppc32_linux)
+#  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.mc_gregs[VKI_PT_NIP])
+#  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.mc_gregs[1])
+#  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.mc_gregs[1])
+#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.mc_gregs[0])
+#  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                                \
+      /* Convert the values in uc_mcontext r3,cr into a SysRes. */       \
+      VG_(mk_SysRes_ppc32_linux)( (uc)->uc_mcontext.mc_gregs[3],         \
+				  (uc)->uc_mcontext.mc_gregs[VKI_PT_CCR] )
+
 #elif defined(VGP_x86_netbsdelf2)
 #  define VGP_UCONTEXT_INSTR_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_EIP])
 #  define VGP_UCONTEXT_STACK_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_ESP])
@@ -157,7 +164,7 @@ typedef struct SigQueue {
 #  define VGP_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.__gregs[_REG_EAX])
 #  define VGP_UCONTEXT_SYSCALL_SYSRES(uc)                       \
       /* Convert the value in uc_mcontext.eax into a SysRes. */ \
-      VG_(mk_SysRes)( (uc)->uc_mcontext.__gregs[_REG_EAX] )
+      VG_(mk_SysRes_x86_netbsdelf2)( (uc)->uc_mcontext.__gregs[_REG_EAX] )
 #else
 #  error Unknown platform
 #endif
@@ -328,7 +335,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
       default:
          // VKI_SIGVG* are runtime variables, so we can't make them            
          // cases in the switch, so we handle them in the 'default' case.
-	 if (sig == VKI_SIGVGKILL)
+	 if (sig == VG_SIGVGKILL)
 	    skss_handler = sigvgkill_handler;
 	 else {
 	    if (scss_handler == VKI_SIG_IGN)
@@ -390,7 +397,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 
 // We need two levels of macro-expansion here to convert __NR_rt_sigreturn
 // to a number before converting it to a string... sigh.
-extern void my_sigreturn(void);
+static void my_sigreturn(void);
 
 #if defined(VGP_x86_linux)
 #  define _MYSIG(name) \
@@ -402,6 +409,11 @@ extern void my_sigreturn(void);
    "my_sigreturn:\n" \
    "	movq	$" #name ", %rax\n" \
    "	syscall\n"
+#elif defined(VGP_ppc32_linux)
+#  define _MYSIG(name) \
+   "my_sigreturn:\n" \
+   "	li	0, " #name "\n" \
+   "	sc\n"
 #elif defined(VGP_x86_netbsdelf2) 
 #  define _MYSIG(name) \
    "my_sigreturn:\n" \
@@ -411,7 +423,6 @@ extern void my_sigreturn(void);
 #else
 #  error Unknown platform
 #endif
-
 
 #define MYSIG(name)  _MYSIG(name) 
 	asm(
@@ -453,7 +464,14 @@ static void handle_SCSS_change ( Bool force_update )
 
       ksa.ksa_handler = skss.skss_per_sig[sig].skss_handler;
       ksa.sa_flags    = skss.skss_per_sig[sig].skss_flags;
+#     if !defined(VGP_ppc32_linux)
       ksa.sa_restorer = my_sigreturn;
+#     endif
+      /* Re above ifdef (also the assertion below), PaulM says:
+         The sa_restorer field is not used at all on ppc.  Glibc
+         converts the sigaction you give it into a kernel sigaction,
+         but it doesn't put anything in the sa_restorer field.
+      */
 
       /* block all signals in handler */
       VG_(sigfillset)( &ksa.sa_mask );
@@ -480,8 +498,10 @@ static void handle_SCSS_change ( Bool force_update )
                    == skss_old.skss_per_sig[sig].skss_handler);
          vg_assert(ksa_old.sa_flags 
                    == skss_old.skss_per_sig[sig].skss_flags);
+#        if !defined(VGP_ppc32_linux)
          vg_assert(ksa_old.sa_restorer 
                    == my_sigreturn);
+#        endif
          VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGKILL );
          VG_(sigaddset)( &ksa_old.sa_mask, VKI_SIGSTOP );
          vg_assert(VG_(isfullsigset)( &ksa_old.sa_mask ));
@@ -578,7 +598,7 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
    if (signo < 1 || signo > VG_(max_signal)) goto bad_signo;
 
    /* don't let them use our signals */
-   if ( (signo > VKI_SIGVGRTUSERMAX)
+   if ( (signo > VG_SIGVGRTUSERMAX)
 	&& new_act
 	&& !(new_act->ksa_handler == VKI_SIG_DFL 
              || new_act->ksa_handler == VKI_SIG_IGN) )
@@ -617,8 +637,7 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
    return VG_(mk_SysRes_Success)( 0 );
 
   bad_signo:
-   if (VG_(needs).core_errors && VG_(clo_verbosity) >= 1
-                              && !VG_(clo_xml)) {
+   if (VG_(showing_core_errors)()) {
       VG_(message)(Vg_UserMsg,
                    "Warning: bad signal number %d in sigaction()", 
                    signo);
@@ -626,8 +645,7 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
    return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
   bad_signo_reserved:
-   if (VG_(needs).core_errors && VG_(clo_verbosity) >= 1
-                              && !VG_(clo_xml)) {
+   if (VG_(showing_core_errors)()) {
       VG_(message)(Vg_UserMsg,
 		   "Warning: ignored attempt to set %s handler in sigaction();",
 		   signame(signo));
@@ -638,8 +656,7 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
    return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
   bad_sigkill_or_sigstop:
-   if (VG_(needs).core_errors && VG_(clo_verbosity) >= 1
-                              && !VG_(clo_xml)) {
+   if (VG_(showing_core_errors)()) {
       VG_(message)(Vg_UserMsg,
 		   "Warning: ignored attempt to set %s handler in sigaction();",
 		   signame(signo));
@@ -771,16 +788,6 @@ void VG_(clear_out_queued_signals)( ThreadId tid, vki_sigset_t* saved_mask )
    restore_all_host_signals(saved_mask);
 }
 
-Bool VG_(client_signal_OK)(Int sigNo)
-{
-   /* signal 0 is OK for kill */
-   Bool ret = sigNo >= 0 && sigNo <= VKI_SIGVGRTUSERMAX;
-
-   //VG_(printf)("client_signal_OK(%d) -> %d\n", sigNo, ret);
-
-   return ret;
-}
-
 /* ---------------------------------------------------------------------
    The signal simulation proper.  A simplified version of what the 
    Linux kernel does.
@@ -799,6 +806,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
 #else
    Int		sigNo = siginfo->si_signo;
 #endif
+
    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
@@ -828,7 +836,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/True );
       
    } else {
-      esp_top_of_frame = VG_(get_SP)(tid) - VGA_STACK_REDZONE_SZB;
+      esp_top_of_frame = VG_(get_SP)(tid) - VG_STACK_REDZONE_SZB;
 
       /* Signal delivery to tools */
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/False );
@@ -914,7 +922,7 @@ void VG_(kill_self)(Int sigNo)
    VG_(sigaddset)(&mask, sigNo);
    VG_(sigprocmask)(VKI_SIG_UNBLOCK, &mask, &origmask);
 
-   VG_(tkill)(VG_(getpid)(), sigNo);
+   VG_(kill)(VG_(getpid)(), sigNo);
 
    VG_(sigaction)(sigNo, &origsa, NULL);
    VG_(sigprocmask)(VKI_SIG_SETMASK, &origmask, NULL);
@@ -940,7 +948,7 @@ void VG_(kill_self)(Int sigNo)
 /* If true, then this Segment may be mentioned in the core */
 static Bool may_dump(const Segment *seg)
 {
-   return (seg->flags & (SF_DEVICE|SF_VALGRIND)) == 0 && VG_(is_client_addr)(seg->addr);
+   return (seg->flags & SF_VALGRIND) == 0 && VG_(is_client_addr)(seg->addr);
 }
 
 /* If true, then this Segment's contents will be in the core */
@@ -954,12 +962,12 @@ static void fill_ehdr(Elf32_Ehdr *ehdr, Int num_phdrs)
    VG_(memset)(ehdr, 0, sizeof(*ehdr));
 
    VG_(memcpy)(ehdr->e_ident, ELFMAG, SELFMAG);
-   ehdr->e_ident[EI_CLASS]   = VGA_ELF_CLASS;
-   ehdr->e_ident[EI_DATA]    = VGA_ELF_ENDIANNESS;
+   ehdr->e_ident[EI_CLASS]   = VG_ELF_CLASS;
+   ehdr->e_ident[EI_DATA]    = VG_ELF_ENDIANNESS;
    ehdr->e_ident[EI_VERSION] = EV_CURRENT;
 
    ehdr->e_type = ET_CORE;
-   ehdr->e_machine = VGA_ELF_MACHINE;
+   ehdr->e_machine = VG_ELF_MACHINE;
    ehdr->e_version = EV_CURRENT;
    ehdr->e_entry = 0;
    ehdr->e_phoff = sizeof(Elf32_Ehdr);
@@ -1037,7 +1045,8 @@ static void write_note(Int fd, const struct note *n)
 
 static void fill_prpsinfo(const ThreadState *tst, struct vki_elf_prpsinfo *prpsinfo)
 {
-   Char *name;
+   static Char name[VKI_PATH_MAX];
+   Bool res;
 
    VG_(memset)(prpsinfo, 0, sizeof(*prpsinfo));
 
@@ -1064,12 +1073,10 @@ static void fill_prpsinfo(const ThreadState *tst, struct vki_elf_prpsinfo *prpsi
    prpsinfo->pr_uid = 0;
    prpsinfo->pr_gid = 0;
    
-   name = VG_(resolve_filename)(VG_(clexecfd));
-
-   if (name != NULL) {
+   if (VG_(resolve_filename)(VG_(clexecfd), name, VKI_PATH_MAX)) {
       Char *n = name+VG_(strlen)(name)-1;
 
-      while(n > name && *n != '/')
+      while (n > name && *n != '/')
 	 n--;
       if (n != name)
 	 n++;
@@ -1101,17 +1108,17 @@ static void fill_prstatus(const ThreadState *tst,
 
    vg_assert(sizeof(*regs) == sizeof(prs->pr_reg));
 
-   VGA_(fill_elfregs_from_tst)(regs, &tst->arch);
+   VG_(fill_elfregs_from_tst)(regs, &tst->arch);
 }
 
 static void fill_fpu(const ThreadState *tst, vki_elf_fpregset_t *fpu)
 {
-   VGA_(fill_elffpregs_from_tst)(fpu, &tst->arch);
+   VG_(fill_elffpregs_from_tst)(fpu, &tst->arch);
 }
 
 static void fill_xfpu(const ThreadState *tst, vki_elf_fpxregset_t *xfpu)
 {
-   VGA_(fill_elffpxregs_from_tst)(xfpu, &tst->arch);
+   VG_(fill_elffpxregs_from_tst)(xfpu, &tst->arch);
 }
 
 static void make_coredump(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
@@ -1270,6 +1277,7 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
    Bool core      = False;	/* kills process w/ core */
    struct vki_rlimit corelim;
    Bool could_core;
+
 #if defined(VGO_netbsdelf2)
    sigNo= info->_info._signo;
 #else
@@ -1315,7 +1323,6 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
 #if defined(VGO_netbsdelf2)
       VG_(message)(Vg_DebugMsg, "delivering %d (code %d) to default handler; action: %s%s",
 		   sigNo, info->_info._code, terminate ? "terminate" : "ignore", core ? "+core" : "");
-
 #else
       VG_(message)(Vg_DebugMsg, "delivering %d (code %d) to default handler; action: %s%s",
 		   sigNo, info->si_code, terminate ? "terminate" : "ignore", core ? "+core" : "");
@@ -1347,7 +1354,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 #if defined (VGO_netbsdelf2)
       if (info->_info._code > VKI_SI_USER) {
 #else
-	      if(info->si_code > VKI_SI_USER) {
+      if(info->si_code > VKI_SI_USER) {
 #endif
 	 const Char *event = NULL;
 	 Bool haveaddr = True;
@@ -1355,9 +1362,9 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 	 switch(sigNo) {
 	 case VKI_SIGSEGV:
 #if defined (VGO_netbsdelf2)
-		 switch(info->_info._code) {
+	 switch(info->_info._code) {
 #else
-			switch(info->si_code) {
+	 switch(info->si_code) {
 #endif
 	    case 1: event = "Access not within mapped region"; break;
 	    case 2: event = "Bad permissions for mapped region"; break;
@@ -1378,7 +1385,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 
 	 case VKI_SIGILL:
 #if defined (VGO_netbsdelf2)
-		 switch(info->_info._code){
+	    switch(info->_info._code){
 #else
 	    switch(info->si_code) {
 #endif
@@ -1395,9 +1402,9 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 
 	 case VKI_SIGFPE:
 #if defined (VGO_netbsdelf2)
-		 switch(info->_info._code){
+	 switch(info->_info._code){
 #else
-    switch (info->si_code) {
+	 switch (info->si_code) {
 #endif
 	    case 1: event = "Integer divide by zero"; break;
 	    case 2: event = "Integer overflow"; break;
@@ -1412,9 +1419,9 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 
 	 case VKI_SIGBUS:
 #if defined (VGO_netbsdelf2)
-		 switch(info->_info._code){
+	  switch(info->_info._code){
 #else
-	    switch (info->si_code) {
+	  switch (info->si_code) {
 #endif
 	    case 1: event = "Invalid address alignment"; break;
 	    case 2: event = "Non-existent physical address"; break;
@@ -1447,7 +1454,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
    }
 
       // See comment above about this temporary disabling of core dumps.
-#if 0
+      #if 0
    if (core) {
       const static struct vki_rlimit zero = { 0, 0 };
 
@@ -1457,7 +1464,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 	 coredump when we finally exit */
       VG_(setrlimit)(VKI_RLIMIT_CORE, &zero);
    }
-#endif
+      #endif
 
    /* stash fatal signal in main thread */
    // what's this for?
@@ -1495,7 +1502,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
 		   sigNo, signame(sigNo), info->si_code, tid );
 #endif
 
-   if (sigNo == VKI_SIGVGKILL) {
+   if (sigNo == VG_SIGVGKILL) {
       /* If this is a SIGVGKILL, we're expecting it to interrupt any
 	 blocked syscall.  It doesn't matter whether the VCPU state is
 	 set to restart or not, because we don't expect it will
@@ -1511,7 +1518,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
       it, then we do this override (this is so we can send it SIGSEGV,
       etc). */
    handler_fn = handler->scss_handler;
-   if (handler_fn == VKI_SIG_IGN)
+   if (handler_fn == VKI_SIG_IGN) 
       handler_fn = VKI_SIG_DFL;
 
    vg_assert(handler_fn != VKI_SIG_IGN);
@@ -1559,10 +1566,25 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    /* Thread state is ready to go - just add Runnable */
 }
 
-static void synth_fault_common(ThreadId tid, Addr  addr, Int si_code){
+static void resume_scheduler(ThreadId tid)
+{
+   ThreadState *tst = VG_(get_ThreadState)(tid);
+
+   vg_assert(tst->os_state.lwpid == VG_(gettid)());
+
+   if (tst->sched_jmpbuf_valid) {
+      /* Can't continue; must longjmp back to the scheduler and thus
+         enter the sighandler immediately. */
+      longjmp(tst->sched_jmpbuf, True);
+   }
+}
+
+static void synth_fault_common(ThreadId tid, Addr addr, Int si_code)
+{
    vki_siginfo_t info;
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
+
 #if defined(VGO_netbsdelf2)
    info._info._signo = VKI_SIGSEGV;
    info._info._code = si_code;
@@ -1572,12 +1594,13 @@ static void synth_fault_common(ThreadId tid, Addr  addr, Int si_code){
    info.si_code = si_code;
    info._sifields._sigfault._addr = (void*)addr;
 #endif
+
    /* If they're trying to block the signal, force it to be delivered */
    if (VG_(sigismember)(&VG_(threads)[tid].sig_mask, VKI_SIGSEGV))
       VG_(set_default_handler)(VKI_SIGSEGV);
+
    deliver_signal(tid, &info);
 }
-
 
 // Synthesize a fault where the address is OK, but the page
 // permissions are bad.
@@ -1604,6 +1627,7 @@ void VG_(synth_sigill)(ThreadId tid, Addr addr)
    vki_siginfo_t info;
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
+
 #if defined (VGO_netbsdelf2)
    info._info._signo = VKI_SIGILL;
    info._info._code = 1; /* jrs: no idea what this should be */
@@ -1613,7 +1637,8 @@ void VG_(synth_sigill)(ThreadId tid, Addr addr)
    info.si_code = 1; /* jrs: no idea what this should be */
    info._sifields._sigfault._addr = (void*)addr;
 #endif
-   VG_(resume_scheduler)(tid);
+
+   resume_scheduler(tid);
    deliver_signal(tid, &info);
 }
 
@@ -1650,6 +1675,7 @@ void queue_signal(ThreadId tid, const vki_siginfo_t *si)
       VG_(message)(Vg_DebugMsg, "Queueing signal %d (idx %d) to thread %d",
 		   si->si_signo, sq->next, tid);
 #endif
+
    /* Add signal to the queue.  If the queue gets overrun, then old
       queued signals may get lost. 
 
@@ -1743,9 +1769,9 @@ void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *
    /* Update thread state properly */
    VG_(fixup_guest_state_after_syscall_interrupted)(
       tid, 
-      VGP_UCONTEXT_INSTR_PTR(uc), 
-      VGP_UCONTEXT_SYSCALL_NUM(uc), 
-      VGP_UCONTEXT_SYSCALL_SYSRES(uc),  
+      VG_UCONTEXT_INSTR_PTR(uc), 
+      VG_UCONTEXT_SYSCALL_NUM(uc), 
+      VG_UCONTEXT_SYSCALL_SYSRES(uc),  
       !!(scss.scss_per_sig[sigNo].scss_flags & VKI_SA_RESTART)
    );
 
@@ -1757,9 +1783,10 @@ void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *
    if (!is_sig_ign(info->si_signo))
       deliver_signal(tid, info);
 #endif
+
    /* longjmp back to the thread's main loop to start executing the
       handler. */
-   VG_(resume_scheduler)(tid);
+   resume_scheduler(tid);
 
    VG_(core_panic)("async_signalhandler: got unexpected signal while outside of scheduler");
 }
@@ -1804,6 +1831,24 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    if (seg->len + newsize >= maxsize)
       return False;
 
+   /* Nasty Hack.  The new segment will have SF_MMAP set because
+      that's what VG_(mmap) does.  But the existing stack segment
+      won't necessarily have it set, because the initial segment list
+      entry for the main thread's stack doesn't have it set.  That
+      means that the segment list preener won't merge the segments
+      together (because they have different flags).  That means the
+      segment list will in fact list two adjacent segments for the
+      main stack, which is wrong.  This means that the tests which
+      check if a translation is from a stack-like area and therefore
+      in need of a self-check will not work right.  Sigh.
+
+      So .. in lieu of fixing this properly (viz, rationalising all
+      the SF_ flags), just mark the original stack segment as having
+      SF_MMAP.  Then the preener will merge it into the new area.
+      This is a hack.  */
+   seg->flags |= SF_MMAP;
+   /* end of Nasty Hack */
+
    if (VG_(mmap)((Char *)base, newsize,
 		 seg->prot,
 		 VKI_MAP_PRIVATE | VKI_MAP_FIXED | VKI_MAP_ANONYMOUS | VKI_MAP_CLIENT,
@@ -1813,7 +1858,7 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
 
    /* When we change the main stack, we have to let the stack handling
       code know about it. */
-   VG_(handle_stack_change)(VG_(clstk_id), base, VG_(clstk_end));
+   VG_(change_stack)(VG_(clstk_id), base, VG_(clstk_end));
 
    if (0)
       VG_(printf)("extended stack: %p %d\n",
@@ -1896,7 +1941,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 /* It's a fatal signal, so we force the default handler. */
 	 VG_(set_default_handler)(sigNo);
 	 deliver_signal(tid, info);
-	 VG_(resume_scheduler)(tid);
+	 resume_scheduler(tid);
 	 VG_(exit)(99);		/* If we can't resume, then just exit */
       }
 
@@ -1918,7 +1963,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
    if (VG_(clo_trace_signals)) {
       VG_(message)(Vg_DebugMsg, "signal %d arrived ... si_code=%d, EIP=%p, eip=%p",
                    sigNo, info->si_code, VG_(get_IP)(tid), 
-		   VGP_UCONTEXT_INSTR_PTR(uc) );
+		   VG_UCONTEXT_INSTR_PTR(uc) );
    }
    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
 
@@ -1947,14 +1992,14 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 			 VG_(shadow_base), VG_(shadow_end));
       }
       if (info->si_code == 1 /* SEGV_MAPERR */
-	  && fault >= (esp - VGA_STACK_REDZONE_SZB)
+	  && fault >= (esp - VG_STACK_REDZONE_SZB)
           && fault < VG_(client_end)) {
 	 /* If the fault address is above esp but below the current known
 	    stack segment base, and it was a fault because there was
 	    nothing mapped there (as opposed to a permissions fault),
 	    then extend the stack segment. 
 	 */
-         Addr base = VG_PGROUNDDN(esp - VGA_STACK_REDZONE_SZB);
+         Addr base = VG_PGROUNDDN(esp - VG_STACK_REDZONE_SZB);
 	 if (VG_(extend_stack)(base, VG_(threads)[tid].client_stack_szB)) {
 	    if (VG_(clo_trace_signals))
 	       VG_(message)(Vg_DebugMsg, 
@@ -2002,7 +2047,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 /* Can't continue; must longjmp back to the scheduler and thus
 	    enter the sighandler immediately. */
 	 deliver_signal(tid, info);
-	 VG_(resume_scheduler)(tid);
+	 resume_scheduler(tid);
       }
 
       /* Check to see if someone is interested in faults. */
@@ -2025,7 +2070,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       VG_(message)(Vg_DebugMsg, 
 		   "si_code=%x;  Faulting address: %p;  sp: %p",
 		   info->si_code, info->_sifields._sigfault._addr,
-                   VGP_UCONTEXT_STACK_PTR(uc));
+                   VG_UCONTEXT_STACK_PTR(uc));
 
       if (0)
 	 VG_(kill_self)(sigNo);		/* generate a core dump */
@@ -2035,9 +2080,9 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       vg_assert(tid != 0);
 
       VG_(core_panic_at)("Killed by fatal signal",
-                         VGP_UCONTEXT_INSTR_PTR(uc),
-                         VGP_UCONTEXT_STACK_PTR(uc),
-                         VGP_UCONTEXT_FRAME_PTR(uc));
+                         VG_UCONTEXT_INSTR_PTR(uc),
+                         VG_UCONTEXT_STACK_PTR(uc),
+                         VG_UCONTEXT_FRAME_PTR(uc));
    }
 #endif
 }
@@ -2066,7 +2111,7 @@ static void sigvgkill_handler(int signo, vki_siginfo_t *si, struct vki_ucontext 
    VG_(set_running)(tid);
    VG_(post_syscall)(tid);
 
-   VG_(resume_scheduler)(tid);
+   resume_scheduler(tid);
 
    VG_(core_panic)("sigvgkill_handler couldn't return to the scheduler\n");
 }
@@ -2153,14 +2198,15 @@ void VG_(poll_signals)(ThreadId tid)
       if (VG_(clo_trace_signals))
 	 VG_(message)(Vg_DebugMsg, "Polling found signal %d for tid %d", 
 		      sip->si_signo, tid);
-	 if (!is_sig_ign(sip->si_signo))
-		 deliver_signal(tid, sip);
-	 else if (VG_(clo_trace_signals))
-		 VG_(message)(Vg_DebugMsg, "signal %d ignored", sip->si_signo);
-	 sip->si_signo = 0;	/* remove from signal queue, if that's
+      if (!is_sig_ign(sip->si_signo))
+        deliver_signal(tid, sip);
+      else if (VG_(clo_trace_signals))
+        VG_(message)(Vg_DebugMsg, "signal %d ignored", sip->si_signo);
+      sip->si_signo = 0;	/* remove from signal queue, if that's
 				   where it came from */
 #endif
    }
+
    restore_all_host_signals(&saved_mask);
 }
 
@@ -2224,9 +2270,9 @@ void VG_(sigstartup_actions) ( void )
       VG_(message)(Vg_DebugMsg, "Max kernel-supported signal is %d", VG_(max_signal));
 
    /* Our private internal signals are treated as ignored */
-   scss.scss_per_sig[VKI_SIGVGKILL].scss_handler = VKI_SIG_IGN;
-   scss.scss_per_sig[VKI_SIGVGKILL].scss_flags   = VKI_SA_SIGINFO;
-   VG_(sigfillset)(&scss.scss_per_sig[VKI_SIGVGKILL].scss_mask);
+   scss.scss_per_sig[VG_SIGVGKILL].scss_handler = VKI_SIG_IGN;
+   scss.scss_per_sig[VG_SIGVGKILL].scss_flags   = VKI_SA_SIGINFO;
+   VG_(sigfillset)(&scss.scss_per_sig[VG_SIGVGKILL].scss_mask);
 
    /* Copy the process' signal mask into the root thread. */
    vg_assert(VG_(threads)[1].status == VgTs_Init);

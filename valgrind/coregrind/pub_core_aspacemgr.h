@@ -37,11 +37,12 @@
 // memory management.  Hence this module is almost completely
 // standalone; the only module it uses is m_debuglog.  DO NOT CHANGE
 // THIS.
-// [XXX: actually, this is far from true...]
+// [XXX: actually, this is far from true... especially that to #include
+// this header, you have to #include pub_core_debuginfo in order to 
+// see the SegInfo type, which is very bad...]
 //--------------------------------------------------------------------
 
 #include "pub_tool_aspacemgr.h"
-#include "pub_core_debuginfo.h"
 
 // Address space globals
 extern Addr VG_(client_base);	 // client address space limits
@@ -50,7 +51,6 @@ extern Addr VG_(client_mapbase); // base of mappings
 extern Addr VG_(clstk_base);	 // client stack range
 extern Addr VG_(clstk_end);
 extern UWord VG_(clstk_id);      // client stack id
-extern Addr VG_(client_trampoline_code);
 
 extern Addr VG_(brk_base);	 // start of brk
 extern Addr VG_(brk_limit);	 // current brk
@@ -59,27 +59,29 @@ extern Addr VG_(shadow_end);
 extern Addr VG_(valgrind_base);	 // valgrind's address range
 extern Addr VG_(valgrind_last);  // Nb: last byte, rather than one past the end
 
+// Direct access to these system calls.
+extern SysRes VG_(mmap_native)     ( void* start, SizeT length, UInt prot,
+                                     UInt flags, UInt fd, OffT offset );
+extern SysRes VG_(munmap_native)   ( void* start, SizeT length );
+extern SysRes VG_(mprotect_native) ( void *start, SizeT length, UInt prot );
+
 /* A Segment is mapped piece of client memory.  This covers all kinds
    of mapped memory (exe, brk, mmap, .so, shm, stack, etc)
 
-   We try to encode everything we know about a particular segment here.
+   We encode relevant info about each segment with these constants.
 */
-#define SF_FIXED    (1 <<  0) // client asked for MAP_FIXED
-#define SF_SHARED   (1 <<  1) // shared
-#define SF_SHM      (1 <<  2) // SYSV SHM (also SF_SHARED)
-#define SF_MMAP     (1 <<  3) // mmap memory
-#define SF_FILE     (1 <<  4) // mapping is backed by a file
-#define SF_STACK    (1 <<  5) // is a stack
-#define SF_GROWDOWN (1 <<  6) // segment grows down
-#define SF_GROWUP   (1 <<  7) // segment grows up
-#define SF_EXEC     (1 <<  8) // segment created by exec
-#define SF_DYNLIB   (1 <<  9) // mapped from dynamic library
-#define SF_NOSYMS   (1 << 10) // don't load syms, even if present
-#define SF_BRK      (1 << 11) // brk segment
-#define SF_CORE     (1 << 12) // allocated by core on behalf of the client
-#define SF_VALGRIND (1 << 13) // a valgrind-internal mapping - not in client
-#define SF_CODE     (1 << 14) // segment contains cached code
-#define SF_DEVICE   (1 << 15) // device mapping; avoid careless touching
+#define SF_SHARED   (1 <<  0) // shared
+#define SF_SHM      (1 <<  1) // SYSV SHM (also SF_SHARED)
+#define SF_MMAP     (1 <<  2) // mmap memory
+#define SF_FILE     (1 <<  3) // mapping is backed by a file
+#define SF_STACK    (1 <<  4) // is a stack
+#define SF_GROWDOWN (1 <<  5) // segment grows down
+#define SF_NOSYMS   (1 <<  6) // don't load syms, even if present
+#define SF_CORE     (1 <<  7) // allocated by core on behalf of the client
+#define SF_VALGRIND (1 <<  8) // a valgrind-internal mapping - not in client
+#define SF_CODE     (1 <<  9) // segment contains cached code
+
+typedef struct _Segment Segment;
 
 struct _Segment {
    UInt         prot;         // VKI_PROT_*
@@ -132,24 +134,12 @@ extern Segment *VG_(split_segment)(Addr a);
 extern void VG_(pad_address_space)  (Addr start);
 extern void VG_(unpad_address_space)(Addr start);
 
-extern UWord VG_(handle_stack_register)(Addr start, Addr end);
-extern void VG_(handle_stack_deregister)(UWord id);
-extern void VG_(handle_stack_change)(UWord id, Addr start, Addr end);
-
-extern VGA_REGPARM(2)
-       void VG_(unknown_SP_update) ( Addr old_SP, Addr new_SP );
-
 ///* Search /proc/self/maps for changes which aren't reflected in the
 //   segment list */
 //extern void VG_(sync_segments)(UInt flags);
 
 /* Return string for prot */
 extern const HChar *VG_(prot_str)(UInt prot);
-
-extern Addr VG_(get_memory_from_mmap_for_client)
-               (Addr base, SizeT len, UInt prot, UInt flags);
-
-//extern void VG_(print_shadow_stats)();
 
 /* Parses /proc/self/maps, calling `record_mapping' for each entry. */
 extern 
@@ -159,10 +149,10 @@ void VG_(parse_procselfmaps) (
                            const UChar *filename ) );
 
 // Pointercheck
-extern Bool VGA_(setup_pointercheck) ( Addr client_base, Addr client_end );
+extern Bool VG_(setup_pointercheck) ( Addr client_base, Addr client_end );
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 
 /*--------------------------------------------------------------------*/
-/*--- end                                     pub_core_aspacemgr.h ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

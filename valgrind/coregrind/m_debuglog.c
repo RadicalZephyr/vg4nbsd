@@ -55,7 +55,7 @@
 
 /* ----- x86-linux specifics ----- */
 
-#if defined(VGP_x86_linux) 
+#if defined(VGP_x86_linux)
 
 static UInt local_sys_write_stderr ( HChar* buf, Int n )
 {
@@ -91,43 +91,6 @@ static UInt local_sys_getpid ( void )
       : "eax" );
    return __res;
 }
-#elif defined (VGP_x86_netbsdelf2)
-static UInt local_sys_write_stderr (HChar * buf, Int n)
-{
-   UInt __res;
-   __asm__ volatile (
-      "movl  $4, %%eax\n"	/* %eax = __NR_write */
-      "pushl %2\n"		/* Third arg  = n */
-      "pushl %1\n"		/* Second arg = buf */
-      "pushl $2\n"		/* First arg  = stderr */
-      "pushl local_sys_write_stderr_ret\n"   /* Push return value */
-      "int   $0x80\n"		/* write(stderr, buf, n) */
-      "local_sys_write_stderr_ret:\n"
-      "addl  $16, %%esp\n"	/* Clean up stack (3 args + retval) */
-      "movl  %%eax, %0\n"	/* __res = eax */
-      : "=mr" (__res)
-      : "g" (buf), "g" (n)
-      : "eax"
-   );
-   if (__res < 0) 
-      __res = -1;
-   return __res;
-
-
-}
-static UInt local_sys_getpid(void)
-{
-   UInt __res;
-   __asm__ volatile (
-      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
-      "int  $0x80\n"       /* getpid() */
-      "movl %%eax, %0\n"   /* set __res = eax */
-      : "=mr" (__res)
-      :
-      : "eax" );
-   return __res;
-
-}
 
 #elif defined(VGP_amd64_linux)
 
@@ -162,6 +125,76 @@ static UInt local_sys_getpid ( void )
    return __res;
 }
 
+#elif defined(VGP_ppc32_linux)
+
+static UInt local_sys_write_stderr ( HChar* buf, Int n )
+{
+   UInt __res;
+   __asm__ volatile (
+      "li %%r0,4\n\t"      /* set %r0 = __NR_write */
+      "li %%r3,2\n\t"      /* set %r3 = stderr */
+      "mr %%r4,%1\n\t"     /* set %r4 = buf */
+      "mr %%r5,%2\n\t"     /* set %r5 = n */
+      "sc\n\t"             /* write(stderr, buf, n) */
+      "mr %0,%%r3\n"       /* set __res = r3 */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "r0", "r3", "r4", "r5" );
+   if (__res < 0)
+      __res = -1;
+   return __res;
+}
+
+static UInt local_sys_getpid ( void )
+{
+   UInt __res;
+   __asm__ volatile (
+      "li %%r0,20\n"       /* set %r0 = __NR_getpid */
+      "\tsc\n"             /* getpid() */
+      "\tmr %0,%%r3\n"     /* set __res = r3 */
+      : "=mr" (__res)
+      :
+      : "r0" );
+   return __res;
+}
+
+#elif defined (VGP_x86_netbsdelf2)
+
+static UInt local_sys_write_stderr (HChar * buf, Int n)
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl  $4, %%eax\n"	/* %eax = __NR_write */
+      "pushl %2\n"		/* Third arg  = n */
+      "pushl %1\n"		/* Second arg = buf */
+      "pushl $2\n"		/* First arg  = stderr */
+      "pushl local_sys_write_stderr_ret\n"   /* Push return value */
+      "int   $0x80\n"		/* write(stderr, buf, n) */
+      "local_sys_write_stderr_ret:\n"
+      "addl  $16, %%esp\n"	/* Clean up stack (3 args + retval) */
+      "movl  %%eax, %0\n"	/* __res = eax */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "eax"
+   );
+   if (__res < 0) 
+      __res = -1;
+   return __res;
+}
+
+static UInt local_sys_getpid(void)
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
+      "int  $0x80\n"       /* getpid() */
+      "movl %%eax, %0\n"   /* set __res = eax */
+      : "=mr" (__res)
+      :
+      : "eax" );
+   return __res;
+
+}
 #else
 # error Unknown platform
 #endif
@@ -261,6 +294,41 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
    }
 
 #  undef MAYBE_TOUPPER
+   return ret;
+}
+
+
+/* Copy a string into the buffer, escaping bad XML chars. */
+static 
+UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
+                                    void* send_arg2,
+                                    HChar* str )
+{
+   UInt   ret = 0;
+   Int    i;
+   Int    len = local_strlen(str);
+   HChar* alt;
+
+   for (i = 0; i < len; i++) {
+      switch (str[i]) {
+         case '&': alt = "&amp;"; break;
+         case '<': alt = "&lt;"; break;
+         case '>': alt = "&gt;"; break;
+         default:  alt = NULL;
+      }
+
+      if (alt) {
+         while (*alt) {
+            send(*alt, send_arg2);
+            ret++;
+            alt++;
+         }
+      } else {
+         send(str[i], send_arg2);
+         ret++;
+      }
+   }
+
    return ret;
 }
 
@@ -452,6 +520,14 @@ VG_(debugLog_vprintf) (
                                  flags, width, str, format[i]=='S');
             break;
          }
+         case 't': { /* %t, like %s but escaping chars for XML safety */
+            /* Note: simplistic; ignores field width and flags */
+            char *str = va_arg (vargs, char *);
+            if (str == (char*) 0) str = "(null)";
+            ret += myvprintf_str_XML_simplistic(send, send_arg2, str);
+            break;
+         }
+
 //         case 'y': { /* %y - print symbol */
 //            Char buf[100];
 //            Char *cp = buf;

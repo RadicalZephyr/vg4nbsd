@@ -32,19 +32,16 @@
 #define __PUB_CORE_SYSWRAP_H
 
 //--------------------------------------------------------------------
-// PURPOSE: This module contains all the syscall junk:  mostly wrappers,
-// but also the code that executes them, and related stuff.
+// PURPOSE: This module contains all the syscall junk:  mostly PRE/POST
+// wrappers, but also the main syscall jacketing code.
 //--------------------------------------------------------------------
 
 // Return how many bytes of a thread's Valgrind stack are unused
-extern SSizeT VGA_(stack_unused)(ThreadId tid);
+extern SSizeT VG_(stack_unused)(ThreadId tid);
 
 // Allocates a stack for the first thread, then runs it,
 // as if the thread had been set up by clone()
-extern void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid);
-
-extern HChar* VG_(resolve_filename_nodup)(Int fd);
-extern HChar* VG_(resolve_filename)(Int fd);
+extern void VG_(main_thread_wrapper_NORETURN)(ThreadId tid);
 
 extern void VG_(client_syscall) ( ThreadId tid );
 
@@ -66,7 +63,7 @@ extern void VG_(fixup_guest_state_after_syscall_interrupted)(
 extern void VG_(reap_threads)(ThreadId self);
 
 // Release resources held by this thread
-extern void VGP_(cleanup_thread) ( ThreadArchState* );
+extern void VG_(cleanup_thread) ( ThreadArchState* );
 
 /* fd leakage calls. */
 extern void VG_(init_preopened_fds) ( void );

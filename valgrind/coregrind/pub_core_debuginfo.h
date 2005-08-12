@@ -36,16 +36,14 @@
 // to get file and function names, line numbers, variable types, and
 // to help stack unwinding.
 //
-// And it's internals are currently a mess.  It's interface is ugly, too.
+// And its internals are currently a mess.  Its interface is ugly, too.
 //--------------------------------------------------------------------
 
 #include "pub_tool_debuginfo.h"
 
-typedef struct _Segment Segment;
-typedef struct _CodeRedirect CodeRedirect;
-
 extern Bool VG_(is_object_file)   ( const void *hdr );
-extern SegInfo * VG_(read_seg_symbols) ( Segment *seg );
+extern SegInfo *VG_(read_seg_symbols) ( Addr addr, SizeT len,
+                                        OffT offset, const Char* filename);
 extern void VG_(seginfo_incref)   ( SegInfo * );
 extern void VG_(seginfo_decref)   ( SegInfo *, Addr a );
 

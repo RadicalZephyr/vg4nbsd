@@ -62,27 +62,28 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_dispatch.h"
-#include "pub_core_errormgr.h"
+#include "pub_core_errormgr.h"      // For VG_(get_n_errs_found)()
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
 #include "pub_core_machine.h"
-#include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
 #include "pub_core_replacemalloc.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
-#include "pub_core_stacktrace.h"
+#include "pub_core_stacks.h"
+#include "pub_core_stacktrace.h"    // For VG_(get_and_pp_StackTrace)()
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
-#include "pub_core_translate.h"
+#include "pub_core_translate.h"     // For VG_(translate)()
 #include "pub_core_transtab.h"
 #include "vki_unistd.h"
 #include "priv_sema.h"
@@ -104,6 +105,9 @@ Bool VG_(my_fault) = True;
 /* Counts downwards in VG_(run_innerloop). */
 UInt VG_(dispatch_ctr);
 
+/* 64-bit counter for the number of basic blocks done. */
+static ULong bbs_done = 0;
+
 /* Forwards */
 static void do_client_request ( ThreadId tid );
 static void scheduler_sanity ( ThreadId tid );
@@ -113,12 +117,20 @@ static void mostly_clear_thread_record ( ThreadId tid );
 static UInt n_scheduling_events_MINOR = 0;
 static UInt n_scheduling_events_MAJOR = 0;
 
+/* Sanity checking counts. */
+static UInt sanity_fast_count = 0;
+static UInt sanity_slow_count = 0;
 
 void VG_(print_scheduler_stats)(void)
 {
    VG_(message)(Vg_DebugMsg,
-      "           %d/%d major/minor sched events.", 
+      "scheduler: %llu jumps (bb entries).", bbs_done );
+   VG_(message)(Vg_DebugMsg,
+      "scheduler: %d/%d major/minor sched events.", 
       n_scheduling_events_MAJOR, n_scheduling_events_MINOR);
+   VG_(message)(Vg_DebugMsg, 
+                "   sanity: %d cheap, %d expensive checks.",
+                sanity_fast_count, sanity_slow_count );
 }
 
 /* CPU semaphore, so that threads can run exclusively */
@@ -183,7 +195,7 @@ void VG_(set_running)(ThreadId tid)
    
    tst->status = VgTs_Runnable;
    
-   VG_(sema_down)(&run_sema);
+   ML_(sema_down)(&run_sema);
    if (VG_(running_tid) != VG_INVALID_THREADID)
       VG_(printf)("tid %d found %d running\n", tid, VG_(running_tid));
    vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
@@ -191,6 +203,10 @@ void VG_(set_running)(ThreadId tid)
 
    if (VG_(clo_trace_sched))
       print_sched_event(tid, "now running");
+
+   // While thre modeling is disable, issue thread_run events here
+   // VG_(tm_thread_switchto)(tid);
+   VG_TRACK( thread_run, tid );
 }
 
 /* 
@@ -216,7 +232,7 @@ void VG_(set_sleeping)(ThreadId tid, ThreadStatus sleepstate)
 
    /* Release the run_sema; this will reschedule any runnable
       thread. */
-   VG_(sema_up)(&run_sema);
+   ML_(sema_up)(&run_sema);
 
    if (VG_(clo_trace_sched)) {
       Char buf[50];
@@ -241,7 +257,7 @@ void VG_(exit_thread)(ThreadId tid)
    /* There should still be a valid exitreason for this thread */
    vg_assert(VG_(threads)[tid].exitreason != VgSrc_None);
 
-   VG_(sema_up)(&run_sema);
+   ML_(sema_up)(&run_sema);
 }
 
 /* Kill a thread.  This interrupts whatever a thread is doing, and
@@ -257,7 +273,7 @@ void VG_(kill_thread)(ThreadId tid)
       if (VG_(clo_trace_signals))
 	 VG_(message)(Vg_DebugMsg, "kill_thread zaps tid %d lwp %d",
 		      tid, VG_(threads)[tid].os_state.lwpid);
-      VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VKI_SIGVGKILL);
+      VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
    }
 }
 
@@ -281,30 +297,15 @@ void VG_(vg_yield)(void)
     */
    if (1)
 #if defined (VGO_netbsdelf2)
-      VG_(do_syscall0)(__NR_sa_yield);	/* XXX: is this sophisticated enough? */
-#else
-      VG_(do_syscall0)(__NR_sched_yield);
+      VG_(do_syscall0)(__NR_sa_yield);		/* XXX: Is this correct? */
 #endif
+      VG_(do_syscall0)(__NR_sched_yield);
    else
       VG_(nanosleep)(&ts);
 
    VG_(set_running)(tid);
 }
 
-
-void VG_(resume_scheduler)(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-
-   vg_assert(tst->os_state.lwpid == VG_(gettid)());
-
-   if (tst->sched_jmpbuf_valid) {
-      /* Can't continue; must longjmp back to the scheduler and thus
-         enter the sighandler immediately. */
-   
-      longjmp(tst->sched_jmpbuf, True);
-   }
-}
 
 /* Set the standard set of blocked signals, used wheneever we're not
    running a client syscall. */
@@ -394,6 +395,26 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    VGP_PUSHCC(VgpRun);
 
+#  if defined(VGA_ppc32)
+   /* This is necessary due to the hacky way vex models reservations
+      on ppc.  It's really quite incorrect for each thread to have its
+      own reservation flag/address, since it's really something that
+      all threads share (that's the whole point).  But having shared
+      guest state is something we can't model with Vex.  However, as
+      per PaulM's 2.4.0ppc, the reservation is modelled using a
+      reservation flag which is cleared at each context switch.  So it
+      is indeed possible to get away with a per thread-reservation if
+      the thread's reservation is cleared before running it.
+
+      This should be abstractified and lifted out.
+   */
+   { Int i;
+     /* Clear any existing reservation.  Be paranoid and clear them all. */
+     for (i = 0; i < VG_N_THREADS; i++)
+        VG_(threads)[i].arch.vex.guest_RESVN = 0;
+   }
+#  endif   
+
    /* there should be no undealt-with signals */
    //vg_assert(VG_(threads)[tid].siginfo.si_signo == 0);
 
@@ -423,7 +444,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    done_this_time = (Int)dispatch_ctr_SAVED - (Int)VG_(dispatch_ctr) - 0;
 
    vg_assert(done_this_time >= 0);
-   VG_(bbs_done) += (ULong)done_this_time;
+   bbs_done += (ULong)done_this_time;
 
    VGP_POPCC(VgpRun);
    return trc;
@@ -450,7 +471,7 @@ void mostly_clear_thread_record ( ThreadId tid )
    vki_sigset_t savedmask;
 
    vg_assert(tid >= 0 && tid < VG_N_THREADS);
-   VGP_(cleanup_thread)(&VG_(threads)[tid].arch);
+   VG_(cleanup_thread)(&VG_(threads)[tid].arch);
    VG_(threads)[tid].tid = tid;
 
    /* Leave the thread in Zombie, so that it doesn't get reallocated
@@ -507,9 +528,9 @@ static void sched_fork_cleanup(ThreadId me)
    }
 
    /* re-init and take the sema */
-   VG_(sema_deinit)(&run_sema);
-   VG_(sema_init)(&run_sema);
-   VG_(sema_down)(&run_sema);
+   ML_(sema_deinit)(&run_sema);
+   ML_(sema_init)(&run_sema);
+   ML_(sema_down)(&run_sema);
 }
 
 
@@ -523,7 +544,7 @@ void VG_(scheduler_init) ( void )
    Int i;
    ThreadId tid_main;
 
-   VG_(sema_init)(&run_sema);
+   ML_(sema_init)(&run_sema);
 
    for (i = 0 /* NB; not 1 */; i < VG_N_THREADS; i++) {
 
@@ -547,7 +568,7 @@ void VG_(scheduler_init) ( void )
                                             = VG_(clstk_end) - sizeof(UWord);
    VG_(threads)[tid_main].client_stack_szB  = VG_(client_rlimit_stack).rlim_cur;
 
-   VG_(atfork)(NULL, NULL, sched_fork_cleanup);
+   VG_(atfork_child)(sched_fork_cleanup);
 }
 
 
@@ -565,7 +586,7 @@ static void handle_tt_miss ( ThreadId tid )
    found = VG_(search_transtab)( NULL, ip, True/*upd_fast_cache*/ );
    if (!found) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/ )) {
+      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, bbs_done )) {
 	 found = VG_(search_transtab)( NULL, ip, True ); 
          vg_assert2(found, "VG_TRC_INNER_FASTMISS: missing tt_fast entry");
       
@@ -632,7 +653,6 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 VG_(set_sleeping)(tid, VgTs_Yielding);
 	 /* nothing */
 	 VG_(set_running)(tid);
-	 //VG_(tm_thread_switchto)(tid);
 
 	 /* OK, do some relatively expensive housekeeping stuff */
 	 scheduler_sanity(tid);
@@ -754,6 +774,45 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          VG_(synth_sigill)(tid, VG_(get_IP)(tid));
          break;
 
+      case VEX_TRC_JMP_TINVAL:
+         VG_(discard_translations)(
+            (Addr64)VG_(threads)[tid].arch.vex.guest_TISTART,
+            VG_(threads)[tid].arch.vex.guest_TILEN
+         );
+         if (0)
+            VG_(printf)("dump translations done.\n");
+         break;
+
+      case VG_TRC_INVARIANT_FAILED:
+         /* This typically happens if, after running generated code,
+            it is detected that host CPU settings (eg, FPU/Vector
+            control words) are not as they should be.  Vex's code
+            generation specifies the state such control words should
+            be in on entry to Vex-generated code, and they should be
+            unchanged on exit from it.  Failure of this assertion
+            usually means a bug in Vex's code generation. */
+         vg_assert2(0, "VG_(scheduler), phase 3: "
+                       "run_innerloop detected host "
+                       "state invariant failure", trc);
+
+      case VEX_TRC_JMP_SYSENTER_X86:
+         /* Do whatever simulation is appropriate for an x86 sysenter
+            instruction.  Note that it is critical to set this thread's
+            guest_EIP to point at the code to execute after the
+            sysenter, since Vex-generated code will not have set it --
+            vex does not know what it should be.  Vex sets the next
+            address to zero, so if you don't guest_EIP, the thread will
+            jump to zero afterwards and probably die as a result. */
+#        if defined(VGA_x86)
+         //FIXME: VG_(threads)[tid].arch.vex.guest_EIP = ....
+         //handle_sysenter_x86(tid);
+         vg_assert2(0, "VG_(scheduler), phase 3: "
+                       "sysenter_x86 on not yet implemented");
+#        else
+         vg_assert2(0, "VG_(scheduler), phase 3: "
+                       "sysenter_x86 on non-x86 platform?!?!");
+#        endif
+
       default: 
 	 vg_assert2(0, "VG_(scheduler), phase 3: "
                        "unexpected thread return code (%u)", trc);
@@ -780,7 +839,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 /* 
    This causes all threads to forceably exit.  They aren't actually
    dead by the time this returns; you need to call
-   VGA_(reap_threads)() to wait for them.
+   VG_(reap_threads)() to wait for them.
  */
 void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
 {
@@ -809,21 +868,21 @@ void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
    ------------------------------------------------------------------ */
 
 #if defined(VGA_x86)
-#  define VGA_CLREQ_ARGS      guest_EAX
-#  define VGA_CLREQ_RET       guest_EDX
+#  define VG_CLREQ_ARGS       guest_EAX
+#  define VG_CLREQ_RET        guest_EDX
 #elif defined(VGA_amd64)
-#  define VGA_CLREQ_ARGS      guest_RAX
-#  define VGA_CLREQ_RET       guest_RDX
-#elif defined(VGA_arm)
-#  define VGA_CLREQ_ARGS      guest_R0
-#  define VGA_CLREQ_RET       guest_R0
+#  define VG_CLREQ_ARGS       guest_RAX
+#  define VG_CLREQ_RET        guest_RDX
+#elif defined(VGA_ppc32)
+#  define VG_CLREQ_ARGS       guest_GPR4
+#  define VG_CLREQ_RET        guest_GPR3
 #else
 #  error Unknown arch
 #endif
 
-#define CLREQ_ARGS(regs)   ((regs).vex.VGA_CLREQ_ARGS)
-#define CLREQ_RET(regs)    ((regs).vex.VGA_CLREQ_RET)
-#define O_CLREQ_RET        (offsetof(VexGuestArchState, VGA_CLREQ_RET))
+#define CLREQ_ARGS(regs)   ((regs).vex.VG_CLREQ_ARGS)
+#define CLREQ_RET(regs)    ((regs).vex.VG_CLREQ_RET)
+#define O_CLREQ_RET        (offsetof(VexGuestArchState, VG_CLREQ_RET))
 
 // These macros write a value to a client's thread register, and tell the
 // tool that it's happened (if necessary).
@@ -943,32 +1002,32 @@ void do_client_request ( ThreadId tid )
          break; }
 
       case VG_USERREQ__STACK_REGISTER: {
-         UWord sid = VG_(handle_stack_register)((Addr)arg[1], (Addr)arg[2]);
+         UWord sid = VG_(register_stack)((Addr)arg[1], (Addr)arg[2]);
          SET_CLREQ_RETVAL( tid, sid );
          break; }
 
       case VG_USERREQ__STACK_DEREGISTER: {
-         VG_(handle_stack_deregister)(arg[1]);
+         VG_(deregister_stack)(arg[1]);
          SET_CLREQ_RETVAL( tid, 0 );     /* return value is meaningless */
          break; }
 
       case VG_USERREQ__STACK_CHANGE: {
-         VG_(handle_stack_change)(arg[1], (Addr)arg[2], (Addr)arg[3]);
+         VG_(change_stack)(arg[1], (Addr)arg[2], (Addr)arg[3]);
          SET_CLREQ_RETVAL( tid, 0 );     /* return value is meaningless */
          break; }
 
       case VG_USERREQ__GET_MALLOCFUNCS: {
 	 struct vg_mallocfunc_info *info = (struct vg_mallocfunc_info *)arg[1];
 
-	 info->tl_malloc               = VG_(tdict).malloc_malloc;
-	 info->tl_calloc               = VG_(tdict).malloc_calloc;
-	 info->tl_realloc              = VG_(tdict).malloc_realloc;
-	 info->tl_memalign             = VG_(tdict).malloc_memalign;
-	 info->tl___builtin_new        = VG_(tdict).malloc___builtin_new;
-	 info->tl___builtin_vec_new    = VG_(tdict).malloc___builtin_vec_new;
-	 info->tl_free                 = VG_(tdict).malloc_free;
-	 info->tl___builtin_delete     = VG_(tdict).malloc___builtin_delete;
-	 info->tl___builtin_vec_delete = VG_(tdict).malloc___builtin_vec_delete;
+	 info->tl_malloc               = VG_(tdict).tool_malloc;
+	 info->tl_calloc               = VG_(tdict).tool_calloc;
+	 info->tl_realloc              = VG_(tdict).tool_realloc;
+	 info->tl_memalign             = VG_(tdict).tool_memalign;
+	 info->tl___builtin_new        = VG_(tdict).tool___builtin_new;
+	 info->tl___builtin_vec_new    = VG_(tdict).tool___builtin_vec_new;
+	 info->tl_free                 = VG_(tdict).tool_free;
+	 info->tl___builtin_delete     = VG_(tdict).tool___builtin_delete;
+	 info->tl___builtin_vec_delete = VG_(tdict).tool___builtin_vec_delete;
 
 	 info->arena_payload_szB       = VG_(arena_payload_szB);
 	 info->clo_trace_malloc        = VG_(clo_trace_malloc);
@@ -1030,7 +1089,7 @@ void do_client_request ( ThreadId tid )
 
 
 /* ---------------------------------------------------------------------
-   Sanity checking.
+   Sanity checking (permanently engaged)
    ------------------------------------------------------------------ */
 
 /* Internal consistency checks on the sched structures. */
@@ -1054,6 +1113,74 @@ void scheduler_sanity ( ThreadId tid )
    }
 }
 
+void VG_(sanity_check_general) ( Bool force_expensive )
+{
+   ThreadId tid;
+
+   VGP_PUSHCC(VgpCoreCheapSanity);
+
+   if (VG_(clo_sanity_level) < 1) return;
+
+   /* --- First do all the tests that we can do quickly. ---*/
+
+   sanity_fast_count++;
+
+   /* Check stuff pertaining to the memory check system. */
+
+   /* Check that nobody has spuriously claimed that the first or
+      last 16 pages of memory have become accessible [...] */
+   if (VG_(needs).sanity_checks) {
+      VGP_PUSHCC(VgpToolCheapSanity);
+      vg_assert(VG_TDICT_CALL(tool_cheap_sanity_check));
+      VGP_POPCC(VgpToolCheapSanity);
+   }
+
+   /* --- Now some more expensive checks. ---*/
+
+   /* Once every 25 times, check some more expensive stuff. */
+   if ( force_expensive
+     || VG_(clo_sanity_level) > 1
+     || (VG_(clo_sanity_level) == 1 && (sanity_fast_count % 25) == 0)) {
+
+      VGP_PUSHCC(VgpCoreExpensiveSanity);
+      sanity_slow_count++;
+
+      if (VG_(needs).sanity_checks) {
+          VGP_PUSHCC(VgpToolExpensiveSanity);
+          vg_assert(VG_TDICT_CALL(tool_expensive_sanity_check));
+          VGP_POPCC(VgpToolExpensiveSanity);
+      }
+
+      /* Look for stack overruns.  Visit all threads. */
+      for (tid = 1; tid < VG_N_THREADS; tid++) {
+	 SSizeT remains;
+
+	 if (VG_(threads)[tid].status == VgTs_Empty ||
+	     VG_(threads)[tid].status == VgTs_Zombie)
+	    continue;
+
+	 remains = VG_(stack_unused)(tid);
+	 if (remains < VKI_PAGE_SIZE)
+	    VG_(message)(Vg_DebugMsg, 
+                         "WARNING: Thread %d is within %d bytes "
+                         "of running out of stack!",
+		         tid, remains);
+      }
+
+      VGP_POPCC(VgpCoreExpensiveSanity);
+   }
+
+   if (VG_(clo_sanity_level) > 1) {
+      VGP_PUSHCC(VgpCoreExpensiveSanity);
+      /* Check sanity of the low-level memory manager.  Note that bugs
+         in the client's code can cause this to fail, so we don't do
+         this check unless specially asked for.  And because it's
+         potentially very expensive. */
+      VG_(sanity_check_malloc_all)();
+      VGP_POPCC(VgpCoreExpensiveSanity);
+   }
+   VGP_POPCC(VgpCoreCheapSanity);
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

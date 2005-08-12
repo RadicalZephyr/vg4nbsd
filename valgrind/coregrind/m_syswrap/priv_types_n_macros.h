@@ -124,9 +124,9 @@ typedef
 /* These are defined in the relevant platform-specific files --
    syswrap-arch-os.c */
 
-extern const SyscallTableEntry VGP_(syscall_table)[];
+extern const SyscallTableEntry ML_(syscall_table)[];
 
-extern const UInt VGP_(syscall_table_size);
+extern const UInt ML_(syscall_table_size);
    
 
 /* ---------------------------------------------------------------------
@@ -208,7 +208,7 @@ extern const UInt VGP_(syscall_table_size);
 
 /* Add a NetBSD-specific, arch-independent wrapper to a syscall
    table. */
-#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsdelf2, sysno, name) 
+#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsdelf2, sysno, name)
 #define NBSDXY(sysno, name)    WRAPPER_ENTRY_XY(netbsdelf2, sysno, name)
 
 
@@ -256,6 +256,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
 }
 
 
+
 /* Set the current result status/value in various ways. */
 #define SET_STATUS_Success(zzz)                      \
    do { status->what = SsSuccess;                    \
@@ -285,6 +286,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
       VG_(printf)(format, ## args)
 
 
+
 /* Macros used to tell tools about uses of scalar arguments.  Note,
    these assume little-endianness.  These can only be used in
    pre-wrappers, and they refer to the layout parameter passed in. */
@@ -292,12 +294,58 @@ static inline UWord getRES ( SyscallStatus* st ) {
    PRRSN == "pre-register-read-syscall"
 */
 
+/* Tell the tool that the syscall number is being read. */
 #define PRRSN \
       VG_(tdict).track_pre_reg_read(Vg_CoreSysCall, tid, "(syscallno)", \
                                     layout->o_sysno, sizeof(UWord));
-#define PRRAn(n,s,t,a) \
-      VG_(tdict).track_pre_reg_read(Vg_CoreSysCall, tid, s"("#a")", \
-                                    layout->o_arg##n, sizeof(t));
+
+
+/* PRRAn: Tell the tool that the register holding the n-th syscall
+   argument is being read, at type 't' which must be at most the size
+   of a register but can be smaller.  In the latter case we need to be
+   careful about endianness. */
+
+/* little-endian: the part of the guest state being read is
+      let here = offset_of_reg
+      in  [here .. here + sizeof(t) - 1]
+   since the least significant parts of the guest register are stored
+   in memory at the lowest address.
+*/
+#define PRRAn_LE(n,s,t,a)                            \
+    do {                                             \
+       Int here = layout->o_arg##n;                  \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          here, sizeof(t)                            \
+       );                                            \
+    } while (0)
+
+/* big-endian: the part of the guest state being read is
+      let next = offset_of_reg + sizeof(reg) 
+      in  [next - sizeof(t) .. next - 1]
+   since the least significant parts of the guest register are stored
+   in memory at the highest address.
+*/
+#define PRRAn_BE(n,s,t,a)                            \
+    do {                                             \
+       Int next = layout->o_arg##n + sizeof(UWord);  \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          next-sizeof(t), sizeof(t)                  \
+       );                                            \
+    } while (0)
+
+#if defined(VG_BIGENDIAN)
+#  define PRRAn(n,s,t,a) PRRAn_BE(n,s,t,a)
+#elif defined(VG_LITTLEENDIAN)
+#  define PRRAn(n,s,t,a) PRRAn_LE(n,s,t,a)
+#else
+#  error "Unknown endianness"
+#endif
+
+
 #define PRE_REG_READ0(tr, s) \
    if (VG_(tdict).track_pre_reg_read) { \
       PRRSN; \

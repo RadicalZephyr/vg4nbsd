@@ -55,12 +55,13 @@
 	sigprocmasks failed (there's no way to determine which one
 	failed).
 
-	VGA_(interrupted_syscall)() does the thread state fixup in the
-	case where we were interrupted by a signal.
+	VG_(fixup_guest_state_after_syscall_interrupted) does the
+	thread state fixup in the case where we were interrupted by a
+	signal.
 	
 	Prototype:
 
-	Int VGA_(do_syscall_for_client_WRK)(
+	Int ML_(do_syscall_for_client_WRK)(
 	                          Int syscallno,		// 0
 				  void* guest_state,		// 4
 				  const vki_sigset_t *sysmask,	// 8
@@ -72,8 +73,8 @@
 /* from vki_arch.h */	
 #define VKI_SIG_SETMASK	2
 	
-.globl VGA_(do_syscall_for_client_WRK)
-VGA_(do_syscall_for_client_WRK):
+.globl ML_(do_syscall_for_client_WRK)
+ML_(do_syscall_for_client_WRK):
 	/* save callee-saved regs */
 	push	%esi
 	push	%edi
@@ -136,16 +137,16 @@ VGA_(do_syscall_for_client_WRK):
    VG_(fixup_guest_state_after_syscall_interrupted) can do the
    right thing */
 	
-.globl VGA_(blksys_setup)
-.globl VGA_(blksys_restart)
-.globl VGA_(blksys_complete)
-.globl VGA_(blksys_committed)
-.globl VGA_(blksys_finished)
-VGA_(blksys_setup):	.long 1b
-VGA_(blksys_restart):	.long 2b
-VGA_(blksys_complete):	.long 3b
-VGA_(blksys_committed):	.long 4b
-VGA_(blksys_finished):	.long 5b
+.globl ML_(blksys_setup)
+.globl ML_(blksys_restart)
+.globl ML_(blksys_complete)
+.globl ML_(blksys_committed)
+.globl ML_(blksys_finished)
+ML_(blksys_setup):	.long 1b
+ML_(blksys_restart):	.long 2b
+ML_(blksys_complete):	.long 3b
+ML_(blksys_committed):	.long 4b
+ML_(blksys_finished):	.long 5b
 .previous
 	
 /* Let the linker know we don't need an executable stack */

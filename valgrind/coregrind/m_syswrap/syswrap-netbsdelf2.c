@@ -30,6 +30,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
@@ -41,7 +42,6 @@
 #include "pub_core_tooliface.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_signals.h"
 #include "pub_core_syscall.h"
 
 #include "priv_types_n_macros.h"
@@ -50,10 +50,10 @@
 
 // Run a thread from beginning to end and return the thread's
 // scheduler-return-code.
-VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
+VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
 {
    VG_(debugLog)(1, "core_os",
-                    "VG_(thread_wrapper)(tid=%lld): entry\n",
+                    "ML_(thread_wrapper)(tid=%lld): entry\n",
                     (ULong)tidW);
 
    VgSchedReturnCode ret;
@@ -85,7 +85,7 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
    vg_assert(VG_(is_running_thread)(tid));
 
    VG_(debugLog)(1, "core_os",
-                    "VG_(thread_wrapper)(tid=%lld): done\n",
+                    "ML_(thread_wrapper)(tid=%lld): done\n",
                     (ULong)tidW);
 
    /* Return to caller, still holding the lock. */
@@ -106,6 +106,7 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
 
 #define PRE(name)       DEFN_PRE_TEMPLATE(netbsdelf2, name)
 #define POST(name)      DEFN_POST_TEMPLATE(netbsdelf2, name)
+
 PRE(sys_ni_syscall)
 {
    PRINT("non-existent syscall! (ni_syscall)");
@@ -180,10 +181,12 @@ PRE(sys_unmount)
 //zz    PRE_REG_READ1(long, "adjtimex", struct timex *, buf);
 //zz    PRE_MEM_READ( "adjtimex(timex->modes)", ARG1, sizeof(tx->modes));
 //zz
-//zz #define ADJX(bit,field) 				
-//zz    if (tx->modes & bit)					
-//zz       PRE_MEM_READ( "adjtimex(timex->"#field")",  
-//zz 		    (Addr)&tx->field, sizeof(tx->field))
+#if 0 //zz  (avoiding warnings about multi-line comments)
+zz #define ADJX(bit,field) 				\
+zz    if (tx->modes & bit)					\
+zz       PRE_MEM_READ( "adjtimex(timex->"#field")",	\
+zz 		    (Addr)&tx->field, sizeof(tx->field))
+#endif
 //zz    ADJX(ADJ_FREQUENCY, freq);
 //zz    ADJX(ADJ_MAXERROR, maxerror);
 //zz    ADJX(ADJ_ESTERROR, esterror);
@@ -687,12 +690,12 @@ POST(sys_futex)
    vg_assert(SUCCESS);
    POST_MEM_WRITE( ARG1, sizeof(int) );
    if (ARG2 == VKI_FUTEX_FD) {
-      if (!VG_(fd_allowed)(RES, "futex", tid, True)) {
+      if (!ML_(fd_allowed)(RES, "futex", tid, True)) {
          VG_(close)(RES);
          SET_STATUS_Failure( VKI_EMFILE );
       } else {
          if (VG_(clo_track_fds))
-            VG_(record_fd_open)(tid, RES, VG_(arena_strdup)(VG_AR_CORE, (Char*)ARG1));
+            ML_(record_fd_open)(tid, RES, VG_(arena_strdup)(VG_AR_CORE, (Char*)ARG1));
       }
    }
 }
@@ -705,12 +708,12 @@ PRE(sys_epoll_create)
 POST(sys_epoll_create)
 {
    vg_assert(SUCCESS);
-   if (!VG_(fd_allowed)(RES, "epoll_create", tid, True)) {
+   if (!ML_(fd_allowed)(RES, "epoll_create", tid, True)) {
       VG_(close)(RES);
       SET_STATUS_Failure( VKI_EMFILE );
    } else {
       if (VG_(clo_track_fds))
-         VG_(record_fd_open) (tid, RES, NULL);
+         ML_(record_fd_open) (tid, RES, NULL);
    }
 }
 
@@ -724,8 +727,9 @@ PRE(sys_epoll_ctl)
    PRINT("sys_epoll_ctl ( %d, %s, %d, %p )",
          ARG1, ( ARG2<3 ? epoll_ctl_s[ARG2] : "?" ), ARG3, ARG4);
    PRE_REG_READ4(long, "epoll_ctl",
-                 int, epfd, int, op, int, fd, struct epoll_event *, event);
-   PRE_MEM_READ( "epoll_ctl(event)", ARG4, sizeof(struct epoll_event) );
+                 int, epfd, int, op, int, fd, struct vki_epoll_event *, event);
+   if (ARG2 != VKI_EPOLL_CTL_DEL)
+      PRE_MEM_READ( "epoll_ctl(event)", ARG4, sizeof(struct vki_epoll_event) );
 }
 
 PRE(sys_epoll_wait)
@@ -733,15 +737,15 @@ PRE(sys_epoll_wait)
    *flags |= SfMayBlock;
    PRINT("sys_epoll_wait ( %d, %p, %d, %d )", ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(long, "epoll_wait",
-                 int, epfd, struct epoll_event *, events,
+                 int, epfd, struct vki_epoll_event *, events,
                  int, maxevents, int, timeout);
-   PRE_MEM_WRITE( "epoll_wait(events)", ARG2, sizeof(struct epoll_event)*ARG3);
+   PRE_MEM_WRITE( "epoll_wait(events)", ARG2, sizeof(struct vki_epoll_event)*ARG3);
 }
 POST(sys_epoll_wait)
 {
    vg_assert(SUCCESS);
    if (RES > 0)
-      POST_MEM_WRITE( ARG2, sizeof(struct epoll_event)*RES ) ;
+      POST_MEM_WRITE( ARG2, sizeof(struct vki_epoll_event)*RES ) ;
 }
 
 PRE(sys_gettid)
@@ -755,14 +759,14 @@ PRE(sys_gettid)
 //zz    /* int tkill(pid_t tid, int sig); */
 //zz    PRINT("sys_tkill ( %d, %d )", ARG1,ARG2);
 //zz    PRE_REG_READ2(long, "tkill", int, tid, int, sig);
-//zz    if (!VG_(client_signal_OK)(ARG2)) {
+//zz    if (!ML_(client_signal_OK)(ARG2)) {
 //zz       SET_STATUS_( -VKI_EINVAL );
 //zz       return;
 //zz    }
 //zz
 //zz    /* If we're sending SIGKILL, check to see if the target is one of
 //zz       our threads and handle it specially. */
-//zz    if (ARG2 == VKI_SIGKILL && VG_(do_sigkill)(ARG1, -1))
+//zz    if (ARG2 == VKI_SIGKILL && ML_(do_sigkill)(ARG1, -1))
 //zz       SET_STATUS_(0);
 //zz    else
 //zz       SET_STATUS_(VG_(do_syscall2)(SYSNO, ARG1, ARG2));
@@ -779,14 +783,14 @@ PRE(sys_tgkill)
    /* int tgkill(pid_t tgid, pid_t tid, int sig); */
    PRINT("sys_tgkill ( %d, %d, %d )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "tgkill", int, tgid, int, tid, int, sig);
-   if (!VG_(client_signal_OK)(ARG3)) {
+   if (!ML_(client_signal_OK)(ARG3)) {
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
    
    /* If we're sending SIGKILL, check to see if the target is one of
       our threads and handle it specially. */
-   if (ARG3 == VKI_SIGKILL && VG_(do_sigkill)(ARG2, ARG1))
+   if (ARG3 == VKI_SIGKILL && ML_(do_sigkill)(ARG2, ARG1))
       SET_STATUS_Success(0);
    else
       SET_STATUS_from_SysRes(VG_(do_syscall3)(SYSNO, ARG1, ARG2, ARG3));
@@ -827,7 +831,7 @@ PRE(sys_io_setup)
       return;
    }
 
-   VG_(map_segment)(addr, size, VKI_PROT_READ|VKI_PROT_WRITE, SF_FIXED);
+   VG_(map_segment)(addr, size, VKI_PROT_READ|VKI_PROT_WRITE, 0);
    
    VG_(pad_address_space)(0);
    SET_STATUS_from_SysRes( VG_(do_syscall2)(SYSNO, ARG1, ARG2) );
@@ -837,7 +841,7 @@ PRE(sys_io_setup)
       struct vki_aio_ring *r = *(struct vki_aio_ring **)ARG2;
         
       vg_assert(addr == (Addr)r);
-      vg_assert(VG_(valid_client_addr)(addr, size, tid, "io_setup"));
+      vg_assert(ML_(valid_client_addr)(addr, size, tid, "io_setup"));
                 
       VG_TRACK( new_mem_mmap, addr, size, True, True, False );
       POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
@@ -927,7 +931,7 @@ PRE(sys_io_submit)
 {
    Int i;
 
-   PRINT("sys_io_submit( %llu, %lld, %p )", (ULong)ARG1,(Long)ARG2,ARG3);
+   PRINT("sys_io_submit ( %llu, %lld, %p )", (ULong)ARG1,(Long)ARG2,ARG3);
    PRE_REG_READ3(long, "io_submit",
                  vki_aio_context_t, ctx_id, long, nr,
                  struct iocb **, iocbpp);
@@ -956,7 +960,7 @@ PRE(sys_io_submit)
 
 PRE(sys_io_cancel)
 {
-   PRINT("sys_io_cancel( %llu, %p, %p )", (ULong)ARG1,ARG2,ARG3);
+   PRINT("sys_io_cancel ( %llu, %p, %p )", (ULong)ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "io_cancel",
                  vki_aio_context_t, ctx_id, struct iocb *, iocb,
                  struct io_event *, result);

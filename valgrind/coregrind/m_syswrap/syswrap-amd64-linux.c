@@ -30,8 +30,9 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuglog.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_options.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -107,7 +108,7 @@ static UWord* allocstack(ThreadId tid)
 
 /* NB: this is identical the the x86 version. */
 /* Return how many bytes of this stack have not been used */
-SSizeT VGA_(stack_unused)(ThreadId tid)
+SSizeT VG_(stack_unused)(ThreadId tid)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
    UWord* p;
@@ -136,15 +137,15 @@ static void run_a_thread_NORETURN ( Word tidW )
 
    VG_(debugLog)(1, "syswrap-amd64-linux", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) called\n",
+                       "ML_(thread_wrapper) called\n",
                        (ULong)tidW);
 
    /* Run the thread all the way through. */
-   VgSchedReturnCode src = VG_(thread_wrapper)(tid);  
+   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
 
    VG_(debugLog)(1, "syswrap-amd64-linux", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) done\n",
+                       "ML_(thread_wrapper) done\n",
                        (ULong)tidW);
 
    Int c = VG_(count_living_threads)();
@@ -241,10 +242,10 @@ asm(
    Allocate a stack for the main thread, and run it all the way to the
    end.  
 */
-void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
+void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
    VG_(debugLog)(1, "syswrap-amd64-linux", 
-                    "entering VGP_(main_thread_wrapper_NORETURN)\n");
+                    "entering VG_(main_thread_wrapper_NORETURN)\n");
 
    UWord* rsp = allocstack(tid);
 
@@ -461,13 +462,13 @@ static SysRes do_clone ( ThreadId ptid,
             start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
-   res = VG_(mk_SysRes)( rax );
+   res = VG_(mk_SysRes_amd64_linux)( rax );
 
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
    if (res.isError) {
       /* clone failed */
-      VGP_(cleanup_thread)(&ctst->arch);
+      VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
    }
 
@@ -494,13 +495,13 @@ static SysRes do_fork_clone ( ThreadId tid,
    VG_(sigfillset)(&mask);
    VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
 
-   VG_(do_atfork_pre)(tid);
-
    /* Since this is the fork() form of clone, we don't need all that
-      VG_(clone) stuff */
+      VG_(clone) stuff - note that the last two arguments are the
+      opposite way round to x86 and ppc32 as the amd64 kernel expects
+      the arguments in a different order */
    res = VG_(do_syscall5)( __NR_clone, flags, 
                            (UWord)NULL, (UWord)parent_tidptr, 
-                           (UWord)NULL, (UWord)child_tidptr );
+                           (UWord)child_tidptr, (UWord)NULL );
 
    if (!res.isError && res.val == 0) {
       /* child */
@@ -516,8 +517,6 @@ static SysRes do_fork_clone ( ThreadId tid,
 	  VG_(printf)("   clone(fork): process %d created child %d\n", 
                       VG_(getpid)(), res.val);
 
-      VG_(do_atfork_parent)(tid);
-
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
    }
@@ -529,7 +528,7 @@ static SysRes do_fork_clone ( ThreadId tid,
    More thread stuff
    ------------------------------------------------------------------ */
 
-void VGP_(cleanup_thread) ( ThreadArchState *arch )
+void VG_(cleanup_thread) ( ThreadArchState *arch )
 {  
 }  
 
@@ -585,6 +584,10 @@ DECL_TEMPLATE(amd64_linux, sys_shmdt);
 DECL_TEMPLATE(amd64_linux, sys_shmdt);
 DECL_TEMPLATE(amd64_linux, sys_shmctl);
 DECL_TEMPLATE(amd64_linux, sys_arch_prctl);
+DECL_TEMPLATE(amd64_linux, sys_ptrace);
+DECL_TEMPLATE(amd64_linux, sys_pread64);
+DECL_TEMPLATE(amd64_linux, sys_pwrite64);
+DECL_TEMPLATE(amd64_linux, sys_fadvise64);
 
 
 PRE(sys_clone)
@@ -616,7 +619,7 @@ PRE(sys_clone)
 
    cloneflags = ARG1;
 
-   if (!VG_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
+   if (!ML_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
@@ -687,7 +690,7 @@ PRE(sys_rt_sigreturn)
 
    /* This is only so that the RIP is (might be) useful to report if
       something goes wrong in the sigreturn */
-   VG_(fixup_guest_state_to_restart_syscall)(&tst->arch);
+   ML_(fixup_guest_state_to_restart_syscall)(&tst->arch);
 
    VG_(sigframe_destroy)(tid, True);
 
@@ -696,7 +699,7 @@ PRE(sys_rt_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %RAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes)( tst->arch.vex.guest_RAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_amd64_linux)( tst->arch.vex.guest_RAX ) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;
@@ -718,14 +721,78 @@ PRE(sys_arch_prctl)
    // PRE_MEM_READs/PRE_MEM_WRITEs as necessary...
 
    /* "do" the syscall ourselves; the kernel never sees it */
-   vg_assert(ARG1 == VKI_ARCH_SET_FS);
-   tst = VG_(get_ThreadState)(tid);
-   tst->arch.vex.guest_FS_ZERO = ARG2;
+   if (ARG1 == VKI_ARCH_SET_FS) {
+      tst = VG_(get_ThreadState)(tid);
+      tst->arch.vex.guest_FS_ZERO = ARG2;
+   }
+   else if (ARG1 == VKI_ARCH_GET_FS) {
+      PRE_MEM_WRITE("arch_prctl(addr)", ARG2, sizeof(unsigned long));
+      tst = VG_(get_ThreadState)(tid);
+      *(unsigned long *)ARG2 = tst->arch.vex.guest_FS_ZERO;
+      POST_MEM_WRITE(ARG2, sizeof(unsigned long));
+   }
+   else {
+      VG_(core_panic)("Unsupported arch_prtctl option");
+   }
 
    /* Note; the Status writeback to guest state that happens after
       this wrapper returns does not change guest_FS_ZERO; hence that
       direct assignment to the guest state is safe here. */
    SET_STATUS_Success( 0 );
+}
+
+// Parts of this are amd64-specific, but the *PEEK* cases are generic.
+// XXX: Why is the memory pointed to by ARG3 never checked?
+PRE(sys_ptrace)
+{
+   PRINT("sys_ptrace ( %d, %d, %p, %p )", ARG1,ARG2,ARG3,ARG4);
+   PRE_REG_READ4(int, "ptrace", 
+                 long, request, long, pid, long, addr, long, data);
+   switch (ARG1) {
+   case VKI_PTRACE_PEEKTEXT:
+   case VKI_PTRACE_PEEKDATA:
+   case VKI_PTRACE_PEEKUSR:
+      PRE_MEM_WRITE( "ptrace(peek)", ARG4, 
+		     sizeof (long));
+      break;
+   case VKI_PTRACE_GETREGS:
+      PRE_MEM_WRITE( "ptrace(getregs)", ARG4, 
+		     sizeof (struct vki_user_regs_struct));
+      break;
+   case VKI_PTRACE_GETFPREGS:
+      PRE_MEM_WRITE( "ptrace(getfpregs)", ARG4, 
+		     sizeof (struct vki_user_i387_struct));
+      break;
+   case VKI_PTRACE_SETREGS:
+      PRE_MEM_READ( "ptrace(setregs)", ARG4, 
+		     sizeof (struct vki_user_regs_struct));
+      break;
+   case VKI_PTRACE_SETFPREGS:
+      PRE_MEM_READ( "ptrace(setfpregs)", ARG4, 
+		     sizeof (struct vki_user_i387_struct));
+      break;
+   default:
+      break;
+   }
+}
+
+POST(sys_ptrace)
+{
+   switch (ARG1) {
+   case VKI_PTRACE_PEEKTEXT:
+   case VKI_PTRACE_PEEKDATA:
+   case VKI_PTRACE_PEEKUSR:
+      POST_MEM_WRITE( ARG4, sizeof (long));
+      break;
+   case VKI_PTRACE_GETREGS:
+      POST_MEM_WRITE( ARG4, sizeof (struct vki_user_regs_struct));
+      break;
+   case VKI_PTRACE_GETFPREGS:
+      POST_MEM_WRITE( ARG4, sizeof (struct vki_user_i387_struct));
+      break;
+   default:
+      break;
+   }
 }
 
 PRE(sys_socket)
@@ -737,7 +804,7 @@ POST(sys_socket)
 {
    SysRes r;
    vg_assert(SUCCESS);
-   r = VG_(generic_POST_sys_socket)(tid, VG_(mk_SysRes_Success)(RES));
+   r = ML_(generic_POST_sys_socket)(tid, VG_(mk_SysRes_Success)(RES));
    SET_STATUS_from_SysRes(r);
 }
 
@@ -747,7 +814,7 @@ PRE(sys_setsockopt)
    PRE_REG_READ5(long, "setsockopt",
                  int, s, int, level, int, optname,
                  const void *, optval, int, optlen);
-   VG_(generic_PRE_sys_setsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(generic_PRE_sys_setsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 
 PRE(sys_getsockopt)
@@ -756,12 +823,12 @@ PRE(sys_getsockopt)
    PRE_REG_READ5(long, "getsockopt",
                  int, s, int, level, int, optname,
                  void *, optval, int, *optlen);
-   VG_(generic_PRE_sys_getsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(generic_PRE_sys_getsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 POST(sys_getsockopt)
 {
    vg_assert(SUCCESS);
-   VG_(generic_POST_sys_getsockopt)(tid, VG_(mk_SysRes_Success)(RES),
+   ML_(generic_POST_sys_getsockopt)(tid, VG_(mk_SysRes_Success)(RES),
                                          ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 
@@ -771,7 +838,7 @@ PRE(sys_connect)
    PRINT("sys_connect ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "connect",
                  int, sockfd, struct sockaddr *, serv_addr, int, addrlen);
-   VG_(generic_PRE_sys_connect)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_connect)(tid, ARG1,ARG2,ARG3);
 }
 
 PRE(sys_accept)
@@ -780,13 +847,13 @@ PRE(sys_accept)
    PRINT("sys_accept ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "accept",
                  int, s, struct sockaddr *, addr, int, *addrlen);
-   VG_(generic_PRE_sys_accept)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_accept)(tid, ARG1,ARG2,ARG3);
 }
 POST(sys_accept)
 {
    SysRes r;
    vg_assert(SUCCESS);
-   r = VG_(generic_POST_sys_accept)(tid, VG_(mk_SysRes_Success)(RES),
+   r = ML_(generic_POST_sys_accept)(tid, VG_(mk_SysRes_Success)(RES),
                                          ARG1,ARG2,ARG3);
    SET_STATUS_from_SysRes(r);
 }
@@ -799,7 +866,7 @@ PRE(sys_sendto)
                  int, s, const void *, msg, int, len, 
                  unsigned int, flags, 
                  const struct sockaddr *, to, int, tolen);
-   VG_(generic_PRE_sys_sendto)(tid, ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   ML_(generic_PRE_sys_sendto)(tid, ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
 }
 
 PRE(sys_recvfrom)
@@ -809,12 +876,12 @@ PRE(sys_recvfrom)
    PRE_REG_READ6(long, "recvfrom",
                  int, s, void *, buf, int, len, unsigned int, flags,
                  struct sockaddr *, from, int *, fromlen);
-   VG_(generic_PRE_sys_recvfrom)(tid, ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   ML_(generic_PRE_sys_recvfrom)(tid, ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
 }
 POST(sys_recvfrom)
 {
    vg_assert(SUCCESS);
-   VG_(generic_POST_sys_recvfrom)(tid, VG_(mk_SysRes_Success)(RES),
+   ML_(generic_POST_sys_recvfrom)(tid, VG_(mk_SysRes_Success)(RES),
                                        ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
 }
 
@@ -824,7 +891,7 @@ PRE(sys_sendmsg)
    PRINT("sys_sendmsg ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sendmsg",
                  int, s, const struct msghdr *, msg, int, flags);
-   VG_(generic_PRE_sys_sendmsg)(tid, ARG1,ARG2);
+   ML_(generic_PRE_sys_sendmsg)(tid, ARG1,ARG2);
 }
 
 PRE(sys_recvmsg)
@@ -832,11 +899,11 @@ PRE(sys_recvmsg)
    *flags |= SfMayBlock;
    PRINT("sys_recvmsg ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "recvmsg", int, s, struct msghdr *, msg, int, flags);
-   VG_(generic_PRE_sys_recvmsg)(tid, ARG1,ARG2);
+   ML_(generic_PRE_sys_recvmsg)(tid, ARG1,ARG2);
 }
 POST(sys_recvmsg)
 {
-   VG_(generic_POST_sys_recvmsg)(tid, ARG1,ARG2);
+   ML_(generic_POST_sys_recvmsg)(tid, ARG1,ARG2);
 }
 
 PRE(sys_shutdown)
@@ -851,7 +918,7 @@ PRE(sys_bind)
    PRINT("sys_bind ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "bind",
                  int, sockfd, struct sockaddr *, my_addr, int, addrlen);
-   VG_(generic_PRE_sys_bind)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_bind)(tid, ARG1,ARG2,ARG3);
 }
 
 PRE(sys_listen)
@@ -865,12 +932,12 @@ PRE(sys_getsockname)
    PRINT("sys_getsockname ( %d, %p, %p )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getsockname",
                  int, s, struct sockaddr *, name, int *, namelen);
-   VG_(generic_PRE_sys_getsockname)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_getsockname)(tid, ARG1,ARG2,ARG3);
 }
 POST(sys_getsockname)
 {
    vg_assert(SUCCESS);
-   VG_(generic_POST_sys_getsockname)(tid, VG_(mk_SysRes_Success)(RES),
+   ML_(generic_POST_sys_getsockname)(tid, VG_(mk_SysRes_Success)(RES),
                                           ARG1,ARG2,ARG3);
 }
 
@@ -879,12 +946,12 @@ PRE(sys_getpeername)
    PRINT("sys_getpeername ( %d, %p, %p )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getpeername",
                  int, s, struct sockaddr *, name, int *, namelen);
-   VG_(generic_PRE_sys_getpeername)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_getpeername)(tid, ARG1,ARG2,ARG3);
 }
 POST(sys_getpeername)
 {
    vg_assert(SUCCESS);
-   VG_(generic_POST_sys_getpeername)(tid, VG_(mk_SysRes_Success)(RES),
+   ML_(generic_POST_sys_getpeername)(tid, VG_(mk_SysRes_Success)(RES),
                                           ARG1,ARG2,ARG3);
 }
 
@@ -893,12 +960,12 @@ PRE(sys_socketpair)
    PRINT("sys_socketpair ( %d, %d, %d, %p )",ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "socketpair",
                  int, d, int, type, int, protocol, int [2], sv);
-   VG_(generic_PRE_sys_socketpair)(tid, ARG1,ARG2,ARG3,ARG4);
+   ML_(generic_PRE_sys_socketpair)(tid, ARG1,ARG2,ARG3,ARG4);
 }
 POST(sys_socketpair)
 {
    vg_assert(SUCCESS);
-   VG_(generic_POST_sys_socketpair)(tid, VG_(mk_SysRes_Success)(RES),
+   ML_(generic_POST_sys_socketpair)(tid, VG_(mk_SysRes_Success)(RES),
                                          ARG1,ARG2,ARG3,ARG4);
 }
 
@@ -914,7 +981,7 @@ PRE(sys_semop)
    PRINT("sys_semop ( %d, %p, %u )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "semop",
                  int, semid, struct sembuf *, sops, unsigned, nsoops);
-   VG_(generic_PRE_sys_semop)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_semop)(tid, ARG1,ARG2,ARG3);
 }
 
 PRE(sys_semtimedop)
@@ -924,7 +991,7 @@ PRE(sys_semtimedop)
    PRE_REG_READ4(long, "semtimedop",
                  int, semid, struct sembuf *, sops, unsigned, nsoops,
                  struct timespec *, timeout);
-   VG_(generic_PRE_sys_semtimedop)(tid, ARG1,ARG2,ARG3,ARG4);
+   ML_(generic_PRE_sys_semtimedop)(tid, ARG1,ARG2,ARG3,ARG4);
 }
 
 PRE(sys_semctl)
@@ -955,11 +1022,11 @@ PRE(sys_semctl)
                     int, semid, int, semnum, int, cmd);
       break;
    }
-   VG_(generic_PRE_sys_semctl)(tid, ARG1,ARG2,ARG3,ARG4);
+   ML_(generic_PRE_sys_semctl)(tid, ARG1,ARG2,ARG3,ARG4);
 }
 POST(sys_semctl)
 {
-   VG_(generic_POST_sys_semctl)(tid, RES,ARG1,ARG2,ARG3,ARG4);
+   ML_(generic_POST_sys_semctl)(tid, RES,ARG1,ARG2,ARG3,ARG4);
 }
 
 PRE(sys_msgget)
@@ -973,7 +1040,7 @@ PRE(sys_msgsnd)
    PRINT("sys_msgsnd ( %d, %p, %d, %d )",ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "msgsnd",
                  int, msqid, struct msgbuf *, msgp, vki_size_t, msgsz, int, msgflg);
-   VG_(generic_PRE_sys_msgsnd)(tid, ARG1,ARG2,ARG3,ARG4);
+   ML_(generic_PRE_sys_msgsnd)(tid, ARG1,ARG2,ARG3,ARG4);
    if ((ARG4 & VKI_IPC_NOWAIT) == 0)
       *flags |= SfMayBlock;
 }
@@ -984,13 +1051,13 @@ PRE(sys_msgrcv)
    PRE_REG_READ5(long, "msgrcv",
                  int, msqid, struct msgbuf *, msgp, vki_size_t, msgsz,
                  long, msgytp, int, msgflg);
-   VG_(generic_PRE_sys_msgrcv)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(generic_PRE_sys_msgrcv)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
    if ((ARG4 & VKI_IPC_NOWAIT) == 0)
       *flags |= SfMayBlock;
 }
 POST(sys_msgrcv)
 {
-   VG_(generic_POST_sys_msgrcv)(tid, RES,ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(generic_POST_sys_msgrcv)(tid, RES,ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 
 PRE(sys_msgctl)
@@ -998,11 +1065,11 @@ PRE(sys_msgctl)
    PRINT("sys_msgctl ( %d, %d, %p )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "msgctl",
                  int, msqid, int, cmd, struct msqid_ds *, buf);
-   VG_(generic_PRE_sys_msgctl)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_msgctl)(tid, ARG1,ARG2,ARG3);
 }
 POST(sys_msgctl)
 {
-   VG_(generic_POST_sys_msgctl)(tid, RES,ARG1,ARG2,ARG3);
+   ML_(generic_POST_sys_msgctl)(tid, RES,ARG1,ARG2,ARG3);
 }
 
 PRE(sys_shmget)
@@ -1017,7 +1084,7 @@ PRE(wrap_sys_shmat)
    PRINT("wrap_sys_shmat ( %d, %p, %d )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "shmat",
                  int, shmid, const void *, shmaddr, int, shmflg);
-   arg2tmp = VG_(generic_PRE_sys_shmat)(tid, ARG1,ARG2,ARG3);
+   arg2tmp = ML_(generic_PRE_sys_shmat)(tid, ARG1,ARG2,ARG3);
    if (arg2tmp == 0)
       SET_STATUS_Failure( VKI_EINVAL );
    else
@@ -1025,19 +1092,19 @@ PRE(wrap_sys_shmat)
 }
 POST(wrap_sys_shmat)
 {
-   VG_(generic_POST_sys_shmat)(tid, RES,ARG1,ARG2,ARG3);
+   ML_(generic_POST_sys_shmat)(tid, RES,ARG1,ARG2,ARG3);
 }
 
 PRE(sys_shmdt)
 {
    PRINT("sys_shmdt ( %p )",ARG1);
    PRE_REG_READ1(long, "shmdt", const void *, shmaddr);
-   if (!VG_(generic_PRE_sys_shmdt)(tid, ARG1))
+   if (!ML_(generic_PRE_sys_shmdt)(tid, ARG1))
       SET_STATUS_Failure( VKI_EINVAL );
 }
 POST(sys_shmdt)
 {
-   VG_(generic_POST_sys_shmdt)(tid, RES,ARG1);
+   ML_(generic_POST_sys_shmdt)(tid, RES,ARG1);
 }
 
 PRE(sys_shmctl)
@@ -1045,11 +1112,47 @@ PRE(sys_shmctl)
    PRINT("sys_shmctl ( %d, %d, %p )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "shmctl",
                  int, shmid, int, cmd, struct shmid_ds *, buf);
-   VG_(generic_PRE_sys_shmctl)(tid, ARG1,ARG2,ARG3);
+   ML_(generic_PRE_sys_shmctl)(tid, ARG1,ARG2,ARG3);
 }
 POST(sys_shmctl)
 {
-   VG_(generic_POST_sys_shmctl)(tid, RES,ARG1,ARG2,ARG3);
+   ML_(generic_POST_sys_shmctl)(tid, RES,ARG1,ARG2,ARG3);
+}
+
+PRE(sys_pread64)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_pread64 ( %d, %p, %llu, %lld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRE_REG_READ4(ssize_t, "pread64",
+                 unsigned int, fd, char *, buf,
+                 vki_size_t, count, vki_loff_t, offset);
+   PRE_MEM_WRITE( "pread64(buf)", ARG2, ARG3 );
+}
+POST(sys_pread64)
+{
+   vg_assert(SUCCESS);
+   if (RES > 0) {
+      POST_MEM_WRITE( ARG2, RES );
+   }
+}
+
+PRE(sys_pwrite64)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_pwrite64 ( %d, %p, %llu, %lld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRE_REG_READ4(ssize_t, "pwrite64",
+                 unsigned int, fd, const char *, buf,
+                 vki_size_t, count, vki_loff_t, offset);
+   PRE_MEM_READ( "pwrite64(buf)", ARG2, ARG3 );
+}
+
+PRE(sys_fadvise64)
+{
+   PRINT("sys_fadvise64 ( %d, %lld, %llu, %d )", ARG1,ARG2,ARG3,ARG4);
+   PRE_REG_READ4(long, "fadvise64",
+                 int, fd, vki_loff_t, offset, vki_size_t, len, int, advice);
 }
 
 #undef PRE
@@ -1072,7 +1175,7 @@ POST(sys_shmctl)
 // When implementing these wrappers, you need to work out if the wrapper is
 // generic, Linux-only (but arch-independent), or AMD64/Linux only.
 
-const SyscallTableEntry VGP_(syscall_table)[] = {
+const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_read,              sys_read),           // 0 
    GENX_(__NR_write,             sys_write),          // 1 
    GENXY(__NR_open,              sys_open),           // 2 
@@ -1093,18 +1196,18 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 15 
    GENXY(__NR_ioctl,             sys_ioctl),          // 16 
-   GENXY(__NR_pread64,           sys_pread64),        // 17 
-   //   (__NR_pwrite64,          sys_pwrite64),       // 18 
+   PLAXY(__NR_pread64,           sys_pread64),        // 17 
+   PLAX_(__NR_pwrite64,          sys_pwrite64),       // 18 
    GENXY(__NR_readv,             sys_readv),          // 19 
 
    GENX_(__NR_writev,            sys_writev),         // 20 
    GENX_(__NR_access,            sys_access),         // 21 
    GENXY(__NR_pipe,              sys_pipe),           // 22 
    GENX_(__NR_select,            sys_select),         // 23 
-   //   (__NR_sched_yield,       sys_sched_yield),    // 24 
+   GENX_(__NR_sched_yield,       sys_sched_yield),    // 24 
 
    GENX_(__NR_mremap,            sys_mremap),         // 25 
-   //   (__NR_msync,             sys_msync),          // 26 
+   GENX_(__NR_msync,             sys_msync),          // 26 
    //   (__NR_mincore,           sys_mincore),        // 27 
    GENX_(__NR_madvise,           sys_madvise),        // 28 
    PLAX_(__NR_shmget,            sys_shmget),         // 29 
@@ -1164,7 +1267,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_fsync,             sys_fsync),          // 74 
 
    GENX_(__NR_fdatasync,         sys_fdatasync),      // 75 
-   //   (__NR_truncate,          sys_truncate),       // 76 
+   GENX_(__NR_truncate,          sys_truncate),       // 76 
    GENX_(__NR_ftruncate,         sys_ftruncate),      // 77 
    GENXY(__NR_getdents,          sys_getdents),       // 78 
    GENXY(__NR_getcwd,            sys_getcwd),         // 79 
@@ -1183,24 +1286,24 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENX_(__NR_chmod,             sys_chmod),          // 90 
    GENX_(__NR_fchmod,            sys_fchmod),         // 91 
-//zz    GENX_(__NR_chown,             sys_chown),          // 92 
-//zz    GENX_(__NR_fchown,            sys_fchown),         // 93 
-   //   (__NR_lchown,            sys_lchown),         // 94 
+   GENX_(__NR_chown,             sys_chown),          // 92 
+   GENX_(__NR_fchown,            sys_fchown),         // 93 
+   GENX_(__NR_lchown,            sys_lchown),         // 94 
 
    GENX_(__NR_umask,             sys_umask),          // 95 
    GENXY(__NR_gettimeofday,      sys_gettimeofday),   // 96 
    GENXY(__NR_getrlimit,         sys_getrlimit),      // 97 
    GENXY(__NR_getrusage,         sys_getrusage),      // 98 
-   //   (__NR_sysinfo,           sys_sysinfo),        // 99 
+   LINXY(__NR_sysinfo,           sys_sysinfo),        // 99 
 
    GENXY(__NR_times,             sys_times),          // 100 
-   //   (__NR_ptrace,            sys_ptrace),         // 101 
+   PLAXY(__NR_ptrace,            sys_ptrace),         // 101 
    GENX_(__NR_getuid,            sys_getuid),         // 102 
    //   (__NR_syslog,            sys_syslog),         // 103 
    GENX_(__NR_getgid,            sys_getgid),         // 104 
 
-//zz    GENX_(__NR_setuid,            sys_setuid),         // 105 
-//zz    GENX_(__NR_setgid,            sys_setgid),         // 106 
+   GENX_(__NR_setuid,            sys_setuid),         // 105 
+   GENX_(__NR_setgid,            sys_setgid),         // 106 
    GENX_(__NR_geteuid,           sys_geteuid),        // 107 
    GENX_(__NR_getegid,           sys_getegid),        // 108 
    GENX_(__NR_setpgid,           sys_setpgid),        // 109 
@@ -1208,26 +1311,26 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_getppid,           sys_getppid),        // 110 
    GENX_(__NR_getpgrp,           sys_getpgrp),        // 111 
    GENX_(__NR_setsid,            sys_setsid),         // 112 
-   //   (__NR_setreuid,          sys_setreuid),       // 113 
-   //   (__NR_setregid,          sys_setregid),       // 114 
+   GENX_(__NR_setreuid,          sys_setreuid),       // 113 
+   GENX_(__NR_setregid,          sys_setregid),       // 114 
 
    GENXY(__NR_getgroups,         sys_getgroups),      // 115 
-//zz    GENX_(__NR_setgroups,         sys_setgroups),      // 116 
-//zz    LINX_(__NR_setresuid,         sys_setresuid),      // 117 
+   GENX_(__NR_setgroups,         sys_setgroups),      // 116 
+   LINX_(__NR_setresuid,         sys_setresuid),      // 117 
    LINXY(__NR_getresuid,         sys_getresuid),      // 118 
-//zz    LINX_(__NR_setresgid,         sys_setresgid),      // 119 
+   LINX_(__NR_setresgid,         sys_setresgid),      // 119 
 
    LINXY(__NR_getresgid,         sys_getresgid),      // 120 
    GENX_(__NR_getpgid,           sys_getpgid),        // 121 
-   //   (__NR_setfsuid,          sys_setfsuid),       // 122 
-   //   (__NR_setfsgid,          sys_setfsgid),       // 123 
-   //   (__NR_getsid,            sys_getsid),         // 124 
+   LINX_(__NR_setfsuid,          sys_setfsuid),       // 122 
+   LINX_(__NR_setfsgid,          sys_setfsgid),       // 123 
+   GENX_(__NR_getsid,            sys_getsid),         // 124 
 
    //   (__NR_capget,            sys_capget),         // 125 
    //   (__NR_capset,            sys_capset),         // 126 
-//zz    GENXY(__NR_rt_sigpending,     sys_rt_sigpending),  // 127 
+   GENXY(__NR_rt_sigpending,     sys_rt_sigpending),  // 127 
    GENXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),// 128 
-//zz    GENXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 129 
+   GENXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 129 
 
    GENX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),  // 130 
    GENXY(__NR_sigaltstack,       sys_sigaltstack),    // 131 
@@ -1235,7 +1338,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_mknod,             sys_mknod),          // 133 
    //   (__NR_uselib,            sys_uselib),         // 134 
 
-   //   (__NR_personality,       sys_personality),    // 135 
+   LINX_(__NR_personality,       sys_personality),    // 135 
    //   (__NR_ustat,             sys_ustat),          // 136 
    GENXY(__NR_statfs,            sys_statfs),         // 137 
    //   (__NR_fstatfs,           sys_fstatfs),        // 138 
@@ -1269,7 +1372,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_chroot,            sys_chroot),         // 161 
    GENX_(__NR_sync,              sys_sync),           // 162 
    //   (__NR_acct,              sys_acct),           // 163 
-   //   (__NR_settimeofday,      sys_settimeofday),   // 164 
+   GENX_(__NR_settimeofday,      sys_settimeofday),   // 164 
 
    LINX_(__NR_mount,             sys_mount),          // 165
    //   (__NR_umount2,           sys_umount),         // 166 
@@ -1280,7 +1383,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    //   (__NR_sethostname,       sys_sethostname),    // 170 
    //   (__NR_setdomainname,     sys_setdomainname),  // 171 
    //   (__NR_iopl,              stub_iopl),          // 172 
-   //   (__NR_ioperm,            sys_ioperm),         // 173 
+   LINX_(__NR_ioperm,            sys_ioperm),         // 173 
    //   (__NR_create_module,     sys_ni_syscall),     // 174 
 
    //   (__NR_init_module,       sys_init_module),    // 175 
@@ -1316,19 +1419,19 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    //   (__NR_tkill,             sys_tkill),             // 200 
    GENXY(__NR_time,              sys_time), /*was sys_time64*/ // 201 
    LINXY(__NR_futex,             sys_futex),             // 202 
-   //   (__NR_sched_setaffinity, sys_sched_setaffinity), // 203 
-   //   (__NR_sched_getaffinity, sys_sched_getaffinity), // 204 
+   GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 203 
+   GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 204 
 
    //   (__NR_set_thread_area,   sys_ni_syscall),     // 205 
-//zz    LINX_(__NR_io_setup,          sys_io_setup),       // 206 
-//zz    LINX_(__NR_io_destroy,        sys_io_destroy),     // 207 
-//zz    LINXY(__NR_io_getevents,      sys_io_getevents),   // 208 
-//zz    LINX_(__NR_io_submit,         sys_io_submit),      // 209 
+   LINX_(__NR_io_setup,          sys_io_setup),       // 206 
+   LINX_(__NR_io_destroy,        sys_io_destroy),     // 207 
+   LINXY(__NR_io_getevents,      sys_io_getevents),   // 208 
+   LINX_(__NR_io_submit,         sys_io_submit),      // 209 
 
-//zz    LINXY(__NR_io_cancel,         sys_io_cancel),      // 210 
+   LINXY(__NR_io_cancel,         sys_io_cancel),      // 210 
    //   (__NR_get_thread_area,   sys_ni_syscall),     // 211 
    //   (__NR_lookup_dcookie,    sys_lookup_dcookie), // 212 
-//zz    LINXY(__NR_epoll_create,      sys_epoll_create),   // 213 
+   LINXY(__NR_epoll_create,      sys_epoll_create),   // 213 
    //   (__NR_epoll_ctl_old,     sys_ni_syscall),     // 214 
 
    //   (__NR_epoll_wait_old,    sys_ni_syscall),     // 215 
@@ -1338,43 +1441,52 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    //   (__NR_restart_syscall,   sys_restart_syscall),// 219 
 
    PLAX_(__NR_semtimedop,        sys_semtimedop),     // 220 
-   LINX_(__NR_fadvise64,         sys_fadvise64),      // 221 
-   //   (__NR_timer_create,      sys_timer_create),   // 222 
-   //   (__NR_timer_settime,     sys_timer_settime),  // 223 
-   //   (__NR_timer_gettime,     sys_timer_gettime),  // 224 
+   PLAX_(__NR_fadvise64,         sys_fadvise64),      // 221 
+   GENXY(__NR_timer_create,      sys_timer_create),   // 222 
+   GENXY(__NR_timer_settime,     sys_timer_settime),  // 223 
+   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 224 
 
-   //   (__NR_timer_getoverrun,  sys_timer_getoverrun)// 225 
-   //   (__NR_timer_delete,      sys_timer_delete),   // 226 
-   //   (__NR_clock_settime,     sys_clock_settime),  // 227 
+   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun), // 225 
+   GENX_(__NR_timer_delete,      sys_timer_delete),   // 226 
+   GENX_(__NR_clock_settime,     sys_clock_settime),  // 227 
    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 228 
-   //   (__NR_clock_getres,      sys_clock_getres),   // 229 
+   GENXY(__NR_clock_getres,      sys_clock_getres),   // 229 
 
-   //   (__NR_clock_nanosleep,   sys_clock_nanosleep),// 230 
+   GENXY(__NR_clock_nanosleep,   sys_clock_nanosleep),// 230 
    LINX_(__NR_exit_group,        sys_exit_group),     // 231 
-//zz    LINXY(__NR_epoll_wait,        sys_epoll_wait),     // 232 
-//zz    LINX_(__NR_epoll_ctl,         sys_epoll_ctl),      // 233 
+   LINXY(__NR_epoll_wait,        sys_epoll_wait),     // 232 
+   LINX_(__NR_epoll_ctl,         sys_epoll_ctl),      // 233 
    LINXY(__NR_tgkill,            sys_tgkill),         // 234 
 
    //   (__NR_utimes,            sys_utimes),         // 235 
    //   (__NR_vserver,           sys_ni_syscall),     // 236 
-   //   (__NR_vserver,           sys_ni_syscall),     // 236 
    //   (__NR_mbind,             sys_mbind),          // 237 
-   //   (__NR_set_mempolicy,     sys_set_mempolicy),  // 238 
+   LINX_(__NR_set_mempolicy,     sys_set_mempolicy),  // 238 
+   LINXY(__NR_get_mempolicy,     sys_get_mempolicy),  // 239
 
-   //   (__NR_get_mempolicy,     sys_get_mempolicy),  // 239 
    GENXY(__NR_mq_open,           sys_mq_open),        // 240 
    GENX_(__NR_mq_unlink,         sys_mq_unlink),      // 241 
    GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // 242 
    GENX_(__NR_mq_timedreceive,   sys_mq_timedreceive),// 243 
+   GENX_(__NR_mq_notify,         sys_mq_notify),      // 244
 
-   GENX_(__NR_mq_notify,         sys_mq_notify),      // 244 
    GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // 245 
    //   (__NR_kexec_load,        sys_ni_syscall),     // 246 
-   //   (__NR_waitid,            sys_waitid),         // 247 
+   GENXY(__NR_waitid,            sys_waitid),         // 247 
+//   LINX_(__NR_add_key,           sys_add_key),        // 248
+//   LINX_(__NR_request_key,       sys_request_key),    // 249
+
+//   LINXY(__NR_keyctl,            sys_keyctl),         // 250
+//   LINX_(__NR_ioprio_set,        sys_ioprio_set),     // 251
+//   LINX_(__NR_ioprio_get,        sys_ioprio_get),     // 252
+   LINX_(__NR_inotify_init,	 sys_inotify_init),   // 253
+   LINX_(__NR_inotify_add_watch, sys_inotify_add_watch), // 254
+
+   LINX_(__NR_inotify_rm_watch,	 sys_inotify_rm_watch), // 255
 };
 
-const UInt VGP_(syscall_table_size) = 
-            sizeof(VGP_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
+const UInt ML_(syscall_table_size) = 
+            sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

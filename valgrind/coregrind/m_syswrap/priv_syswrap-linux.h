@@ -34,7 +34,7 @@
 /* requires #include "priv_types_n_macros.h" */
 
 // Run a thread from beginning to end. 
-extern VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tid);
+extern VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tid);
 
 DECL_TEMPLATE(linux, sys_exit_group);
 
@@ -88,6 +88,13 @@ DECL_TEMPLATE(linux, sys_io_destroy);
 DECL_TEMPLATE(linux, sys_io_getevents);
 DECL_TEMPLATE(linux, sys_io_submit);
 DECL_TEMPLATE(linux, sys_io_cancel);
+
+DECL_TEMPLATE(linux, sys_set_mempolicy);
+DECL_TEMPLATE(linux, sys_get_mempolicy);
+
+DECL_TEMPLATE(linux, sys_inotify_init);
+DECL_TEMPLATE(linux, sys_inotify_add_watch);
+DECL_TEMPLATE(linux, sys_inotify_rm_watch);
 
 #endif   // __PRIV_SYSWRAP_LINUX_H
 

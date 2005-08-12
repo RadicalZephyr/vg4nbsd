@@ -2,7 +2,7 @@
 /*--------------------------------------------------------------------*/
 /*--- The address space manager: segment initialisation and        ---*/
 /*--- tracking, stack operations                                   ---*/
-/*---                                                  aspacemgr.c ---*/
+/*---                                                m_aspacemgr.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -31,20 +31,15 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"  // Needed for pub_core_aspacemgr.h :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcfile.h"      // For VG_(fstat)()
-#include "pub_core_libcmman.h"
+#include "pub_core_libcfile.h"   // For VG_(fstat), VG_(resolve_filename_nodup)
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
-#include "pub_core_mallocfree.h"
-#include "pub_core_options.h"
 #include "pub_core_syscall.h"
-#include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
-#include "pub_core_transtab.h"
+#include "pub_core_transtab.h"   // For VG_(discard_translations)
 #include "vki_unistd.h"
 
 
@@ -61,7 +56,6 @@ static const Bool mem_debug = False;
 Addr VG_(client_base);           /* client address space limits */
 Addr VG_(client_end);
 Addr VG_(client_mapbase);
-Addr VG_(client_trampoline_code);
 Addr VG_(clstk_base);
 Addr VG_(clstk_end);
 UWord VG_(clstk_id);
@@ -79,14 +73,55 @@ Addr VG_(valgrind_base);	 /* valgrind's address range */
 Addr VG_(valgrind_last);
 
 /*--------------------------------------------------------------*/
+/*--- The raw mman syscalls                                  ---*/
+/*--------------------------------------------------------------*/
+
+SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
+                        UInt fd, OffT offset)
+{
+   SysRes res;
+#if defined(VGP_x86_linux)
+   { 
+      UWord args[6];
+      args[0] = (UWord)start;
+      args[1] = length;
+      args[2] = prot;
+      args[3] = flags;
+      args[4] = fd;
+      args[5] = offset;
+      res = VG_(do_syscall1)(__NR_mmap, (UWord)args );
+   }
+#elif defined(VGP_amd64_linux)
+   res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
+                         prot, flags, fd, offset);
+#elif defined(VGP_ppc32_linux)
+   res = VG_(do_syscall6)(__NR_mmap, (UWord)(start), (length),
+			  prot, flags, fd, offset);
+#else
+#  error Unknown platform
+#endif
+   return res;
+}
+
+SysRes VG_(munmap_native)(void *start, SizeT length)
+{
+   return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
+}
+
+SysRes VG_(mprotect_native)( void *start, SizeT length, UInt prot )
+{
+   return VG_(do_syscall3)(__NR_mprotect, (UWord)start, length, prot );
+}
+
+/*--------------------------------------------------------------*/
 /*--- A simple, self-contained ordered array of segments.    ---*/
 /*--------------------------------------------------------------*/
 
 /* Max number of segments we can track. */
-#define VG_N_SEGMENTS 1000
+#define VG_N_SEGMENTS 2000
 
 /* Max number of segment file names we can track. */
-#define VG_N_SEGNAMES 200
+#define VG_N_SEGNAMES 400
 
 /* Max length of a segment file name. */
 #define VG_MAX_SEGNAMELEN 1000
@@ -133,7 +168,7 @@ static Int allocate_segname ( const HChar* name )
 
    vg_assert(name);
 
-   if (0) VG_(printf)("alloc_segname %s\n", name);
+   if (0) VG_(printf)("allocate_segname %s\n", name);
 
    len = VG_(strlen)(name);
    if (len >= VG_MAX_SEGNAMELEN-1) {
@@ -187,7 +222,7 @@ static Int allocate_segname ( const HChar* name )
    an address after it, and 0 if it denotes an address covered by
    seg. 
 */
-static Int compare_addr_with_seg ( Addr a, Segment* seg )
+static inline Int compare_addr_with_seg ( Addr a, Segment* seg )
 {
    if (a < seg->addr) 
       return -1;
@@ -285,6 +320,8 @@ static void make_space_at ( Int i )
    segments_used++;
 }
 
+// Forward declaration
+static void dealloc_seg_memory(Segment *s);
 
 /* Shift segments [i+1 .. segments_used-1] down by one, and decrement
    segments_used. 
@@ -293,8 +330,10 @@ static void delete_segment_at ( Int i )
 {
    Int j;
    vg_assert(i >= 0 && i < segments_used);
-   for (j = i+1; j < segments_used; j++)
-     segments[j-1] = segments[j];
+   dealloc_seg_memory(&segments[i]);
+   for (j = i+1; j < segments_used; j++) {
+      segments[j-1] = segments[j];
+   }
    segments_used--;
    vg_assert(segments_used >= 0 && segments_used < VG_N_SEGMENTS);
 }
@@ -399,8 +438,12 @@ static Int split_segment ( Addr a )
    vg_assert(a > segments[r].addr);
    delta = a - segments[r].addr;
    make_space_at(r);
+   
    segments[r] = segments[r+1];
    segments[r].len = delta;
+   if (segments[r].seginfo)
+      VG_(seginfo_incref)(segments[r].seginfo);
+   
    segments[r+1].len -= delta;
    segments[r+1].addr += delta;
    segments[r+1].offset += delta;
@@ -492,6 +535,10 @@ static void preen_segments ( void )
                         s->addr, s->addr+s->len,
                         s1->addr, s1->addr+s1->len);
          s->len += s1->len;
+
+         vg_assert(s->seginfo == s1->seginfo);
+         dealloc_seg_memory(s1);
+         
          continue;
       }
       if (wr < rd)
@@ -535,35 +582,15 @@ Bool VG_(seg_overlaps)(const Segment *s, Addr p, SizeT len)
    return (p < se && pe > s->addr);
 }
 
-#if 0
-/* 20050228: apparently unused */
-/* Prepare a Segment structure for recycling by freeing everything
-   hanging off it. */
-static void recycleseg(Segment *s)
-{
-   if (s->flags & SF_CODE)
-      VG_(discard_translations)(s->addr, s->len);
-
-   if (s->filename != NULL)
-      VG_(arena_free)(VG_AR_CORE, (Char *)s->filename);
-
-   /* keep the SegInfo, if any - it probably still applies */
-}
-
 /* When freeing a Segment, also clean up every one else's ideas of
    what was going on in that range of memory */
-static void freeseg(Segment *s)
+static void dealloc_seg_memory(Segment *s)
 {
-   recycleseg(s);
    if (s->seginfo != NULL) {
       VG_(seginfo_decref)(s->seginfo, s->addr);
       s->seginfo = NULL;
    }
-
-   VG_(SkipNode_Free)(&sk_segments, s);
 }
-#endif
-
 
 /* Get rid of any translations arising from s. */
 /* Note, this is not really the job of the low level memory manager.
@@ -583,7 +610,7 @@ static void dump_translations_from ( Segment* s )
    partial mappings at the ends are truncated. */
 void VG_(unmap_range)(Addr addr, SizeT len)
 {
-   static const Bool debug = False || mem_debug;
+   const Bool debug = False || mem_debug;
    Segment* s;
    Addr     end, s_end;
    Int      i;
@@ -700,11 +727,15 @@ VG_(map_file_segment)( Addr addr, SizeT len,
                        UInt dev, UInt ino, ULong off, 
                        const Char *filename)
 {
-   static const Bool debug = False || mem_debug;
+   const Bool debug = False || mem_debug;
    Segment* s;
    Int      idx;
-   HChar*   stage2_suffix = "lib/valgrind/stage2";
-   Bool     is_stage2 = VG_(strstr)(filename, stage2_suffix) != NULL;
+   HChar*   stage2_suffix1 = "lib/valgrind/stage2";
+   HChar*   stage2_suffix2 = "coregrind/stage2";
+   Bool     is_stage2 = False;
+   
+   is_stage2 = is_stage2 || ( VG_(strstr)(filename, stage2_suffix1) != NULL );
+   is_stage2 = is_stage2 || ( VG_(strstr)(filename, stage2_suffix2) != NULL );
 
    if (debug)
       VG_(printf)(
@@ -745,39 +776,62 @@ VG_(map_file_segment)( Addr addr, SizeT len,
    preen_segments();
    if (0) show_segments("after map_file_segment");
 
-   /* If this mapping is of the beginning of a file, isn't part of
+   /* If this mapping is at the beginning of a file, isn't part of
       Valgrind, is at least readable and seems to contain an object
       file, then try reading symbols from it.
+
+      Getting this heuristic right is critical.  On x86-linux,
+      objects are typically mapped twice:
+
+      1b8fb000-1b8ff000 r-xp 00000000 08:02 4471477 vgpreload_memcheck.so
+      1b8ff000-1b900000 rw-p 00004000 08:02 4471477 vgpreload_memcheck.so
+
+      whereas ppc32-linux mysteriously does this:
+
+      118a6000-118ad000 r-xp 00000000 08:05 14209428 vgpreload_memcheck.so
+      118ad000-118b6000 ---p 00007000 08:05 14209428 vgpreload_memcheck.so
+      118b6000-118bd000 rwxp 00000000 08:05 14209428 vgpreload_memcheck.so
+
+      The third mapping should not be considered to have executable code in.
+      Therefore a test which works for both is: r and x and NOT w.  Reading
+      symbols from the rwx segment -- which overlaps the r-x segment in the
+      file -- causes the redirection mechanism to redirect to addresses in
+      that third segment, which is wrong and causes crashes.
    */
    if (s->seginfo == NULL
        && ( (addr+len < VG_(valgrind_base) || addr > VG_(valgrind_last))
             || is_stage2
           )
-       && (flags & (SF_MMAP|SF_NOSYMS)) == SF_MMAP) {
+       && (flags & (SF_MMAP|SF_NOSYMS)) == SF_MMAP
+      ) {
       if (off == 0
-	  && s->fnIdx != -1
-	  && (prot & (VKI_PROT_READ|VKI_PROT_EXEC)) == (VKI_PROT_READ|VKI_PROT_EXEC)
-	  && len >= VKI_PAGE_SIZE
-          && VG_(is_object_file)((void *)addr)) {
-         s->seginfo = VG_(read_seg_symbols)(s);
-         if (s->seginfo != NULL) {
-            s->flags |= SF_DYNLIB;
-         }
-      } else if (flags & SF_MMAP) {
-#if 0
-	 const SegInfo *info;
-
-	 /* Otherwise see if an existing SegInfo applies to this Segment */
-	 for(info = VG_(next_seginfo)(NULL);
-	     info != NULL;
-	     info = VG_(next_seginfo)(info)) {
-	    if (VG_(seg_overlaps)(s, VG_(seg_start)(info), VG_(seg_size)(info)))
+         && s->fnIdx != -1
+         /* r, x are set */
+         && (prot & (VKI_PROT_READ|VKI_PROT_EXEC)) == (VKI_PROT_READ|VKI_PROT_EXEC)
+         /* w is clear */
+         && (prot & VKI_PROT_WRITE) == 0
+         /* other checks .. */
+         && len >= VKI_PAGE_SIZE
+         && VG_(is_object_file)((void *)addr) ) {
+         s->seginfo = VG_(read_seg_symbols)(s->addr, s->len, s->offset,
+                                            s->filename);
+      }
+      else if (flags & SF_MMAP) 
+      {
+         const SegInfo *si;
+      
+         /* Otherwise see if an existing SegInfo applies to this Segment */
+         for (si = VG_(next_seginfo)(NULL);
+              si != NULL;
+              si = VG_(next_seginfo)(si)) 
+         {
+            if (VG_(seg_overlaps)(s, VG_(seginfo_start)(si), 
+                                     VG_(seginfo_size)(si)))
             {
-	       s->seginfo = (SegInfo *)info;
-	       VG_(seginfo_incref)((SegInfo *)info);
-	    }
-	 }
-#endif
+               s->seginfo = (SegInfo *)si;
+               VG_(seginfo_incref)((SegInfo *)si);
+            }
+         }
       }
    }
 
@@ -788,8 +842,8 @@ VG_(map_file_segment)( Addr addr, SizeT len,
 void VG_(map_fd_segment)(Addr addr, SizeT len, UInt prot, UInt flags, 
 			 Int fd, ULong off, const Char *filename)
 {
+   Char buf[VKI_PATH_MAX];
    struct vki_stat st;
-   Char *name = NULL;
 
    st.st_dev = 0;
    st.st_ino = 0;
@@ -802,10 +856,8 @@ void VG_(map_fd_segment)(Addr addr, SizeT len, UInt prot, UInt flags,
    }
 
    if ((flags & SF_FILE) && filename == NULL && fd != -1)
-      name = VG_(resolve_filename_nodup)(fd);
-
-   if (filename == NULL)
-      filename = name;
+      if (VG_(resolve_filename)(fd, buf, VKI_PATH_MAX))
+         filename = buf;
 
    VG_(map_file_segment)(addr, len, prot, flags, 
                          st.st_dev, st.st_ino, off, filename);
@@ -822,7 +874,7 @@ void VG_(map_segment)(Addr addr, SizeT len, UInt prot, UInt flags)
 void VG_(mprotect_range)(Addr a, SizeT len, UInt prot)
 {
    Int r;
-   static const Bool debug = False || mem_debug;
+   const Bool debug = False || mem_debug;
 
    if (debug)
       VG_(printf)("\nmprotect_range(%p, %lu, %x)\n", a, len, prot);
@@ -853,7 +905,7 @@ void VG_(mprotect_range)(Addr a, SizeT len, UInt prot)
 */
 Addr VG_(find_map_space)(Addr addr, SizeT len, Bool for_client)
 {
-   static const Bool debug = False || mem_debug;
+   const Bool debug = False || mem_debug;
    Addr ret;
    Addr addrOrig = addr;
    Addr limit = (for_client ? VG_(client_end)-1   : VG_(valgrind_last));
@@ -1003,6 +1055,7 @@ void VG_(pad_address_space)(Addr start)
          ret = VG_(mmap_native)((void*)addr, s->addr - addr, 0,
                      VKI_MAP_FIXED | VKI_MAP_PRIVATE | VKI_MAP_ANONYMOUS,
                      -1, 0);
+         vg_assert(!ret.isError);
       }
       addr = s->addr + s->len;
       i++;
@@ -1013,6 +1066,7 @@ void VG_(pad_address_space)(Addr start)
       ret = VG_(mmap_native)((void*)addr, VG_(valgrind_last) - addr + 1, 0,
                   VKI_MAP_FIXED | VKI_MAP_PRIVATE | VKI_MAP_ANONYMOUS,
                   -1, 0);
+      vg_assert(!ret.isError);
    }
 }
 
@@ -1028,6 +1082,7 @@ void VG_(unpad_address_space)(Addr start)
 
    while (s && addr <= VG_(valgrind_last)) {
       if (addr < s->addr) {
+         //ret = VG_(do_syscall2)(__NR_munmap, addr, s->addr - addr);
          ret = VG_(do_syscall2)(__NR_munmap, addr, s->addr - addr);
       }
       addr = s->addr + s->len;
@@ -1075,269 +1130,6 @@ Segment *VG_(find_segment_above_mapped)(Addr a)
 }
 
 
-/*------------------------------------------------------------*/
-/*--- Tracking permissions around %esp changes.            ---*/
-/*------------------------------------------------------------*/
-
-/*
-   The stack
-   ~~~~~~~~~
-   The stack's segment seems to be dynamically extended downwards by
-   the kernel as the stack pointer moves down.  Initially, a 1-page
-   (4k) stack is allocated.  When SP moves below that for the first
-   time, presumably a page fault occurs.  The kernel detects that the
-   faulting address is in the range from SP - VGA_STACK_REDZONE_SZB
-   upwards to the current valid stack.  It then extends the stack
-   segment downwards for enough to cover the faulting address, and
-   resumes the process (invisibly).  The process is unaware of any of
-   this.
-
-   That means that Valgrind can't spot when the stack segment is being
-   extended.  Fortunately, we want to precisely and continuously
-   update stack permissions around SP, so we need to spot all writes
-   to SP anyway.
-
-   The deal is: when SP is assigned a lower value, the stack is being
-   extended.  Create suitably-permissioned pages to fill in any holes
-   between the old stack ptr and this one, if necessary.  Then mark
-   all bytes in the area just "uncovered" by this SP change as
-   write-only.
-
-   When SP goes back up, mark the area receded over as unreadable and
-   unwritable.
-
-   Just to record the SP boundary conditions somewhere convenient: 
-   SP - VGA_STACK_REDZONE_SZB always points to the lowest live byte in
-   the stack.  All addresses below SP - VGA_STACK_REDZONE_SZB are not
-   live; those at and above it are.
-
-   We do not concern ourselves here with the VGA_STACK_REDZONE_SZB
-   bias; that is handled by new_mem_stack/die_mem_stack.
-*/
-
-/*
- * This structure holds information about the start and end addresses of
- * registered stacks.  There's always at least one stack registered:
- * the main process stack.  It will be the first stack registered and
- * so will have a stack id of 0.  The user does not need to register
- * this stack: Valgrind does it automatically right before it starts
- * running the client.  No other stacks are automatically registered by
- * Valgrind, however.
- */
-
-typedef struct _Stack {
-   UWord id;
-   Addr start;
-   Addr end;
-   struct _Stack *next;
-} Stack;
-
-static Stack *stacks;
-static UWord next_id;  /* Next id we hand out to a newly registered stack */
-
-/*
- * These are the id, start and end values of the current stack.  If the
- * stack pointer falls outside the range of the current stack, we search
- * the stacks list above for a matching stack.
- */
-
-static Addr current_stack_start;
-static Addr current_stack_end;
-static UWord current_stack_id;
-
-/* Search for a particular stack by id number. */
-static Bool find_stack_by_id(UWord id, Addr *start, Addr *end)
-{
-   Stack *i = stacks;
-   while(i) {
-      if(i->id == id) {
-         *start = i->start;
-         *end = i->end;
-         return True;
-      }
-      i = i->next;
-   }
-   return False;
-}
-
-/* Find what stack an address falls into. */
-static Bool find_stack_by_addr(Addr sp, Addr *start, Addr *end, UWord *id)
-{
-   Stack *i = stacks;
-   while(i) {
-      if(sp >= i->start && sp <= i->end) {
-         *start = i->start;
-         *end = i->end;
-         *id = i->id;
-         return True;
-      }
-      i = i->next;
-   }
-   return False;
-}
-
-/* Change over to a new stack. */
-static Bool set_current_stack(UWord id)
-{
-   Addr start, end;
-   if (find_stack_by_id(id, &start, &end)) {
-      current_stack_id = id;
-      current_stack_start = start;
-      current_stack_end = end;
-      return True;
-   }
-   return False;
-}
-
-/*
- * Register a new stack from start - end.  This is invoked from the
- * VALGRIND_STACK_REGISTER client request, and is also called just before
- * we start the client running, to register the main process stack.
- *
- * Note: this requires allocating a piece of memory to store the Stack
- * structure, which places a dependency between this module and the
- * mallocfree module.  However, there is no real chance of a circular
- * dependency here, since the mallocfree module would never call back to
- * this function.
- */
-
-UWord VG_(handle_stack_register)(Addr start, Addr end)
-{
-   Stack *i;
-   if (start > end) {
-      Addr t = end;
-      end = start;
-      start = t;
-   }
-
-   i = (Stack *)VG_(arena_malloc)(VG_AR_CORE, sizeof(Stack));
-   i->start = start;
-   i->end = end;
-   i->id = next_id++;
-   i->next = stacks;
-   stacks = i;
-
-   if(i->id == 0) {
-      set_current_stack(i->id);
-   }
-
-   return i->id;
-}
-
-/*
- * Deregister a stack.  This is invoked from the VALGRIND_STACK_DEREGISTER
- * client request.
- *
- * Note: this requires freeing the piece of memory that was used to store
- * the Stack structure, which places a dependency between this module
- * and the mallocfree module.  However, there is no real chance of
- * a circular dependency here, since the mallocfree module would never
- * call back to this function.
- */
-
-void VG_(handle_stack_deregister)(UWord id)
-{
-   Stack *i = stacks;
-   Stack *prev = NULL;
-
-   if(current_stack_id == id) {
-      return;
-   }
-
-   while(i) {
-      if (i->id == id) {
-         if(prev == NULL) {
-            stacks = i->next;
-         } else {
-            prev->next = i->next;
-         }
-         VG_(arena_free)(VG_AR_CORE, i);
-         return;
-      }
-      prev = i;
-      i = i->next;
-   }
-}
-
-/*
- * Change a stack.  This is invoked from the VALGRIND_STACK_CHANGE client
- * request and from the stack growth stuff the signals module when
- * extending the main process stack.
- */
-
-void VG_(handle_stack_change)(UWord id, Addr start, Addr end)
-{
-   Stack *i = stacks;
-
-   if (id == current_stack_id) {
-      current_stack_start = start;
-      current_stack_end = end;
-   }
-
-   while(i) {
-      if (i->id == id) {
-         i->start = start;
-         i->end = end;
-         return;
-      }
-      i = i->next;
-   }
-}
-
-/* This function gets called if new_mem_stack and/or die_mem_stack are
-   tracked by the tool, and one of the specialised cases
-   (eg. new_mem_stack_4) isn't used in preference.  
-*/
-VGA_REGPARM(2)
-void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
-{
-   static Int moans = 3;
-   Word delta  = (Word)new_SP - (Word)old_SP;
-
-   /* Check if the stack pointer is still in the same stack as before. */
-   if (new_SP < current_stack_start || new_SP > current_stack_end) {
-      Addr start, end;
-      UWord new_id;
-      Bool found = find_stack_by_addr(new_SP, &start, &end, &new_id);
-      if (found && new_id != current_stack_id) {
-         /* The stack pointer is now in another stack.  Update the current
-            stack information and return without doing anything else. */
-         set_current_stack(new_id);
-         return;
-      }
-   }
-
-   if (delta < -VG_(clo_max_stackframe) || VG_(clo_max_stackframe) < delta) {
-      /* SP has changed by more than some threshold amount (by
-         default, 2MB).  We take this to mean that the application is
-         switching to a new stack, for whatever reason.
-       
-         JRS 20021001: following discussions with John Regehr, if a stack
-         switch happens, it seems best not to mess at all with memory
-         permissions.  Seems to work well with Netscape 4.X.  Really the
-         only remaining difficulty is knowing exactly when a stack switch is
-         happening. */
-      if (VG_(clo_verbosity) > 0 && moans > 0) {
-         moans--;
-         VG_(message)(Vg_UserMsg,
-            "Warning: client switching stacks?  "
-            "SP change: %p --> %p", old_SP, new_SP);
-         VG_(message)(Vg_UserMsg,
-            "         to suppress, use: --max-stackframe=%d or greater",
-            (delta < 0 ? -delta : delta));
-         if (moans == 0)
-            VG_(message)(Vg_UserMsg,
-                "         further instances of this message "
-                "will not be shown.");
-      }
-   } else if (delta < 0) {
-      VG_TRACK( new_mem_stack, new_SP, -delta );
-
-   } else if (delta > 0) {
-      VG_TRACK( die_mem_stack, old_SP,  delta );
-   }
-}
-
 /* 
    Test if a piece of memory is addressable with at least the "prot"
    protection permissions by examining the underlying segments.
@@ -1374,27 +1166,8 @@ Bool VG_(is_addressable)(Addr p, SizeT size, UInt prot)
 
 
 /*--------------------------------------------------------------------*/
-/*--- Manage allocation of memory on behalf of the client          ---*/
+/*--- Random function that doesn't really belong here              ---*/
 /*--------------------------------------------------------------------*/
-
-// Returns 0 on failure.
-Addr VG_(get_memory_from_mmap_for_client)
-        (Addr addr, SizeT len, UInt prot, UInt sf_flags)
-{
-   len = VG_PGROUNDUP(len);
-
-   tl_assert(!(sf_flags & SF_FIXED));
-   tl_assert(0 == addr);
-
-   addr = (Addr)VG_(mmap)((void *)addr, len, prot, 
-                          VKI_MAP_PRIVATE | VKI_MAP_ANONYMOUS | VKI_MAP_CLIENT,
-                          sf_flags | SF_CORE, -1, 0);
-   if ((Addr)-1 != addr)
-      return addr;
-   else
-      return 0;
-}
-
 
 /* We'll call any RW mmaped memory segment, within the client address
    range, which isn't SF_CORE, a root. 
@@ -1407,15 +1180,14 @@ void VG_(find_root_memory)(void (*add_rootrange)(Addr a, SizeT sz))
 
    for (i = 0; i < segments_used; i++) {
       s = &segments[i];
-      flags = s->flags & (SF_SHARED|SF_MMAP|SF_VALGRIND
-                          |SF_CORE|SF_STACK|SF_DEVICE);
-      if (flags != SF_MMAP && flags != SF_STACK)
+      flags = s->flags & (SF_SHARED|SF_MMAP|SF_VALGRIND|SF_CORE|SF_STACK);
+      if (flags != SF_MMAP && flags != SF_STACK && flags != (SF_MMAP|SF_STACK))
          continue;
       if ((s->prot & (VKI_PROT_READ|VKI_PROT_WRITE)) 
           != (VKI_PROT_READ|VKI_PROT_WRITE))
          continue;
       if (!VG_(is_client_addr)(s->addr) ||
-          !VG_(is_client_addr)(s->addr+s->len))
+          !VG_(is_client_addr)(s->addr+s->len-1))
          continue;
 
       (*add_rootrange)(s->addr, s->len);
@@ -1437,39 +1209,10 @@ Bool VG_(is_shadow_addr)(Addr a)
    return a >= VG_(shadow_base) && a < VG_(shadow_end);
 }
 
-Addr VG_(get_shadow_size)(void)
-{
-   return VG_(shadow_end)-VG_(shadow_base);
-}
-
 
 /*--------------------------------------------------------------------*/
 /*--- Handling shadow memory                                       ---*/
 /*--------------------------------------------------------------------*/
-
-void VG_(init_shadow_range)(Addr p, UInt sz, Bool call_init)
-{
-vg_assert(0);
-   if (0)
-      VG_(printf)("init_shadow_range(%p, %d)\n", p, sz);
-
-   vg_assert(VG_(needs).shadow_memory);
-   vg_assert(VG_(tdict).track_init_shadow_page);
-
-   sz = VG_PGROUNDUP(p+sz) - VG_PGROUNDDN(p);
-   p  = VG_PGROUNDDN(p);
-
-   VG_(mprotect)((void *)p, sz, VKI_PROT_READ|VKI_PROT_WRITE);
-   
-   if (call_init) 
-      while(sz) {
-	 /* ask the tool to initialize each page */
-	 VG_TRACK( init_shadow_page, VG_PGROUNDDN(p) );
-	 
-	 p  += VKI_PAGE_SIZE;
-	 sz -= VKI_PAGE_SIZE;
-      }
-}
 
 void *VG_(shadow_alloc)(UInt size)
 {
@@ -1480,7 +1223,6 @@ void *VG_(shadow_alloc)(UInt size)
    if (0) show_segments("shadow_alloc(before)");
 
    vg_assert(VG_(needs).shadow_memory);
-   vg_assert(!VG_(tdict).track_init_shadow_page);
 
    size = VG_PGROUNDUP(size);
 
@@ -1532,7 +1274,7 @@ void *VG_(shadow_alloc)(UInt size)
 /*--- pointercheck                                         ---*/
 /*------------------------------------------------------------*/
 
-Bool VGA_(setup_pointercheck)(Addr client_base, Addr client_end)
+Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
 {
    vg_assert(0 != client_end);
 #if defined(VGP_x86_linux)
@@ -1559,7 +1301,11 @@ Bool VGA_(setup_pointercheck)(Addr client_base, Addr client_end)
    } else {
       return True;
    }
-#elif defined(VGP_amd64_linux) || defined (VGP_x86_netbsdelf2)
+#elif defined(VGP_amd64_linux) || defined(VGP_x86_netbsd)
+   if (0) 
+      VG_(message)(Vg_DebugMsg, "ignoring --pointercheck (unimplemented)");
+   return True;
+#elif defined(VGP_ppc32_linux)
    if (0) 
       VG_(message)(Vg_DebugMsg, "ignoring --pointercheck (unimplemented)");
    return True;
@@ -1569,5 +1315,5 @@ Bool VGA_(setup_pointercheck)(Addr client_base, Addr client_end)
 }
 
 /*--------------------------------------------------------------------*/
-/*--- end                                              aspacemgr.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

@@ -30,7 +30,7 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_threadstate.h"   // needed for pub_core_aspacemgr.h
+#include "pub_core_debuginfo.h"  // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -98,25 +98,26 @@ static Int readdec ( const Char* buf, UInt* val )
 
 static void read_procselfmaps ( void )
 {
-   Int n_chunk, fd;
+   Int    n_chunk;
+   SysRes fd;
    
    /* Read the initial memory mapping from the /proc filesystem. */
-#if defined (VGO_netbsdelf2)
-  fd = VG_(open) ( "/proc/curproc/maps", VKI_O_RDONLY, 0 );
+#ifdef (VGO_netbsdelf2)
+   fd = VG_(open) ( "/proc/curproc/maps", VKI_O_RDONLY, 0 );
 #else
-  fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
+   fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
 #endif
-   if (fd < 0) {
+   if (fd.isError) {
       VG_(message)(Vg_UserMsg, "FATAL: can't open /proc/self/maps");
       VG_(exit)(1);
    }
    buf_n_tot = 0;
    do {
-      n_chunk = VG_(read) ( fd, &procmap_buf[buf_n_tot],
+      n_chunk = VG_(read) ( fd.val, &procmap_buf[buf_n_tot],
                             M_PROCMAP_BUF - buf_n_tot );
       buf_n_tot += n_chunk;
    } while ( n_chunk > 0 && buf_n_tot < M_PROCMAP_BUF );
-   VG_(close)(fd);
+   VG_(close)(fd.val);
    if (buf_n_tot >= M_PROCMAP_BUF-5) {
       VG_(message)(Vg_UserMsg, "FATAL: M_PROCMAP_BUF is too small; "
                                "increase it and recompile");
@@ -233,12 +234,17 @@ void VG_(parse_procselfmaps) (
     read_line_ok:
 
       /* Try and find the name of the file mapped to this segment, if
-         it exists. */
-      while (procmap_buf[i] != '\n' && i < buf_n_tot-1) i++;
+         it exists.  Note that files can contains spaces. */
+
+      // Move i to the next non-space char, which should be either a '/' or
+      // a newline.
+      while (procmap_buf[i] == ' ' && i < buf_n_tot-1) i++;
+      
+      // Move i_eol to the end of the line.
       i_eol = i;
-      i--;
-      while (!VG_(isspace)(procmap_buf[i]) && i >= 0) i--;
-      i++;
+      while (procmap_buf[i_eol] != '\n' && i_eol < buf_n_tot-1) i_eol++;
+
+      // If there's a filename...
       if (i < i_eol-1 && procmap_buf[i] == '/') {
          /* Minor hack: put a '\0' at the filename end for the call to
             'record_mapping', then restore the old char with 'tmp'. */

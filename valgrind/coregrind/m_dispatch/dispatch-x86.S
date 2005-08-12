@@ -1,7 +1,7 @@
 
 ##--------------------------------------------------------------------##
 ##--- The core dispatch loop, for jumping to a code address.       ---##
-##---                                               x86/dispatch.S ---##
+##---                                               dispatch-x86.S ---##
 ##--------------------------------------------------------------------##
 
 /*
@@ -32,7 +32,7 @@
 #include "pub_tool_basics_asm.h"
 #include "pub_core_dispatch_asm.h"
 #include "pub_core_transtab_asm.h"
- #include "libvex_guest_offsets.h" 	/* for OFFSET_x86_EIP */ 
+#include "libvex_guest_offsets.h"	/* for OFFSET_x86_EIP */
 
 
 /*------------------------------------------------------------*/
@@ -71,10 +71,12 @@ VG_(run_innerloop):
 	
 	/* set host SSE control word to the default mode expected 
 	   by VEX-generated code. */
+	cmpl	$0, VG_(have_mxcsr_x86)
+	jz	L1
 	pushl	$0x1F80
 	ldmxcsr	(%esp)
 	addl	$4, %esp
-
+L1:
 	/* set dir flag to known value */
 	cld
 	
@@ -136,13 +138,15 @@ run_innerloop_exit:
 	cmpl	$0x027F, (%esp)
 	popl	%esi /* get rid of the word without trashing %eflags */
 	jnz	invariant_violation
+	cmpl	$0, VG_(have_mxcsr_x86)
+	jz	L2
 	pushl	$0
 	stmxcsr	(%esp)
 	andl	$0xFFFFFFC0, (%esp)  /* mask out status flags */
 	cmpl	$0x1F80, (%esp)
 	popl	%esi
 	jnz	invariant_violation
-	/* otherwise we're OK */
+L2:	/* otherwise we're OK */
 	jmp	run_innerloop_exit_REALLY
 
 invariant_violation:

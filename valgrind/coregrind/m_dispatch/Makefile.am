@@ -3,7 +3,14 @@ include $(top_srcdir)/Makefile.core-AM_CPPFLAGS.am
 
 noinst_LIBRARIES = libdispatch.a
 
-## XXX: this won't work with "make dist" -- only one dispatch-XXX.S file
-## will be put in the tarball.  Problem exists in various other Makefiles.
+# Remember to include all the arch-specific files in the distribution.
+EXTRA_DIST = \
+	$(addsuffix .S,$(addprefix dispatch-,$(VG_ARCH_ALL)))
+
 libdispatch_a_SOURCES = \
 	dispatch-@VG_ARCH@.S
+
+dispatch-@VG_ARCH@.S: libvex_guest_offsets.h
+
+libvex_guest_offsets.h:
+	$(MAKE) -C @VEX_DIR@ pub/libvex_guest_offsets.h

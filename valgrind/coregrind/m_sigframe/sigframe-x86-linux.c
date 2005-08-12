@@ -31,6 +31,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h" /* find_segment */
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -426,8 +427,8 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
-   VG_TRACK( new_mem_stack_signal, addr - VGA_STACK_REDZONE_SZB,
-             size + VGA_STACK_REDZONE_SZB );
+   VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
+             size + VG_STACK_REDZONE_SZB );
 
    return True;
 }
@@ -483,8 +484,7 @@ static Addr build_sigframe(ThreadState *tst,
    if (flags & VKI_SA_RESTORER)
       frame->retaddr = (Addr)restorer;
    else
-      frame->retaddr
-         = VG_(client_trampoline_code)+VG_(tramp_sigreturn_offset);
+      frame->retaddr = (Addr)&VG_(x86_linux_SUBST_FOR_sigreturn);
 
    synth_ucontext(tst->tid, siginfo, mask, &uc, &frame->fpstate);
 
@@ -530,8 +530,7 @@ static Addr build_rt_sigframe(ThreadState *tst,
    if (flags & VKI_SA_RESTORER)
       frame->retaddr = (Addr)restorer;
    else
-      frame->retaddr 
-         = VG_(client_trampoline_code)+VG_(tramp_rt_sigreturn_offset);
+      frame->retaddr = (Addr)&VG_(x86_linux_SUBST_FOR_rt_sigreturn);
 
    frame->psigInfo = (Addr)&frame->sigInfo;
    frame->puContext = (Addr)&frame->uContext;
@@ -575,7 +574,7 @@ void VG_(sigframe_create)( ThreadId tid,
    /* Set the thread so it will next run the handler. */
    /* tst->m_esp  = esp;  also notify the tool we've updated ESP */
    VG_(set_SP)(tid, esp);
-   VG_TRACK( post_reg_write, Vg_CoreSignal, tid, O_STACK_PTR, sizeof(Addr));
+   VG_TRACK( post_reg_write, Vg_CoreSignal, tid, VG_O_STACK_PTR, sizeof(Addr));
 
    //VG_(printf)("handler = %p\n", handler);
    tst->arch.vex.guest_EIP = (Addr) handler;
@@ -685,13 +684,13 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    else
       size = restore_rt_sigframe(tst, (struct rt_sigframe *)esp, &sigNo);
 
-   VG_TRACK( die_mem_stack_signal, esp - VGA_STACK_REDZONE_SZB,
-             size + VGA_STACK_REDZONE_SZB );
+   VG_TRACK( die_mem_stack_signal, esp - VG_STACK_REDZONE_SZB,
+             size + VG_STACK_REDZONE_SZB );
 
    if (VG_(clo_trace_signals))
       VG_(message)(
          Vg_DebugMsg, 
-         "VGA_(signal_return) (thread %d): isRT=%d valid magic; EIP=%p", 
+         "VG_(signal_return) (thread %d): isRT=%d valid magic; EIP=%p", 
          tid, isRT, tst->arch.vex.guest_EIP);
 
    /* tell the tools */
@@ -702,7 +701,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
 //:: /*--- Making coredumps                                     ---*/
 //:: /*------------------------------------------------------------*/
 //:: 
-//:: void VGA_(fill_elfregs_from_tst)(struct vki_user_regs_struct* regs, 
+//:: void VG_(fill_elfregs_from_tst)(struct vki_user_regs_struct* regs, 
 //::                                  const arch_thread_t* arch)
 //:: {
 //::    regs->eflags = arch->m_eflags;
@@ -743,13 +742,13 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
 //::       VG_(memcpy)(fpu, from, sizeof(*fpu));
 //:: }
 //:: 
-//:: void VGA_(fill_elffpregs_from_tst)( vki_elf_fpregset_t* fpu,
+//:: void VG_(fill_elffpregs_from_tst)( vki_elf_fpregset_t* fpu,
 //::                                     const arch_thread_t* arch)
 //:: {
 //::    fill_fpu(fpu, (const Char *)&arch->m_sse);
 //:: }
 //:: 
-//:: void VGA_(fill_elffpxregs_from_tst) ( vki_elf_fpxregset_t* xfpu,
+//:: void VG_(fill_elffpxregs_from_tst) ( vki_elf_fpxregset_t* xfpu,
 //::                                       const arch_thread_t* arch )
 //:: {
 //::    VG_(memcpy)(xfpu, arch->m_sse.state, sizeof(*xfpu));

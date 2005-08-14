@@ -32,6 +32,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_errormgr.h"
@@ -43,6 +44,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#include "pub_core_syscall.h"
 #include "pub_core_machine.h"
 #include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
@@ -51,24 +53,13 @@
 #include "pub_core_redir.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
+#include "pub_core_stacks.h"
 #include "pub_core_syswrap.h"
 #include "pub_core_tooliface.h"
+#include "pub_core_translate.h"
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
-#include "ume.h"
 
-#include <dirent.h>
-#include <dlfcn.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/ptrace.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <unistd.h>
 #include "memcheck/memcheck.h"
 
 #ifndef AT_DCACHEBSIZE
@@ -120,80 +111,58 @@
 /* ---------------------------------------------------------------------
    Startup stuff                            
    ------------------------------------------------------------------ */
+ 
+ 
+ /*====================================================================*/
+ /*=== Ultra-basic startup stuff                                    ===*/
+ /*====================================================================*/
+ 
+ // HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
+ // temporary bootstrapping allocator, for use until such time as we
+ // can get rid of the circularites in allocator dependencies at
+ // startup.  There is also a copy of this in m_ume.c.
+ #define N_HACK_BYTES 10000
+ static Int   hack_bytes_used = 0;
+ static HChar hack_bytes[N_HACK_BYTES];
+ 
+ static void* hack_malloc ( Int n )
+ {
+    VG_(debugLog)(1, "main", "  FIXME: hack_malloc(m_main)(%d)\n", n);
+    while (n % 16) n++;
+    if (hack_bytes_used + n > N_HACK_BYTES) {
+      VG_(printf)("valgrind: N_HACK_BYTES(m_main) too low.  Sorry.\n");
+      VG_(exit)(0);
+    }
+    hack_bytes_used += n;
+    return (void*) &hack_bytes[hack_bytes_used - n];
+ }
+ 
+ 
+
 
 /* stage1 (main) executable */
-static Int vgexecfd = -1;
+//static Int vgexecfd = -1;
 
-/* client executable */
-Int  VG_(clexecfd) = -1;
+
 
 /* our argc/argv */
 static Int  vg_argc;
 static Char **vg_argv;
 
 
-/* ---------------------------------------------------------------------
-   Running stuff                            
-   ------------------------------------------------------------------ */
-
-/* 64-bit counter for the number of basic blocks done. */
-ULong VG_(bbs_done) = 0;
 
 
 /*====================================================================*/
 /*=== Counters, for profiling purposes only                        ===*/
 /*====================================================================*/
 
-/* Counts pertaining to internal sanity checking. */
-static UInt sanity_fast_count = 0;
-static UInt sanity_slow_count = 0;
-#if defined (VGO_netbsdelf2)  
-extern char _end[];
-const char* curbrk = _end;
-
-int
-brk( void* newbrk)
-{
-   char* oldpg = (char*) VG_PGROUNDUP(curbrk);
-   char* newpg = (char*) VG_PGROUNDUP(newbrk);
-
-   if (newpg < oldpg) {
-      munmap(newpg, oldpg - newpg);
-   } else if (newpg > oldpg) {
-      mmap(oldpg, newpg - oldpg, PROT_READ|PROT_WRITE|PROT_EXEC,
-	   MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0);
-   }
-   curbrk = newbrk;
-   return 0;
-}
-
-void*
-sbrk(intptr_t incr)
-{
-   int res;
-   printf("in sbk\n");
-   res = brk(curbrk + incr);
-   if (res < 0)
-      return (void*) -1;
-   else
-      return (void*) curbrk;
-}
-
-#endif
 
 static void print_all_stats ( void )
 {
-   // Translation stats
    VG_(print_tt_tc_stats)();
-   VG_(message)(Vg_DebugMsg,
-      " dispatch: %llu jumps (bb entries).", VG_(bbs_done) );
 
-   // Scheduler stats
    VG_(print_scheduler_stats)();
 
-   VG_(message)(Vg_DebugMsg, 
-                "   sanity: %d cheap, %d expensive checks.",
-                sanity_fast_count, sanity_slow_count );
 
    VG_(print_ExeContext_stats)();
 
@@ -203,154 +172,36 @@ static void print_all_stats ( void )
       VG_(message)(Vg_DebugMsg, 
          "------ Valgrind's internal memory use stats follow ------" );
       VG_(sanity_check_malloc_all)();
+       VG_(message)(Vg_DebugMsg, "------" );
       VG_(print_all_arena_stats)();
       VG_(message)(Vg_DebugMsg, "");
-      //VG_(print_shadow_stats)();
+
+/* #elif defined (VGP_x86_netbsdelf2) */
+/*    regs.r_cs     = vex->guest_CS; */
+/*    regs.r_ss     = vex->guest_SS; */
+/*    regs.r_ds     = vex->guest_DS; */
+/*    regs.r_es     = vex->guest_ES; */
+/*    regs.r_fs     = vex->guest_FS; */
+/*    regs.r_gs     = vex->guest_GS; */
+/*    regs.r_eax    = vex->guest_EAX; */
+/*    regs.r_ebx    = vex->guest_EBX; */
+/*    regs.r_ecx    = vex->guest_ECX; */
+/*    regs.r_edx    = vex->guest_EDX; */
+/*    regs.r_esi    = vex->guest_ESI; */
+/*    regs.r_edi    = vex->guest_EDI; */
+/*    regs.r_ebp    = vex->guest_EBP; */
+/*    regs.r_esp    = vex->guest_ESP; */
+/*    regs.r_eflags = LibVEX_GuestX86_get_eflags(vex); */
+/*    regs.r_eip    = vex->guest_EIP; */
+
    }
 }
-
-
-/*====================================================================*/
-/*=== Miscellaneous global functions                               ===*/
-/*====================================================================*/
-
-static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
-{
-   struct vki_user_regs_struct regs;
-#if defined(VGP_x86_linux) 
-   regs.cs     = vex->guest_CS;
-   regs.ss     = vex->guest_SS;
-   regs.ds     = vex->guest_DS;
-   regs.es     = vex->guest_ES;
-   regs.fs     = vex->guest_FS;
-   regs.gs     = vex->guest_GS;
-   regs.eax    = vex->guest_EAX;
-   regs.ebx    = vex->guest_EBX;
-   regs.ecx    = vex->guest_ECX;
-   regs.edx    = vex->guest_EDX;
-   regs.esi    = vex->guest_ESI;
-   regs.edi    = vex->guest_EDI;
-   regs.ebp    = vex->guest_EBP;
-   regs.esp    = vex->guest_ESP;
-   regs.eflags = LibVEX_GuestX86_get_eflags(vex);
-   regs.eip    = vex->guest_EIP;
-
-
-   return ptrace(PTRACE_SETREGS, pid, NULL, (int)&regs);
-#elif defined (VGP_x86_netbsdelf2)
-   regs.r_cs     = vex->guest_CS;
-   regs.r_ss     = vex->guest_SS;
-   regs.r_ds     = vex->guest_DS;
-   regs.r_es     = vex->guest_ES;
-   regs.r_fs     = vex->guest_FS;
-   regs.r_gs     = vex->guest_GS;
-   regs.r_eax    = vex->guest_EAX;
-   regs.r_ebx    = vex->guest_EBX;
-   regs.r_ecx    = vex->guest_ECX;
-   regs.r_edx    = vex->guest_EDX;
-   regs.r_esi    = vex->guest_ESI;
-   regs.r_edi    = vex->guest_EDI;
-   regs.r_ebp    = vex->guest_EBP;
-   regs.r_esp    = vex->guest_ESP;
-   regs.r_eflags = LibVEX_GuestX86_get_eflags(vex);
-   regs.r_eip    = vex->guest_EIP;
-
-#elif defined(VGA_amd64)
-   I_die_here;
-#else
-#  error Unknown arch
-#endif
-}
-
-/* Start debugger and get it to attach to this process.  Called if the
-   user requests this service after an error has been shown, so she can
-   poke around and look at parameters, memory, etc.  You can't
-   meaningfully get the debugger to continue the program, though; to
-   continue, quit the debugger.  */
-void VG_(start_debugger) ( ThreadId tid )
-{
-   Int pid;
-
-   if ((pid = fork()) == 0) {
-
-      ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-      VG_(kill)(VG_(getpid)(), VKI_SIGSTOP);
-
-   } else if (pid > 0) {
-      Int status;
-      Int res;
-
-      if ((res = VG_(waitpid)(pid, &status, 0)) == pid &&
-          WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP &&
-          ptrace_setregs(pid, &(VG_(threads)[tid].arch.vex)) == 0 &&
-          kill(pid, SIGSTOP) == 0 &&
-          ptrace(PTRACE_DETACH, pid, NULL, 0) == 0)
-      {
-         Char pidbuf[15];
-         Char file[30];
-         Char buf[100];
-         Char *bufptr;
-         Char *cmdptr;
-         
-         VG_(sprintf)(pidbuf, "%d", pid);
-         VG_(sprintf)(file, "/proc/%d/fd/%d", pid, VG_(clexecfd));
- 
-         bufptr = buf;
-         cmdptr = VG_(clo_db_command);
-         
-         while (*cmdptr) {
-            switch (*cmdptr) {
-               case '%':
-                  switch (*++cmdptr) {
-                     case 'f':
-                        VG_(memcpy)(bufptr, file, VG_(strlen)(file));
-                        bufptr += VG_(strlen)(file);
-                        cmdptr++;
-                        break;
-                  case 'p':
-                     VG_(memcpy)(bufptr, pidbuf, VG_(strlen)(pidbuf));
-                     bufptr += VG_(strlen)(pidbuf);
-                     cmdptr++;
-                     break;
-                  default:
-                     *bufptr++ = *cmdptr++;
-                     break;
-                  }
-                  break;
-               default:
-                  *bufptr++ = *cmdptr++;
-                  break;
-            }
-         }
-         
-         *bufptr++ = '\0';
-  
-         VG_(message)(Vg_UserMsg, "starting debugger with cmd: %s", buf);
-         res = VG_(system)(buf);
-         if (res == 0) {      
-            VG_(message)(Vg_UserMsg, "");
-            VG_(message)(Vg_UserMsg, 
-                         "Debugger has detached.  Valgrind regains control.  We continue.");
-         } else {
-            VG_(message)(Vg_UserMsg, "Apparently failed!");
-            VG_(message)(Vg_UserMsg, "");
-         }
-      }
-
-      VG_(kill)(pid, VKI_SIGKILL);
-      VG_(waitpid)(pid, &status, 0);
-   }
-}
-
-
-/*====================================================================*/
-/*=== Check we were launched by stage 1                            ===*/
 /*====================================================================*/
 
 /* Look for our AUXV table */
-static int scan_auxv(void* init_sp)
+static void scan_auxv(void* init_sp)
 {
-   const struct ume_auxv *auxv = find_auxv((UWord*)init_sp);
+    struct ume_auxv *auxv = find_auxv((UWord*)init_sp);
    int padfile = -1, found = 0;
 
    for (; auxv->a_type != AT_NULL; auxv++)
@@ -369,13 +220,6 @@ static int scan_auxv(void* init_sp)
          VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
          break;
       }
-
-   if ( found != (1|2) ) {
-      fprintf(stderr, "valgrind: stage2 must be launched by stage1\n");
-      exit(127);
-   }
-   vg_assert(padfile >= 0);
-   return padfile;
 }
 
 
@@ -387,8 +231,7 @@ extern char _start[];
 
 static void layout_remaining_space(Addr argc_addr, float ratio)
 {
-   Int   ires;
-   void* vres;
+	SysRes res;
    Addr  client_size, shadow_size;
 
    // VG_(valgrind_base) should have been set by scan_auxv, but if not,
@@ -436,21 +279,21 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
 #undef SEGSIZE
 
    // Ban redzone
-   vres = mmap((void *)VG_(client_end), REDZONE_SIZE, PROT_NONE,
-               MAP_FIXED|MAP_ANON|MAP_PRIVATE|MAP_NORESERVE, -1, 0);
-   vg_assert((void*)-1 != vres);
+   vres = VG_(mmap_native)((void *)VG_(client_end), REDZONE_SIZE, PROT_NONE,
+               VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE|VKI_MAP_NORESERVE, -1, 0);
+   vg_assert(!res.isError);
 
    // Make client hole
-   ires = munmap((void*)VG_(client_base), client_size);
-   vg_assert(0 == ires);
+   res = VG_(munmap_native)((void*)VG_(client_base), client_size);
+   vg_assert(!res.iserror);
 
    // Map shadow memory.
    // Initially all inaccessible, incrementally initialized as it is used
    if (shadow_size != 0) {
-      vres = mmap((char *)VG_(shadow_base), shadow_size, PROT_NONE,
-                  MAP_PRIVATE|MAP_ANON|MAP_FIXED|MAP_NORESERVE, -1, 0);
-      if ((void*)-1 == vres) {
-         fprintf(stderr, 
+      vres = VG_(mmap_native)((char *)VG_(shadow_base), shadow_size, VKI_PROT_NONE,
+                  VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_FIXED|VKI_MAP_NORESERVE, -1, 0);
+      if (res.isError) {
+         VG_(printf)(
           "valgrind: Could not allocate address space (%p bytes)\n"
           "valgrind:   for shadow memory\n"
           "valgrind: Possible causes:\n"
@@ -462,7 +305,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
           "valgrind:   too-small (eg. 2GB) user address space.\n"
           , (void*)shadow_size
          ); 
-         exit(1);
+         VG_(exit)(1);
       }
    }
 }
@@ -470,30 +313,32 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
 /*====================================================================*/
 /*=== Command line setup                                           ===*/
 /*====================================================================*/
+ // Note that we deliberately don't free the malloc'd memory.  See comment
+ // at call site.
+  static char* get_file_clo(char* dir)
+  {
+    Int    n;
+    SysRes fd;
+    struct vki_stat s1;
+    Char* f_clo = NULL;
+    Char  filename[VKI_PATH_MAX];
+  
+    VG_(snprintf)(filename, VKI_PATH_MAX, "%s/.valgrindrc", 
+                            ( NULL == dir ? "" : dir ) );
+     fd = VG_(open)(filename, 0, VKI_S_IRUSR);
+    if ( !fd.isError ) {
+       if ( 0 == VG_(fstat)(fd.val, &s1) ) {
+          f_clo = VG_(malloc)(s1.st_size+1);
+           vg_assert(f_clo);
+          n = VG_(read)(fd.val, f_clo, s1.st_size);
+           if (n == -1) n = 0;
+           f_clo[n] = '\0';
+        }
+       VG_(close)(fd.val);
+     }
+     return f_clo;
+  }
 
-static char* get_file_clo(char* dir)
-{
-#  define FLEN 512
-   Int fd, n;
-   struct stat s1;
-   char* f_clo = NULL;
-   char filename[FLEN];
-
-   snprintf(filename, FLEN, "%s/.valgrindrc", ( NULL == dir ? "" : dir ) );
-   fd = VG_(open)(filename, 0, VKI_S_IRUSR);
-   if ( fd > 0 ) {
-      if ( 0 == fstat(fd, &s1) ) {
-         f_clo = malloc(s1.st_size+1);
-         vg_assert(f_clo);
-         n = read(fd, f_clo, s1.st_size);
-         if (n == -1) n = 0;
-         f_clo[n] = '\0';
-      }
-      close(fd);
-   }
-   return f_clo;
-#  undef FLEN
-}
 
 static Int count_args(char* s)
 {

@@ -241,7 +241,7 @@ asm(
    Allocate a stack for the main thread, and run it all the way to the
    end.  
 */
-void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
+void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
 	VG_(debugLog)(1, "syswrap-x86-netbsd", 
 		      "entering VG_(main_thread_wrapper_NORETURN)\n"); 
@@ -2551,7 +2551,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 };
 
 const UInt ML_(syscall_table_size) = 
-            sizeof(ML_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
+            sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

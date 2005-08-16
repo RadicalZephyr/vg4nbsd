@@ -443,6 +443,8 @@ AC_TYPE_SIGNAL
 
 AC_CHECK_FUNCS([floor memchr memset mkdir strchr strdup strpbrk strrchr strstr semtimedop])
 
+AC_CHECK_LIB(dl, dlopen, AC_SUBST(LIBDL, -ldl))
+
 AC_OUTPUT(
    Makefile 
    valgrind.spec

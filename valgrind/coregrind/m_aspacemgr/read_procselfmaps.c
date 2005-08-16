@@ -102,7 +102,7 @@ static void read_procselfmaps ( void )
    SysRes fd;
    
    /* Read the initial memory mapping from the /proc filesystem. */
-#ifdef (VGO_netbsdelf2)
+#if defined (VGO_netbsdelf2)
    fd = VG_(open) ( "/proc/curproc/maps", VKI_O_RDONLY, 0 );
 #else
    fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );

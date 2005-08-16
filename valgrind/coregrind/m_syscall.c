@@ -77,7 +77,7 @@ SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag ) {
    return res;
 }
 
-SysRes VG_(mk_SysRes_x86_netbsdelf2) ( UInt val, UInt errflag ) {
+SysRes VG_(mk_SysRes_x86_netbsdelf2) ( Word val ) {
    SysRes res;
    res.isError = val >= -4095 && val <= -1; /* XXX -NetBSD */
    res.val     = res.isError ? -val : val;

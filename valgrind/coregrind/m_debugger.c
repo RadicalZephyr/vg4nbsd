@@ -84,7 +84,7 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
    regs.r_eflags = LibVEX_GuestX86_get_eflags(vex);
    regs.r_eip    = vex->guest_EIP;
 
-   return ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+   return ptrace(PT_SETREGS, pid, NULL, &regs);
 #elif defined(VGP_amd64_linux)
    regs.rax    = vex->guest_RAX;
    regs.rbx    = vex->guest_RBX;
@@ -124,7 +124,11 @@ void VG_(start_debugger) ( ThreadId tid )
    Int pid;
 
    if ((pid = fork()) == 0) {
+#if defined (VGO_netbsdelf2)
+      ptrace(PT_TRACE_ME, 0, NULL, NULL);
+#else
       ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+#endif
       VG_(kill)(VG_(getpid)(), VKI_SIGSTOP);
 
    } else if (pid > 0) {
@@ -132,10 +136,14 @@ void VG_(start_debugger) ( ThreadId tid )
       Int res;
 
       if ((res = VG_(waitpid)(pid, &status, 0)) == pid &&
-          WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP &&
+          WIFSTOPPED(status) && WSTOPSIG(status) == VKI_SIGSTOP &&
           ptrace_setregs(pid, &(VG_(threads)[tid].arch.vex)) == 0 &&
-          VG_(kill)(pid, SIGSTOP) == 0 &&
+          VG_(kill)(pid, VKI_SIGSTOP) == 0 &&
+#if defined (VGO_netbsdelf2)
+          ptrace(PT_DETACH, pid, NULL, 0) == 0)
+#else
           ptrace(PTRACE_DETACH, pid, NULL, 0) == 0)
+#endif
       {
          Char pidbuf[15];
          Char file[30];

@@ -642,67 +642,6 @@ PRE(sys_prctl)
    // PRE_MEM_READs/PRE_MEM_WRITEs as necessary...
 }
 
-PRE(sys_gettid)
-{
-   PRINT("sys_gettid ()");
-   PRE_REG_READ0(long, "gettid");
-}
-
-//zz PRE(sys_tkill, Special)
-//zz {
-//zz    /* int tkill(pid_t tid, int sig); */
-//zz    PRINT("sys_tkill ( %d, %d )", ARG1,ARG2);
-//zz    PRE_REG_READ2(long, "tkill", int, tid, int, sig);
-//zz    if (!ML_(client_signal_OK)(ARG2)) {
-//zz       SET_STATUS_( -VKI_EINVAL );
-//zz       return;
-//zz    }
-//zz
-//zz    /* If we're sending SIGKILL, check to see if the target is one of
-//zz       our threads and handle it specially. */
-//zz    if (ARG2 == VKI_SIGKILL && ML_(do_sigkill)(ARG1, -1))
-//zz       SET_STATUS_(0);
-//zz    else
-//zz       SET_STATUS_(VG_(do_syscall2)(SYSNO, ARG1, ARG2));
-//zz
-//zz    if (VG_(clo_trace_signals))
-//zz       VG_(message)(Vg_DebugMsg, "tkill: sent signal %d to pid %d",
-//zz 		   ARG2, ARG1);
-//zz    // Check to see if this kill gave us a pending signal
-//zz    XXX FIXME VG_(poll_signals)(tid);
-//zz }
-
-PRE(sys_tgkill)
-{
-   /* int tgkill(pid_t tgid, pid_t tid, int sig); */
-   PRINT("sys_tgkill ( %d, %d, %d )", ARG1,ARG2,ARG3);
-   PRE_REG_READ3(long, "tgkill", int, tgid, int, tid, int, sig);
-   if (!ML_(client_signal_OK)(ARG3)) {
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-   
-   /* If we're sending SIGKILL, check to see if the target is one of
-      our threads and handle it specially. */
-   if (ARG3 == VKI_SIGKILL && ML_(do_sigkill)(ARG2, ARG1))
-      SET_STATUS_Success(0);
-   else
-      SET_STATUS_from_SysRes(VG_(do_syscall3)(SYSNO, ARG1, ARG2, ARG3));
-
-   if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
-		   ARG3, ARG1, ARG2);
-   /* Check to see if this kill gave us a pending signal */
-   *flags |= SfPollAfter;
-}
-
-POST(sys_tgkill)
-{
-   if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
-                   ARG3, ARG1, ARG2);
-}
-
 // Nb: this wrapper has to pad/unpad memory around the syscall itself,
 // and this allows us to control exactly the code that gets run while
 // the padding is in place.

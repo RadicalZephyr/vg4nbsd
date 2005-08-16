@@ -58,8 +58,6 @@ DECL_TEMPLATE(netbsdelf2, sys_sysinfo);
 DECL_TEMPLATE(netbsdelf2, sys_personality);
 DECL_TEMPLATE(netbsdelf2, sys_sysctl);
 DECL_TEMPLATE(netbsdelf2, sys_prctl);
-DECL_TEMPLATE(netbsdelf2, sys_gettid);
-DECL_TEMPLATE(netbsdelf2, sys_tgkill);
 DECL_TEMPLATE(netbsdelf2, sys_io_setup);
 DECL_TEMPLATE(netbsdelf2, sys_io_destroy);
 DECL_TEMPLATE(netbsdelf2, sys_io_getevents);

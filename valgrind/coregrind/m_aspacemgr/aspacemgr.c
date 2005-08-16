@@ -1301,7 +1301,7 @@ Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
    } else {
       return True;
    }
-#elif defined(VGP_amd64_linux) || defined(VGP_x86_netbsd)
+#elif defined(VGP_amd64_linux) || defined(VGP_x86_netbsdelf2)
    if (0) 
       VG_(message)(Vg_DebugMsg, "ignoring --pointercheck (unimplemented)");
    return True;

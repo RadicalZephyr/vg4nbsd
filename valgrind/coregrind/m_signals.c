@@ -158,11 +158,11 @@ typedef struct SigQueue {
 				  (uc)->uc_mcontext.mc_gregs[VKI_PT_CCR] )
 
 #elif defined(VGP_x86_netbsdelf2)
-#  define VGP_UCONTEXT_INSTR_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_EIP])
-#  define VGP_UCONTEXT_STACK_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_ESP])
-#  define VGP_UCONTEXT_FRAME_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_EBP])
-#  define VGP_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.__gregs[_REG_EAX])
-#  define VGP_UCONTEXT_SYSCALL_SYSRES(uc)                       \
+#  define VG_UCONTEXT_INSTR_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_EIP])
+#  define VG_UCONTEXT_STACK_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_ESP])
+#  define VG_UCONTEXT_FRAME_PTR(uc)      ((uc)->uc_mcontext.__gregs[_REG_EBP])
+#  define VG_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.__gregs[_REG_EAX])
+#  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                       \
       /* Convert the value in uc_mcontext.eax into a SysRes. */ \
       VG_(mk_SysRes_x86_netbsdelf2)( (uc)->uc_mcontext.__gregs[_REG_EAX] )
 #else
@@ -2100,7 +2100,7 @@ static void sigvgkill_handler(int signo, vki_siginfo_t *si, struct vki_ucontext 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg, "sigvgkill for lwp %d tid %d", VG_(gettid)(), tid);
 
-   vg_assert(signo == VKI_SIGVGKILL);
+   vg_assert(signo == VG_SIGVGKILL);
 #if  defined(VGP_x86_netbsdelf2)
    vg_assert(si->_info._signo == signo);
 #else

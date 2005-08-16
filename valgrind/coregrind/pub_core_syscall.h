@@ -61,11 +61,12 @@ extern SysRes VG_(do_syscall) ( UWord sysno,
 #define vgPlain_do_syscall6(s,a,b,c,d,e,f) VG_(do_syscall)((s),(a),(b),\
                                                            (c),(d),(e),(f))
 
-extern SysRes VG_(mk_SysRes_x86_linux)   ( Word val );
-extern SysRes VG_(mk_SysRes_amd64_linux) ( Word val );
-extern SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag );
-extern SysRes VG_(mk_SysRes_Error)       ( UWord val );
-extern SysRes VG_(mk_SysRes_Success)     ( UWord val );
+extern SysRes VG_(mk_SysRes_x86_linux)      ( Word val );
+extern SysRes VG_(mk_SysRes_x86_netbsdelf2) ( Word val );
+extern SysRes VG_(mk_SysRes_amd64_linux)    ( Word val );
+extern SysRes VG_(mk_SysRes_ppc32_linux)    ( UInt val, UInt errflag );
+extern SysRes VG_(mk_SysRes_Error)          ( UWord val );
+extern SysRes VG_(mk_SysRes_Success)        ( UWord val );
 
 
 /* Return a string which gives the name of an error value.  Note,

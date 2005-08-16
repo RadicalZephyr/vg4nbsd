@@ -35,19 +35,20 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuglog.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_options.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
-#include "pub_core_main.h"
+#include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)()
 #include "pub_core_mallocfree.h"
+#include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_sigframe.h"
+#include "pub_core_sigframe.h"      // For VG_(sigframe_destroy)()
 #include "pub_core_signals.h"
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
@@ -113,7 +114,7 @@ static UWord* allocstack(ThreadId tid)
 
 /* NB: this is identical the the amd64 version. */
 /* Return how many bytes of this stack have not been used */
-SSizeT VGA_(stack_unused)(ThreadId tid)
+SSizeT VG_(stack_unused)(ThreadId tid)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
    UWord* p;
@@ -142,15 +143,15 @@ static void run_a_thread_NORETURN ( Word tidW )
 
    VG_(debugLog)(1, "syswrap-x86-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) called\n",
+                       "ML_(thread_wrapper) called\n",
                        (ULong)tidW);
 
    /* Run the thread all the way through. */
-   VgSchedReturnCode src = VG_(thread_wrapper)(tid);  
+   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
 
    VG_(debugLog)(1, "syswrap-x86-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) done\n",
+                       "ML_(thread_wrapper) done\n",
                        (ULong)tidW);
 
    Int c = VG_(count_living_threads)();
@@ -243,7 +244,7 @@ asm(
 void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
 	VG_(debugLog)(1, "syswrap-x86-netbsd", 
-		      "entering VGP_(main_thread_wrapper_NORETURN)\n"); 
+		      "entering VG_(main_thread_wrapper_NORETURN)\n"); 
 
    UWord* esp = allocstack(tid);
 
@@ -305,7 +306,7 @@ static Int start_thread_NORETURN ( void* arg )
  */
 #define STRINGIFZ(__str) #__str
 #define STRINGIFY(__str)  STRINGIFZ(__str)
-#define FSZ               "4+4+4" /* frame size = retaddr+ebx+edi */
+#define FSZ               "4+4+4+4" /* frame size = retaddr+ebx+edi+esi */
 #define __NR_CLONE        STRINGIFY(__NR_clone)
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
@@ -322,6 +323,7 @@ asm(
 "do_syscall_clone_x86_netbsd:\n"
 "        push    %ebx\n"
 "        push    %edi\n"
+"        push    %esi\n"
 
          /* set up child stack with function and arg */
 "        movl     4+"FSZ"(%esp), %ecx\n"    /* syscall arg2: child stack */
@@ -334,8 +336,8 @@ asm(
          /* get other args to clone */
 "        movl     8+"FSZ"(%esp), %ebx\n"    /* syscall arg1: flags */
 "        movl    20+"FSZ"(%esp), %edx\n"    /* syscall arg3: parent tid * */
-"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg4: child tid * */
-"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg5: tls_ptr * */
+"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg5: child tid * */
+"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg4: tls_ptr * */
 "        movl    $"__NR_CLONE", %eax\n"
 "        int     $0x80\n"                   /* clone() */
 "        testl   %eax, %eax\n"              /* child if retval == 0 */
@@ -354,6 +356,7 @@ asm(
 "        ud2\n"
 
 "1:\n"   /* PARENT or ERROR */
+"        pop     %esi\n"
 "        pop     %edi\n"
 "        pop     %ebx\n"
 "        ret\n"
@@ -416,11 +419,11 @@ static SysRes do_clone ( ThreadId ptid,
       If the clone call specifies a NULL esp for the new thread, then
       it actually gets a copy of the parent's esp.
    */
-   /* HACK: The clone call done by the Quadrics Elan3 driver specifies
+   /* Note: the clone call done by the Quadrics Elan3 driver specifies
       clone flags of 0xF00, and it seems to rely on the assumption
-      that the child inherits a copy of the parent's GDT. Hence that
-      is passed as an arg to setup_child. */
-   setup_child( &ctst->arch, &ptst->arch, True /*VG_(clo_support_elan3)*/ );
+      that the child inherits a copy of the parent's GDT.  
+      setup_child takes care of setting that up. */
+   setup_child( &ctst->arch, &ptst->arch, True );
 
    /* Make sys_clone appear to have returned Success(0) in the
       child. */
@@ -477,14 +480,14 @@ static SysRes do_clone ( ThreadId ptid,
             start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
-   res = VG_(mk_SysRes)( eax );
+   res = VG_(mk_SysRes_x86_netbsdelf2)( eax );
 
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
    if (res.isError) {
       /* clone failed */
-      VGP_(cleanup_thread)(&ctst->arch);
+      VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
    }
 
@@ -511,8 +514,6 @@ static SysRes do_fork_clone ( ThreadId tid,
    VG_(sigfillset)(&mask);
    VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
 
-   VG_(do_atfork_pre)(tid);
-
    /* Since this is the fork() form of clone, we don't need all that
       VG_(clone) stuff */
    res = VG_(do_syscall5)( __NR_clone, flags, 
@@ -532,8 +533,6 @@ static SysRes do_fork_clone ( ThreadId tid,
       if (VG_(clo_trace_syscalls))
 	  VG_(printf)("   clone(fork): process %d created child %d\n", 
                       VG_(getpid)(), res.val);
-
-      VG_(do_atfork_parent)(tid);
 
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
@@ -922,14 +921,14 @@ static SysRes sys_get_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
    info->useable = gdt[idx].LdtEnt.Bits.Sys;
    info->reserved = 0;
 
-   return VG_(mk_SysRes_Error)( 0 );
+   return VG_(mk_SysRes_Success)( 0 );
 }
 
 /* ---------------------------------------------------------------------
    More thread stuff
    ------------------------------------------------------------------ */
 
-void VGP_(cleanup_thread) ( ThreadArchState* arch )
+void VG_(cleanup_thread) ( ThreadArchState* arch )
 {
    /* Release arch-specific resources held by this thread. */
    /* On x86, we have to dump the LDT and GDT. */
@@ -1109,7 +1108,7 @@ PRE(sys_clone)
 
    cloneflags = ARG1;
 
-   if (!VG_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
+   if (!ML_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
@@ -1168,12 +1167,6 @@ PRE(sys_clone)
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%x", ARG1);
       VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "NOTE: if this happened when attempting "
-                               "to run code using");
-      VG_(message)(Vg_UserMsg, "      Quadrics Elan3 user-space drivers,"
-                               " you should re-run ");
-      VG_(message)(Vg_UserMsg, "      with --support-elan3=yes.");
-      VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "The only supported clone() uses are:");
       VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)");
       VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork");
@@ -1210,7 +1203,7 @@ PRE(sys_sigreturn)
 
    /* This is only so that the EIP is (might be) useful to report if
       something goes wrong in the sigreturn */
-   VG_(fixup_guest_state_to_restart_syscall)(&tst->arch);
+   ML_(fixup_guest_state_to_restart_syscall)(&tst->arch);
 
    VG_(sigframe_destroy)(tid, False);
 
@@ -1219,7 +1212,7 @@ PRE(sys_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes)( tst->arch.vex.guest_EAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX ) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;
@@ -1343,7 +1336,6 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
    return *a_p;
 }
  
-// XXX: should use the constants here (eg. SHMAT), not the numbers directly!
 PRE(sys_ipc)
 {
    PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
@@ -1354,7 +1346,7 @@ PRE(sys_ipc)
 
    switch (ARG1 /* call */) {
    case VKI_SEMOP:
-      VG_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
+      ML_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
       *flags |= SfMayBlock;
       break;
    case VKI_SEMGET:
@@ -1362,15 +1354,15 @@ PRE(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
-      VG_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
+      ML_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
       *flags |= SfMayBlock;
       break;
    case VKI_MSGSND:
-      VG_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
+      ML_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
       break;
@@ -1386,7 +1378,7 @@ PRE(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
 
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
@@ -1395,13 +1387,13 @@ PRE(sys_ipc)
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
       UWord w;
       PRE_MEM_WRITE( "shmat(raddr)", ARG4, sizeof(Addr) );
-      w = VG_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
+      w = ML_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
       if (w == 0)
          SET_STATUS_Failure( VKI_EINVAL );
       else
@@ -1409,13 +1401,13 @@ PRE(sys_ipc)
       break;
    }
    case VKI_SHMDT:
-      if (!VG_(generic_PRE_sys_shmdt)(tid, ARG5))
+      if (!ML_(generic_PRE_sys_shmdt)(tid, ARG5))
 	 SET_STATUS_Failure( VKI_EINVAL );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL: /* IPCOP_shmctl */
-      VG_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %d", ARG1 );
@@ -1434,7 +1426,7 @@ POST(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
@@ -1452,13 +1444,13 @@ POST(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
       break;
    }
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
@@ -1471,17 +1463,17 @@ POST(sys_ipc)
 
       addr = deref_Addr ( tid, ARG4, "shmat(addr)" );
       if ( addr > 0 ) { 
-         VG_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
+         ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
       }
       break;
    }
    case VKI_SHMDT:
-      VG_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
+      ML_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL:
-      VG_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg,
@@ -1532,7 +1524,7 @@ PRE(old_mmap)
    }
 
    if (a4 & VKI_MAP_FIXED) {
-      if (!VG_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
+      if (!ML_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
          PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
          SET_STATUS_Failure( VKI_ENOMEM );
       }
@@ -1554,8 +1546,8 @@ PRE(old_mmap)
       SysRes res = VG_(mmap_native)((void*)a1, a2, a3, a4, a5, a6);
       SET_STATUS_from_SysRes(res);
       if (!res.isError) {
-         vg_assert(VG_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
-         VG_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
+         vg_assert(ML_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
+         ML_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
       }
    }
 
@@ -1646,8 +1638,14 @@ PRE(sys_sigaction)
 
    newp = oldp = NULL;
 
-   if (ARG2 != 0)
-      PRE_MEM_READ( "sigaction(act)", ARG2, sizeof(struct vki_old_sigaction));
+   if (ARG2 != 0) {
+      struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
+      PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+      PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+      PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
+      if (sa->sa_flags & VKI_SA_RESTORER)
+         PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
+   }
 
    if (ARG3 != 0) {
       PRE_MEM_WRITE( "sigaction(oldact)", ARG3, sizeof(struct vki_old_sigaction));
@@ -2095,7 +2093,7 @@ POST(sys_rasctl)
 // Importing NetBSD's syscall numbers : change what is necessary ,
 // remove the pre and post wrappers or put in stubs that fail, again
 // we will write it later when a program actually fails over it. 
-const SyscallTableEntry VGP_(syscall_table)[] = {
+const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    //   (restart_syscall)                             // 0
    GENX_(__NR_exit,              sys_exit),           // 1
    GENX_(__NR_fork,              sys_fork),           // 2
@@ -2552,8 +2550,8 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    NBSDXY(__NR_uuidgen,          sys_uuidgen)         // 355
 };
 
-const UInt VGP_(syscall_table_size) = 
-            sizeof(VGP_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
+const UInt ML_(syscall_table_size) = 
+            sizeof(ML_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

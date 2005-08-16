@@ -35,19 +35,20 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuglog.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_options.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
-#include "pub_core_main.h"
+#include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)()
 #include "pub_core_mallocfree.h"
+#include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_sigframe.h"
+#include "pub_core_sigframe.h"      // For VG_(sigframe_destroy)()
 #include "pub_core_signals.h"
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
@@ -113,7 +114,7 @@ static UWord* allocstack(ThreadId tid)
 
 /* NB: this is identical the the amd64 version. */
 /* Return how many bytes of this stack have not been used */
-SSizeT VGA_(stack_unused)(ThreadId tid)
+SSizeT VG_(stack_unused)(ThreadId tid)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
    UWord* p;
@@ -142,15 +143,15 @@ static void run_a_thread_NORETURN ( Word tidW )
 
    VG_(debugLog)(1, "syswrap-x86-linux", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) called\n",
+                       "ML_(thread_wrapper) called\n",
                        (ULong)tidW);
 
    /* Run the thread all the way through. */
-   VgSchedReturnCode src = VG_(thread_wrapper)(tid);  
+   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
 
    VG_(debugLog)(1, "syswrap-x86-linux", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) done\n",
+                       "ML_(thread_wrapper) done\n",
                        (ULong)tidW);
 
    Int c = VG_(count_living_threads)();
@@ -240,10 +241,10 @@ asm(
    Allocate a stack for the main thread, and run it all the way to the
    end.  
 */
-void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
+void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
    VG_(debugLog)(1, "syswrap-x86-linux", 
-                    "entering VGP_(main_thread_wrapper_NORETURN)\n");
+                    "entering VG_(main_thread_wrapper_NORETURN)\n");
 
    UWord* esp = allocstack(tid);
 
@@ -305,7 +306,7 @@ static Int start_thread_NORETURN ( void* arg )
  */
 #define STRINGIFZ(__str) #__str
 #define STRINGIFY(__str)  STRINGIFZ(__str)
-#define FSZ               "4+4+4" /* frame size = retaddr+ebx+edi */
+#define FSZ               "4+4+4+4" /* frame size = retaddr+ebx+edi+esi */
 #define __NR_CLONE        STRINGIFY(__NR_clone)
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
@@ -322,6 +323,7 @@ asm(
 "do_syscall_clone_x86_linux:\n"
 "        push    %ebx\n"
 "        push    %edi\n"
+"        push    %esi\n"
 
          /* set up child stack with function and arg */
 "        movl     4+"FSZ"(%esp), %ecx\n"    /* syscall arg2: child stack */
@@ -334,8 +336,8 @@ asm(
          /* get other args to clone */
 "        movl     8+"FSZ"(%esp), %ebx\n"    /* syscall arg1: flags */
 "        movl    20+"FSZ"(%esp), %edx\n"    /* syscall arg3: parent tid * */
-"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg4: child tid * */
-"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg5: tls_ptr * */
+"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg5: child tid * */
+"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg4: tls_ptr * */
 "        movl    $"__NR_CLONE", %eax\n"
 "        int     $0x80\n"                   /* clone() */
 "        testl   %eax, %eax\n"              /* child if retval == 0 */
@@ -354,6 +356,7 @@ asm(
 "        ud2\n"
 
 "1:\n"   /* PARENT or ERROR */
+"        pop     %esi\n"
 "        pop     %edi\n"
 "        pop     %ebx\n"
 "        ret\n"
@@ -416,11 +419,11 @@ static SysRes do_clone ( ThreadId ptid,
       If the clone call specifies a NULL esp for the new thread, then
       it actually gets a copy of the parent's esp.
    */
-   /* HACK: The clone call done by the Quadrics Elan3 driver specifies
+   /* Note: the clone call done by the Quadrics Elan3 driver specifies
       clone flags of 0xF00, and it seems to rely on the assumption
-      that the child inherits a copy of the parent's GDT. Hence that
-      is passed as an arg to setup_child. */
-   setup_child( &ctst->arch, &ptst->arch, True /*VG_(clo_support_elan3)*/ );
+      that the child inherits a copy of the parent's GDT.  
+      setup_child takes care of setting that up. */
+   setup_child( &ctst->arch, &ptst->arch, True );
 
    /* Make sys_clone appear to have returned Success(0) in the
       child. */
@@ -477,14 +480,14 @@ static SysRes do_clone ( ThreadId ptid,
             start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
-   res = VG_(mk_SysRes)( eax );
+   res = VG_(mk_SysRes_x86_linux)( eax );
 
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
    if (res.isError) {
       /* clone failed */
-      VGP_(cleanup_thread)(&ctst->arch);
+      VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
    }
 
@@ -511,8 +514,6 @@ static SysRes do_fork_clone ( ThreadId tid,
    VG_(sigfillset)(&mask);
    VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
 
-   VG_(do_atfork_pre)(tid);
-
    /* Since this is the fork() form of clone, we don't need all that
       VG_(clone) stuff */
    res = VG_(do_syscall5)( __NR_clone, flags, 
@@ -532,8 +533,6 @@ static SysRes do_fork_clone ( ThreadId tid,
       if (VG_(clo_trace_syscalls))
 	  VG_(printf)("   clone(fork): process %d created child %d\n", 
                       VG_(getpid)(), res.val);
-
-      VG_(do_atfork_parent)(tid);
 
       /* restore signal mask */
       VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
@@ -922,14 +921,14 @@ static SysRes sys_get_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
    info->useable = gdt[idx].LdtEnt.Bits.Sys;
    info->reserved = 0;
 
-   return VG_(mk_SysRes_Error)( 0 );
+   return VG_(mk_SysRes_Success)( 0 );
 }
 
 /* ---------------------------------------------------------------------
    More thread stuff
    ------------------------------------------------------------------ */
 
-void VGP_(cleanup_thread) ( ThreadArchState* arch )
+void VG_(cleanup_thread) ( ThreadArchState* arch )
 {
    /* Release arch-specific resources held by this thread. */
    /* On x86, we have to dump the LDT and GDT. */
@@ -1066,7 +1065,7 @@ PRE(sys_clone)
 
    cloneflags = ARG1;
 
-   if (!VG_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
+   if (!ML_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
@@ -1125,12 +1124,6 @@ PRE(sys_clone)
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%x", ARG1);
       VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "NOTE: if this happened when attempting "
-                               "to run code using");
-      VG_(message)(Vg_UserMsg, "      Quadrics Elan3 user-space drivers,"
-                               " you should re-run ");
-      VG_(message)(Vg_UserMsg, "      with --support-elan3=yes.");
-      VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "The only supported clone() uses are:");
       VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)");
       VG_(message)(Vg_UserMsg, " - via the implementation of fork or vfork");
@@ -1167,7 +1160,7 @@ PRE(sys_sigreturn)
 
    /* This is only so that the EIP is (might be) useful to report if
       something goes wrong in the sigreturn */
-   VG_(fixup_guest_state_to_restart_syscall)(&tst->arch);
+   ML_(fixup_guest_state_to_restart_syscall)(&tst->arch);
 
    VG_(sigframe_destroy)(tid, False);
 
@@ -1176,7 +1169,7 @@ PRE(sys_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes)( tst->arch.vex.guest_EAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_linux)( tst->arch.vex.guest_EAX ) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;
@@ -1198,7 +1191,7 @@ PRE(sys_rt_sigreturn)
 
    /* This is only so that the EIP is (might be) useful to report if
       something goes wrong in the sigreturn */
-   VG_(fixup_guest_state_to_restart_syscall)(&tst->arch);
+   ML_(fixup_guest_state_to_restart_syscall)(&tst->arch);
 
    VG_(sigframe_destroy)(tid, True);
 
@@ -1207,7 +1200,7 @@ PRE(sys_rt_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes)( tst->arch.vex.guest_EAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_linux)( tst->arch.vex.guest_EAX ) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;
@@ -1331,7 +1324,6 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
    return *a_p;
 }
  
-// XXX: should use the constants here (eg. SHMAT), not the numbers directly!
 PRE(sys_ipc)
 {
    PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
@@ -1342,7 +1334,7 @@ PRE(sys_ipc)
 
    switch (ARG1 /* call */) {
    case VKI_SEMOP:
-      VG_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
+      ML_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
       *flags |= SfMayBlock;
       break;
    case VKI_SEMGET:
@@ -1350,15 +1342,15 @@ PRE(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
-      VG_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
+      ML_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
       *flags |= SfMayBlock;
       break;
    case VKI_MSGSND:
-      VG_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
+      ML_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
       break;
@@ -1374,7 +1366,7 @@ PRE(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
 
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
@@ -1383,13 +1375,13 @@ PRE(sys_ipc)
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
       UWord w;
       PRE_MEM_WRITE( "shmat(raddr)", ARG4, sizeof(Addr) );
-      w = VG_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
+      w = ML_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
       if (w == 0)
          SET_STATUS_Failure( VKI_EINVAL );
       else
@@ -1397,13 +1389,13 @@ PRE(sys_ipc)
       break;
    }
    case VKI_SHMDT:
-      if (!VG_(generic_PRE_sys_shmdt)(tid, ARG5))
+      if (!ML_(generic_PRE_sys_shmdt)(tid, ARG5))
 	 SET_STATUS_Failure( VKI_EINVAL );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL: /* IPCOP_shmctl */
-      VG_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %d", ARG1 );
@@ -1422,7 +1414,7 @@ POST(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
@@ -1440,13 +1432,13 @@ POST(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
       break;
    }
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
@@ -1459,17 +1451,17 @@ POST(sys_ipc)
 
       addr = deref_Addr ( tid, ARG4, "shmat(addr)" );
       if ( addr > 0 ) { 
-         VG_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
+         ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
       }
       break;
    }
    case VKI_SHMDT:
-      VG_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
+      ML_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL:
-      VG_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg,
@@ -1520,7 +1512,7 @@ PRE(old_mmap)
    }
 
    if (a4 & VKI_MAP_FIXED) {
-      if (!VG_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
+      if (!ML_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
          PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
          SET_STATUS_Failure( VKI_ENOMEM );
       }
@@ -1542,8 +1534,8 @@ PRE(old_mmap)
       SysRes res = VG_(mmap_native)((void*)a1, a2, a3, a4, a5, a6);
       SET_STATUS_from_SysRes(res);
       if (!res.isError) {
-         vg_assert(VG_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
-         VG_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
+         vg_assert(ML_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
+         ML_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
       }
    }
 
@@ -1621,7 +1613,7 @@ PRE(sys_socketcall)
    case VKI_SYS_SOCKETPAIR:
       /* int socketpair(int d, int type, int protocol, int sv[2]); */
       PRE_MEM_READ( "socketcall.socketpair(args)", ARG2, 4*sizeof(Addr) );
-      VG_(generic_PRE_sys_socketpair)( tid, ARG2_0, ARG2_1, ARG2_2, ARG2_3 );
+      ML_(generic_PRE_sys_socketpair)( tid, ARG2_0, ARG2_1, ARG2_2, ARG2_3 );
       break;
 
    case VKI_SYS_SOCKET:
@@ -1633,7 +1625,7 @@ PRE(sys_socketcall)
       /* int bind(int sockfd, struct sockaddr *my_addr, 
                   int addrlen); */
       PRE_MEM_READ( "socketcall.bind(args)", ARG2, 3*sizeof(Addr) );
-      VG_(generic_PRE_sys_bind)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_bind)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
                
    case VKI_SYS_LISTEN:
@@ -1644,7 +1636,7 @@ PRE(sys_socketcall)
    case VKI_SYS_ACCEPT: {
       /* int accept(int s, struct sockaddr *addr, int *addrlen); */
       PRE_MEM_READ( "socketcall.accept(args)", ARG2, 3*sizeof(Addr) );
-      VG_(generic_PRE_sys_accept)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_accept)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
    }
 
@@ -1653,21 +1645,21 @@ PRE(sys_socketcall)
                     unsigned int flags, 
                     const struct sockaddr *to, int tolen); */
       PRE_MEM_READ( "socketcall.sendto(args)", ARG2, 6*sizeof(Addr) );
-      VG_(generic_PRE_sys_sendto)( tid, ARG2_0, ARG2_1, ARG2_2, 
+      ML_(generic_PRE_sys_sendto)( tid, ARG2_0, ARG2_1, ARG2_2, 
                                    ARG2_3, ARG2_4, ARG2_5 );
       break;
 
    case VKI_SYS_SEND:
       /* int send(int s, const void *msg, size_t len, int flags); */
       PRE_MEM_READ( "socketcall.send(args)", ARG2, 4*sizeof(Addr) );
-      VG_(generic_PRE_sys_send)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_send)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_RECVFROM:
       /* int recvfrom(int s, void *buf, int len, unsigned int flags,
          struct sockaddr *from, int *fromlen); */
       PRE_MEM_READ( "socketcall.recvfrom(args)", ARG2, 6*sizeof(Addr) );
-      VG_(generic_PRE_sys_recvfrom)( tid, ARG2_0, ARG2_1, ARG2_2, 
+      ML_(generic_PRE_sys_recvfrom)( tid, ARG2_0, ARG2_1, ARG2_2, 
                                      ARG2_3, ARG2_4, ARG2_5 );
       break;
    
@@ -1679,21 +1671,21 @@ PRE(sys_socketcall)
          from parameter.
       */
       PRE_MEM_READ( "socketcall.recv(args)", ARG2, 4*sizeof(Addr) );
-      VG_(generic_PRE_sys_recv)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_recv)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_CONNECT:
       /* int connect(int sockfd, 
                      struct sockaddr *serv_addr, int addrlen ); */
       PRE_MEM_READ( "socketcall.connect(args)", ARG2, 3*sizeof(Addr) );
-      VG_(generic_PRE_sys_connect)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_connect)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_SETSOCKOPT:
       /* int setsockopt(int s, int level, int optname, 
                         const void *optval, int optlen); */
       PRE_MEM_READ( "socketcall.setsockopt(args)", ARG2, 5*sizeof(Addr) );
-      VG_(generic_PRE_sys_setsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
+      ML_(generic_PRE_sys_setsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
                                        ARG2_3, ARG2_4 );
       break;
 
@@ -1701,20 +1693,20 @@ PRE(sys_socketcall)
       /* int getsockopt(int s, int level, int optname, 
                         void *optval, socklen_t *optlen); */
       PRE_MEM_READ( "socketcall.getsockopt(args)", ARG2, 5*sizeof(Addr) );
-      VG_(generic_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
+      ML_(generic_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2, 
                                        ARG2_3, ARG2_4 );
       break;
 
    case VKI_SYS_GETSOCKNAME:
       /* int getsockname(int s, struct sockaddr* name, int* namelen) */
       PRE_MEM_READ( "socketcall.getsockname(args)", ARG2, 3*sizeof(Addr) );
-      VG_(generic_PRE_sys_getsockname)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_getsockname)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_GETPEERNAME:
       /* int getpeername(int s, struct sockaddr* name, int* namelen) */
       PRE_MEM_READ( "socketcall.getpeername(args)", ARG2, 3*sizeof(Addr) );
-      VG_(generic_PRE_sys_getpeername)( tid, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_PRE_sys_getpeername)( tid, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_SHUTDOWN:
@@ -1729,7 +1721,7 @@ PRE(sys_socketcall)
        * (after all it's glibc providing the arguments array)
        PRE_MEM_READ( "socketcall.sendmsg(args)", ARG2, 3*sizeof(Addr) );
       */
-      VG_(generic_PRE_sys_sendmsg)( tid, ARG2_0, ARG2_1 );
+      ML_(generic_PRE_sys_sendmsg)( tid, ARG2_0, ARG2_1 );
       break;
    }
       
@@ -1740,7 +1732,7 @@ PRE(sys_socketcall)
        * (after all it's glibc providing the arguments array)
        PRE_MEM_READ("socketcall.recvmsg(args)", ARG2, 3*sizeof(Addr) );
       */
-      VG_(generic_PRE_sys_recvmsg)( tid, ARG2_0, ARG2_1 );
+      ML_(generic_PRE_sys_recvmsg)( tid, ARG2_0, ARG2_1 );
       break;
    }
 
@@ -1771,7 +1763,7 @@ POST(sys_socketcall)
    switch (ARG1 /* request */) {
 
    case VKI_SYS_SOCKETPAIR:
-      r = VG_(generic_POST_sys_socketpair)( 
+      r = ML_(generic_POST_sys_socketpair)( 
              tid, VG_(mk_SysRes_Success)(RES), 
              ARG2_0, ARG2_1, ARG2_2, ARG2_3 
           );
@@ -1779,7 +1771,7 @@ POST(sys_socketcall)
       break;
 
    case VKI_SYS_SOCKET:
-      r = VG_(generic_POST_sys_socket)( tid, VG_(mk_SysRes_Success)(RES) );
+      r = ML_(generic_POST_sys_socket)( tid, VG_(mk_SysRes_Success)(RES) );
       SET_STATUS_from_SysRes(r);
       break;
 
@@ -1794,7 +1786,7 @@ POST(sys_socketcall)
 
    case VKI_SYS_ACCEPT:
       /* int accept(int s, struct sockaddr *addr, int *addrlen); */
-     r = VG_(generic_POST_sys_accept)( tid, VG_(mk_SysRes_Success)(RES), 
+     r = ML_(generic_POST_sys_accept)( tid, VG_(mk_SysRes_Success)(RES), 
                                             ARG2_0, ARG2_1, ARG2_2 );
      SET_STATUS_from_SysRes(r);
      break;
@@ -1806,13 +1798,13 @@ POST(sys_socketcall)
       break;
 
    case VKI_SYS_RECVFROM:
-      VG_(generic_POST_sys_recvfrom)( tid, VG_(mk_SysRes_Success)(RES),
+      ML_(generic_POST_sys_recvfrom)( tid, VG_(mk_SysRes_Success)(RES),
                                            ARG2_0, ARG2_1, ARG2_2,
                                            ARG2_3, ARG2_4, ARG2_5 );
       break;
 
    case VKI_SYS_RECV:
-      VG_(generic_POST_sys_recv)( tid, RES, ARG2_0, ARG2_1, ARG2_2 );
+      ML_(generic_POST_sys_recv)( tid, RES, ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_CONNECT:
@@ -1822,18 +1814,18 @@ POST(sys_socketcall)
       break;
 
    case VKI_SYS_GETSOCKOPT:
-      VG_(generic_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
+      ML_(generic_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
                                              ARG2_0, ARG2_1, 
                                              ARG2_2, ARG2_3, ARG2_4 );
       break;
 
    case VKI_SYS_GETSOCKNAME:
-      VG_(generic_POST_sys_getsockname)( tid, VG_(mk_SysRes_Success)(RES),
+      ML_(generic_POST_sys_getsockname)( tid, VG_(mk_SysRes_Success)(RES),
                                               ARG2_0, ARG2_1, ARG2_2 );
       break;
 
    case VKI_SYS_GETPEERNAME:
-      VG_(generic_POST_sys_getpeername)( tid, VG_(mk_SysRes_Success)(RES), 
+      ML_(generic_POST_sys_getpeername)( tid, VG_(mk_SysRes_Success)(RES), 
                                               ARG2_0, ARG2_1, ARG2_2 );
       break;
 
@@ -1844,7 +1836,7 @@ POST(sys_socketcall)
       break;
 
    case VKI_SYS_RECVMSG:
-     VG_(generic_POST_sys_recvmsg)( tid, ARG2_0, ARG2_1 );
+     ML_(generic_POST_sys_recvmsg)( tid, ARG2_0, ARG2_1 );
      break;
 
    default:
@@ -1879,8 +1871,14 @@ PRE(sys_sigaction)
 
    newp = oldp = NULL;
 
-   if (ARG2 != 0)
-      PRE_MEM_READ( "sigaction(act)", ARG2, sizeof(struct vki_old_sigaction));
+   if (ARG2 != 0) {
+      struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
+      PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+      PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+      PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
+      if (sa->sa_flags & VKI_SA_RESTORER)
+         PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
+   }
 
    if (ARG3 != 0) {
       PRE_MEM_WRITE( "sigaction(oldact)", ARG3, sizeof(struct vki_old_sigaction));
@@ -1941,7 +1939,7 @@ POST(sys_sigaction)
 // arch/OS combination, eg. */* (generic), */Linux (Linux only), ?/?
 // (unknown).
 
-const SyscallTableEntry VGP_(syscall_table)[] = {
+const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    //   (restart_syscall)                             // 0
    GENX_(__NR_exit,              sys_exit),           // 1
    GENX_(__NR_fork,              sys_fork),           // 2
@@ -2265,7 +2263,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // (timer_create+6)
    GENXY(__NR_clock_getres,      sys_clock_getres),   // (timer_create+7)
-//zz    //   (__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
+   GENXY(__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
    GENXY(__NR_statfs64,          sys_statfs64),       // 268
    GENXY(__NR_fstatfs64,         sys_fstatfs64),      // 269
 
@@ -2275,8 +2273,8 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_vserver,           sys_ni_syscall),     // 273
 //zz    //   (__NR_mbind,             sys_mbind),          // 274 ?/?
 //zz 
-//zz    //   (__NR_get_mempolicy,     sys_get_mempolicy),  // 275 ?/?
-//zz    //   (__NR_set_mempolicy,     sys_set_mempolicy),  // 276 ?/?
+   LINXY(__NR_get_mempolicy,     sys_get_mempolicy),  // 275 ?/?
+   LINX_(__NR_set_mempolicy,     sys_set_mempolicy),  // 276 ?/?
    GENXY(__NR_mq_open,           sys_mq_open),        // 277
    GENX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
    GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
@@ -2285,10 +2283,22 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
    GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
    GENX_(__NR_sys_kexec_load,    sys_ni_syscall),     // 283
+   GENXY(__NR_waitid,            sys_waitid),         // 284
+
+   GENX_(285,                    sys_ni_syscall),     // 285
+//   LINX_(__NR_add_key,           sys_add_key),        // 286
+//   LINX_(__NR_request_key,       sys_request_key),    // 287
+//   LINXY(__NR_keyctl,            sys_keyctl),         // 288
+//   LINX_(__NR_ioprio_set,        sys_ioprio_set),     // 289
+
+//   LINX_(__NR_ioprio_get,        sys_ioprio_get),     // 290
+   LINX_(__NR_inotify_init,	 sys_inotify_init),   // 291
+   LINX_(__NR_inotify_add_watch, sys_inotify_add_watch), // 292
+   LINX_(__NR_inotify_rm_watch,	 sys_inotify_rm_watch), // 293
 };
 
-const UInt VGP_(syscall_table_size) = 
-            sizeof(VGP_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
+const UInt ML_(syscall_table_size) = 
+            sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

@@ -298,8 +298,9 @@ void VG_(vg_yield)(void)
    if (1)
 #if defined (VGO_netbsdelf2)
       VG_(do_syscall0)(__NR_sa_yield);		/* XXX: Is this correct? */
-#endif
+#else
       VG_(do_syscall0)(__NR_sched_yield);
+#endif
    else
       VG_(nanosleep)(&ts);
 

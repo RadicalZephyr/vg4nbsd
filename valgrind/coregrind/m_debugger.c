@@ -47,7 +47,7 @@
 static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
 {
    struct vki_user_regs_struct regs;
-#if defined(VGA_x86)
+#if defined(VGP_x86_linux)
    regs.cs     = vex->guest_CS;
    regs.ss     = vex->guest_SS;
    regs.ds     = vex->guest_DS;
@@ -66,7 +66,26 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
    regs.eip    = vex->guest_EIP;
 
    return ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-#elif defined(VGA_amd64)
+#elif defined(VGP_x86_netbsdelf2)
+   regs.r_cs     = vex->guest_CS;
+   regs.r_ss     = vex->guest_SS;
+   regs.r_ds     = vex->guest_DS;
+   regs.r_es     = vex->guest_ES;
+   regs.r_fs     = vex->guest_FS;
+   regs.r_gs     = vex->guest_GS;
+   regs.r_eax    = vex->guest_EAX;
+   regs.r_ebx    = vex->guest_EBX;
+   regs.r_ecx    = vex->guest_ECX;
+   regs.r_edx    = vex->guest_EDX;
+   regs.r_esi    = vex->guest_ESI;
+   regs.r_edi    = vex->guest_EDI;
+   regs.r_ebp    = vex->guest_EBP;
+   regs.r_esp    = vex->guest_ESP;
+   regs.r_eflags = LibVEX_GuestX86_get_eflags(vex);
+   regs.r_eip    = vex->guest_EIP;
+
+   return ptrace(PTRACE_SETREGS, pid, NULL, &regs);
+#elif defined(VGP_amd64_linux)
    regs.rax    = vex->guest_RAX;
    regs.rbx    = vex->guest_RBX;
    regs.rcx    = vex->guest_RCX;
@@ -87,7 +106,7 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
    regs.rip    = vex->guest_RIP;
 
    return ptrace(PTRACE_SETREGS, pid, NULL, &regs);
-#elif defined(VGA_ppc32)
+#elif defined(VGP_ppc32_linux)
    I_die_here;
    regs.gpr[0] = 0; // stop compiler complaints
 #else

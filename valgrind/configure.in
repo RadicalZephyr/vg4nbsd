@@ -231,6 +231,8 @@ AC_SUBST(DEFAULT_SUPP)
 
 glibc=""
 
+if test ${VG_OS} = linux; then
+
 AC_EGREP_CPP([GLIBC_22], [
 #include <features.h>
 #ifdef __GNU_LIBRARY__
@@ -287,6 +289,7 @@ case "${glibc}" in
 	AC_MSG_ERROR([Valgrind requires glibc version 2.2, 2.3 or 2.4])
 	;;
 esac
+fi
 
 
 # We don't know how to detect the X client library version

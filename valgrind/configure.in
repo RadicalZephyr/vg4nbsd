@@ -162,7 +162,7 @@ esac
 AC_MSG_CHECKING([for a supported OS])
 AC_SUBST(VG_OS)
 AC_SUBST(VG_OS_ALL)
-VG_OS_ALL="linux"
+VG_OS_ALL="linux netbsdelf2"
 
 case "${host_os}" in
      *linux*)
@@ -198,6 +198,11 @@ case "${host_os}" in
         VG_OS="freebsd"
         ;;
 
+     *netbsdelf2*)
+        AC_MSG_RESULT([ok (${host_os})])
+        VG_OS="netbsdelf2"
+        ;;
+
      *) 
 	AC_MSG_RESULT([no (${host_os})])
 	AC_MSG_ERROR([Valgrind is operating system specific. Sorry. Please consider doing a port.])
@@ -207,12 +212,12 @@ esac
 AC_MSG_CHECKING([for a supported CPU/OS combination])
 AC_SUBST(VG_PLATFORM)
 AC_SUBST(VG_PLATFORM_ALL)
-VG_PLATFORM_ALL="amd64-linux ppc32-linux x86-linux"
+VG_PLATFORM_ALL="amd64-linux ppc32-linux x86-linux x86-netbsdelf2"
 
 VG_PLATFORM="$VG_ARCH-$VG_OS"
 
 case $VG_PLATFORM in
-    x86-linux|amd64-linux|ppc32-linux)
+    x86-linux|amd64-linux|ppc32-linux|x86-netbsdelf2)
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
         ;;
 

@@ -133,6 +133,7 @@ VG_(trampoline_stuff_end):
 #endif
 #endif
 #endif
+#endif
 
 tramp_code_end:
 

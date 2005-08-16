@@ -340,7 +340,7 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
-#if !defined(VGO_x86_netbsdelf2)
+#if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
    if (res.isError && res.val == VKI_ENOSYS) {

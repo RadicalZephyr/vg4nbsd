@@ -80,7 +80,7 @@ SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
                         UInt fd, OffT offset)
 {
    SysRes res;
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
    { 
       UWord args[6];
       args[0] = (UWord)start;

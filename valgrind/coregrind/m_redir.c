@@ -368,7 +368,7 @@ void VG_(setup_code_redirect_table) ( void )
 
    //CAB: TODO
 
-#elif defined(VGP_x86_netbsdelf)
+#elif defined(VGP_x86_netbsdelf2)
    // NetBSD: TODO
    I_die_here;
 

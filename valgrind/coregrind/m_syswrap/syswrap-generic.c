@@ -937,8 +937,8 @@ ML_(generic_POST_sys_socketpair) ( ThreadId tid,
    } else {
       POST_MEM_WRITE( arg3, 2*sizeof(int) );
       if (VG_(clo_track_fds)) {
-         ML_(record_fd_open)(tid, fd1, NULL);
-         ML_(record_fd_open)(tid, fd2, NULL);
+         ML_(record_fd_open_nameless)(tid, fd1);
+         ML_(record_fd_open_nameless)(tid, fd2);
       }
    }
    return r;

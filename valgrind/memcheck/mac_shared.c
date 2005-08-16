@@ -97,11 +97,11 @@ Bool MAC_(process_common_cmd_line_option)(Char* arg)
 void MAC_(print_common_usage)(void)
 {
    VG_(printf)(
-"    --partial-loads-ok=no|yes        too hard to explain here; see manual [yes]\n"
-"    --freelist-vol=<number>          volume of freed blocks queue [1000000]\n"
 "    --leak-check=no|summary|full     search for memory leaks at exit?  [summary]\n"
 "    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
 "    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
+"    --partial-loads-ok=no|yes        too hard to explain here; see manual [yes]\n"
+"    --freelist-vol=<number>          volume of freed blocks queue [1000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
    );
    VG_(replacement_malloc_print_usage)();
@@ -899,8 +899,8 @@ static void done_prof_mem ( void ) { }
 
 void MAC_(common_pre_clo_init)(void)
 {
-   MAC_(malloc_list) = VG_(HT_construct)();
-   MAC_(mempool_list) = VG_(HT_construct)();
+   MAC_(malloc_list)  = VG_(HT_construct)( 80021 );   // prime, big
+   MAC_(mempool_list) = VG_(HT_construct)( 1009  );   // prime, not so big
    init_prof_mem();
 }
 

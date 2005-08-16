@@ -1706,22 +1706,22 @@ static void hg_mem_read (Addr a, SizeT data_size, ThreadId tid);
 static void hg_mem_write(Addr a, SizeT data_size, ThreadId tid);
 
 __attribute__((unused))
-static void hg_mem_help_read_1(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_1(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_2(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_2(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_4(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_4(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_N(Addr a, SizeT size) VGA_REGPARM(2);
+static void hg_mem_help_read_N(Addr a, SizeT size) VG_REGPARM(2);
 
 __attribute__((unused))
-static void hg_mem_help_write_1(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_1(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_2(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_2(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_4(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_4(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_N(Addr a, SizeT size) VGA_REGPARM(2);
+static void hg_mem_help_write_N(Addr a, SizeT size) VG_REGPARM(2);
 
 __attribute__((unused))
 static void bus_lock(void);
@@ -2095,8 +2095,8 @@ UCodeBlock* TL_(instrument) ( UCodeBlock* cb_in, Addr not_used )
 	    tl_assert(u_in->val2 < ntemps);
 
 	    stackref[u_in->val2] = (u_in->size == 4 &&
-				    (u_in->val1 == VGA_R_STACK_PTR ||
-                                     u_in->val1 == VGA_R_FRAME_PTR));
+				    (u_in->val1 == VG_R_STACK_PTR ||
+                                     u_in->val1 == VG_R_FRAME_PTR));
 	    VG_(copy_UInstr)(cb, u_in);
 	    break;
 
@@ -2425,9 +2425,9 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 	   si != NULL; 
 	   si = VG_(next_seginfo)(si)) 
       {
-	 Addr base = VG_(seg_start)(si);
-	 SizeT size = VG_(seg_size)(si);
-	 const UChar *filename = VG_(seg_filename)(si);
+	 Addr base = VG_(seginfo_start)(si);
+	 SizeT size = VG_(seginfo_size)(si);
+	 const UChar *filename = VG_(seginfo_filename)(si);
 
 	 if (a >= base && a < base+size) {
 	    ai->akind = Segment;
@@ -2435,7 +2435,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 	    ai->rwoffset = a - base;
 	    ai->filename = filename;
 
-	    switch(VG_(seg_sect_kind)(a)) {
+	    switch(VG_(seginfo_sect_kind)(a)) {
 	    case Vg_SectText:	ai->section = "text"; break;
 	    case Vg_SectData:	ai->section = "data"; break;
 	    case Vg_SectBSS:	ai->section = "BSS"; break;
@@ -3176,42 +3176,42 @@ static void hg_mem_write(Addr a, SizeT size, ThreadId tid)
 
 #undef DEBUG_STATE
 
-VGA_REGPARM(1) static void hg_mem_help_read_1(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_1(Addr a)
 {
    hg_mem_read(a, 1, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(1) static void hg_mem_help_read_2(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_2(Addr a)
 {
    hg_mem_read(a, 2, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(1) static void hg_mem_help_read_4(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_4(Addr a)
 {
    hg_mem_read(a, 4, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(2) static void hg_mem_help_read_N(Addr a, SizeT size)
+VG_REGPARM(2) static void hg_mem_help_read_N(Addr a, SizeT size)
 {
    hg_mem_read(a, size, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(2) static void hg_mem_help_write_1(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_1(Addr a, UInt val)
 {
    if (*(UChar *)a != val)
       hg_mem_write(a, 1, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_2(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_2(Addr a, UInt val)
 {
    if (*(UShort *)a != val)
       hg_mem_write(a, 2, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_4(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_4(Addr a, UInt val)
 {
    if (*(UInt *)a != val)
       hg_mem_write(a, 4, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_N(Addr a, SizeT size)
+VG_REGPARM(2) static void hg_mem_help_write_N(Addr a, SizeT size)
 {
    hg_mem_write(a, size, VG_(get_running_tid)());
 }
@@ -3392,7 +3392,7 @@ static void hg_pre_clo_init(void)
                                    hg_print_debug_usage);
    VG_(needs_shadow_memory)       ();
 
-   VG_(malloc_funcs)              (hg_malloc,
+   VG_(needs_malloc_replacement)  (hg_malloc,
                                    hg___builtin_new,
                                    hg___builtin_vec_new,
                                    hg_memalign,
@@ -3446,7 +3446,7 @@ static void hg_pre_clo_init(void)
    }
 
    init_shadow_memory();
-   hg_malloc_list = VG_(HT_construct)();
+   hg_malloc_list = VG_(HT_construct)( 80021 );    // prime, big
 }
 
 /* Uses a 1:1 mapping */

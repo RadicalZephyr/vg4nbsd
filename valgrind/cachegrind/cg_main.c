@@ -118,7 +118,7 @@ struct _fileCC {
 static fileCC *CC_table[N_FILE_ENTRIES];
 
 //------------------------------------------------------------
-// Primary data structre #2: Instr-info table
+// Primary data structure #2: Instr-info table
 // - Holds the cached info about each instr that is used for simulation.
 // - table(BB_start_addr, list(instr_info))
 // - For each BB, each instr_info in the list holds info about the
@@ -228,16 +228,6 @@ lineCC* new_lineCC(Int line, lineCC* next)
    return cc;
 }
 
-static __inline__ 
-instr_info* new_instr_info(Addr instr_addr, lineCC* parent, instr_info* next)
-{
-   // Using calloc() zeroes instr_len and data_size
-   instr_info* ii = VG_(calloc)(1, sizeof(instr_info));
-   ii->instr_addr = instr_addr;
-   ii->parent     = parent; 
-   return ii;
-}
-
 // Do a three step traversal: by file, then fn, then line.
 // In all cases prepends new nodes to their chain.  Returns a pointer to the
 // line node, creates a new one if necessary.
@@ -298,7 +288,7 @@ static lineCC* get_lineCC(Addr origAddr)
 /*--- Cache simulation functions                           ---*/
 /*------------------------------------------------------------*/
 
-static VGA_REGPARM(1)
+static VG_REGPARM(1)
 void log_1I_0D_cache_access(instr_info* n)
 {
    //VG_(printf)("1I_0D : CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
@@ -310,7 +300,7 @@ void log_1I_0D_cache_access(instr_info* n)
    VGP_POPCC(VgpCacheSimulate);
 }
 
-static VGA_REGPARM(2)
+static VG_REGPARM(2)
 void log_1I_1Dr_cache_access(instr_info* n, Addr data_addr)
 {
    //VG_(printf)("1I_1Dr: CCaddr=%p, iaddr=%p, isize=%u, daddr=%p, dsize=%u\n",
@@ -326,7 +316,7 @@ void log_1I_1Dr_cache_access(instr_info* n, Addr data_addr)
    VGP_POPCC(VgpCacheSimulate);
 }
 
-static VGA_REGPARM(2)
+static VG_REGPARM(2)
 void log_1I_1Dw_cache_access(instr_info* n, Addr data_addr)
 {
    //VG_(printf)("1I_1Dw: CCaddr=%p, iaddr=%p, isize=%u, daddr=%p, dsize=%u\n",
@@ -342,7 +332,7 @@ void log_1I_1Dw_cache_access(instr_info* n, Addr data_addr)
    VGP_POPCC(VgpCacheSimulate);
 }
 
-static VGA_REGPARM(3)
+static VG_REGPARM(3)
 void log_1I_2D_cache_access(instr_info* n, Addr data_addr1, Addr data_addr2)
 {
    //VG_(printf)("1I_2D: CCaddr=%p, iaddr=%p, isize=%u, daddr1=%p, daddr2=%p, dsize=%u\n",
@@ -400,7 +390,7 @@ BB_info* get_BB_info(IRBB* bbIn, Addr origAddr, Bool* bbSeenBefore)
 }
 
 static 
-void handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st,
+Bool handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st, IRStmt* st2,
                         Addr* instrAddr, UInt* instrLen,
                         IRExpr** loadAddrExpr, IRExpr** storeAddrExpr,
                         UInt* dataSize)
@@ -409,11 +399,55 @@ void handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st,
 
    switch (st->tag) {
    case Ist_NoOp:
+   case Ist_AbiHint:
+   case Ist_Put:
+   case Ist_PutI:
+   case Ist_MFence:
       break;
 
-   case Ist_AbiHint:
-      /* ABI hints aren't interesting to cachegrind.  Ignore. */
-      break;
+   case Ist_Exit: {
+      // This is a conditional jump.  Most of the time, we want to add the
+      // instrumentation before it, to ensure it gets executed.  Eg, (1) if
+      // this conditional jump is just before an IMark:
+      //
+      //   t108 = Not1(t107)
+      //   [add instrumentation here]
+      //   if (t108) goto {Boring} 0x3A96637D:I32
+      //   ------ IMark(0x3A966370, 7) ------
+      //
+      // or (2) if this conditional jump is the last thing before the
+      // block-ending unconditional jump:
+      //
+      //   t111 = Not1(t110)
+      //   [add instrumentation here]
+      //   if (t111) goto {Boring} 0x3A96637D:I32
+      //   goto {Boring} 0x3A966370:I32
+      //
+      // One case (3) where we want the instrumentation after the conditional
+      // jump is when the conditional jump is for an x86 REP instruction:
+      //
+      //   ------ IMark(0x3A967F13, 2) ------
+      //   t1 = GET:I32(4)
+      //   t6 = CmpEQ32(t1,0x0:I32) 
+      //   if (t6) goto {Boring} 0x3A967F15:I32    # ignore this cond jmp
+      //   t7 = Sub32(t1,0x1:I32)
+      //   PUT(4) = t7
+      //   ...
+      //   t56 = Not1(t55)
+      //   [add instrumentation here]
+      //   if (t56) goto {Boring} 0x3A967F15:I32
+      //
+      // Therefore, we return true if the next statement is an IMark, or if
+      // there is no next statement (which matches case (2), as the final
+      // unconditional jump is not represented in the IRStmt list).
+      //
+      // Note that this approach won't do in the long run for supporting
+      // PPC, but it's good enough for x86/AMD64 for the 3.0.X series.
+      if (NULL == st2 || Ist_IMark == st2->tag)
+         return True;
+      else
+         return False;
+   }
 
    case Ist_IMark:
       /* st->Ist.IMark.addr is a 64-bit int.  ULong_to_Ptr casts this
@@ -428,32 +462,30 @@ void handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st,
          machines. */
       *instrAddr = (Addr)ULong_to_Ptr(st->Ist.IMark.addr);
       *instrLen =        st->Ist.IMark.len;
-      addStmtToIRBB( bbOut, st );
       break;
 
    case Ist_Tmp: {
       IRExpr* data = st->Ist.Tmp.data;
-      if (data->tag == Iex_LDle) {
-         IRExpr* aexpr = data->Iex.LDle.addr;
+      if (data->tag == Iex_Load) {
+         IRExpr* aexpr = data->Iex.Load.addr;
          tl_assert( isIRAtom(aexpr) );
-
+         // Note also, endianness info is ignored.  I guess that's not
+         // interesting.
          // XXX: repe cmpsb does two loads... the first one is ignored here!
          //tl_assert( NULL == *loadAddrExpr );          // XXX: ???
          *loadAddrExpr = aexpr;
-         *dataSize = sizeofIRType(data->Iex.LDle.ty);
+         *dataSize = sizeofIRType(data->Iex.Load.ty);
       }
-      addStmtToIRBB( bbOut, st );
       break;
    }
       
-   case Ist_STle: {
-      IRExpr* data  = st->Ist.STle.data;
-      IRExpr* aexpr = st->Ist.STle.addr;
+   case Ist_Store: {
+      IRExpr* data  = st->Ist.Store.data;
+      IRExpr* aexpr = st->Ist.Store.addr;
       tl_assert( isIRAtom(aexpr) );
       tl_assert( NULL == *storeAddrExpr );          // XXX: ???
       *storeAddrExpr = aexpr;
       *dataSize = sizeofIRType(typeOfIRExpr(tyenv, data));
-      addStmtToIRBB( bbOut, st );
       break;
    }
    
@@ -473,16 +505,8 @@ void handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st,
          tl_assert(d->mAddr == NULL);
          tl_assert(d->mSize == 0);
       }
-      addStmtToIRBB( bbOut, st );
       break;
    }
-
-   case Ist_Put:
-   case Ist_PutI:
-   case Ist_Exit:
-   case Ist_MFence:
-      addStmtToIRBB( bbOut, st );
-      break;
 
    default:
       VG_(printf)("\n");
@@ -490,6 +514,8 @@ void handleOneStatement(IRTypeEnv* tyenv, IRBB* bbOut, IRStmt* st,
       VG_(printf)("\n");
       VG_(tool_panic)("Cachegrind: unhandled IRStmt");
    }
+
+   return False;
 }
 
 static
@@ -524,9 +550,9 @@ static Bool loadStoreAddrsMatch(IRExpr* loadAddrExpr, IRExpr* storeAddrExpr)
 
 // Instrumentation for the end of each original instruction.
 static
-void endOfInstr(IRBB* bbOut, instr_info* i_node, Bool bbSeenBefore,
-                UInt instrAddr, UInt instrLen, UInt dataSize,
-                IRExpr* loadAddrExpr, IRExpr* storeAddrExpr)
+void instrumentInstr(IRBB* bbOut, instr_info* i_node, Bool bbSeenBefore,
+                     UInt instrAddr, UInt instrLen, UInt dataSize,
+                     IRExpr* loadAddrExpr, IRExpr* storeAddrExpr)
 {
    IRDirty* di;
    IRExpr  *arg1, *arg2, *arg3, **argv;
@@ -543,7 +569,7 @@ void endOfInstr(IRBB* bbOut, instr_info* i_node, Bool bbSeenBefore,
    if (sizeof(HWord) == 8) {
       wordTy = Ity_I64;
    } else {
-      VG_(tool_panic)("endOfInstr: strange word size");
+      VG_(tool_panic)("instrumentInstr: strange word size");
    }
 
    if (loadAddrExpr) 
@@ -554,8 +580,8 @@ void endOfInstr(IRBB* bbOut, instr_info* i_node, Bool bbSeenBefore,
 
    // Nb: instrLen will be zero if Vex failed to decode it.
    tl_assert( 0 == instrLen ||
-              (instrLen >= VGA_MIN_INSTR_SZB && 
-               instrLen <= VGA_MAX_INSTR_SZB) );
+              (instrLen >= VG_MIN_INSTR_SZB && 
+               instrLen <= VG_MAX_INSTR_SZB) );
 
    // Large (eg. 28B, 108B, 512B on x86) data-sized instructions will be
    // done inaccurately, but they're very rare and this avoids errors from
@@ -629,7 +655,7 @@ static IRBB* cg_instrument ( IRBB* bbIn, VexGuestLayout* layout,
    IRBB*    bbOut;
    IRStmt*  st;
    BB_info* bbInfo;
-   Bool     bbSeenBefore = False;
+   Bool     bbSeenBefore = False, addedInstrumentation, addInstNow;
    Addr     instrAddr, origAddr;
    UInt     instrLen;
    IRExpr  *loadAddrExpr, *storeAddrExpr;
@@ -664,23 +690,40 @@ static IRBB* cg_instrument ( IRBB* bbIn, VexGuestLayout* layout,
       // Reset stuff for this original instruction
       loadAddrExpr = storeAddrExpr = NULL;
       dataSize = 0;
+      addedInstrumentation = False;
 
       // Process all the statements for this original instruction (ie. until
       // the next IMark statement, or the end of the block)
       do {
-         handleOneStatement(bbIn->tyenv, bbOut, st, &instrAddr, &instrLen,
-                            &loadAddrExpr, &storeAddrExpr, &dataSize);
+         IRStmt* st2 = ( i+1 < bbIn->stmts_used ? bbIn->stmts[i+1] : NULL );
+
+         addInstNow = handleOneStatement(bbIn->tyenv, bbOut, st, st2,
+                                         &instrAddr, &instrLen, &loadAddrExpr,
+                                         &storeAddrExpr, &dataSize);
+         if (addInstNow) {
+            tl_assert(!addedInstrumentation);
+            addedInstrumentation = True;
+            
+            // Add instrumentation before this statement.
+            instrumentInstr(bbOut, &bbInfo->instrs[ bbInfo_i ], bbSeenBefore,
+                      instrAddr, instrLen, dataSize, loadAddrExpr, storeAddrExpr);
+         }
+
+         addStmtToIRBB( bbOut, st );
+
          i++;
-         st = ( i < bbIn->stmts_used ? bbIn->stmts[i] : NULL );
+         st = st2;
       } 
       while (st && Ist_IMark != st->tag);
 
-      // Add instrumentation for this original instruction.
-      endOfInstr(bbOut, &bbInfo->instrs[ bbInfo_i ], bbSeenBefore,
-                 instrAddr, instrLen, dataSize, loadAddrExpr, storeAddrExpr);
+      if (!addedInstrumentation) {
+         // Add instrumentation now, after all the instruction's statements.
+         instrumentInstr(bbOut, &bbInfo->instrs[ bbInfo_i ], bbSeenBefore,
+                         instrAddr, instrLen, dataSize, loadAddrExpr, storeAddrExpr);
+      }
 
       bbInfo_i++;
-   } 
+   }
    while (st);
 
    return bbOut;
@@ -762,7 +805,7 @@ void configure_caches(cache_t* I1c, cache_t* D1c, cache_t* L2c)
 
    // Set the cache config (using auto-detection, if supported by the
    // architecture)
-   VGA_(configure_caches)( I1c, D1c, L2c, (3 == n_clos) );
+   VG_(configure_caches)( I1c, D1c, L2c, (3 == n_clos) );
 
    // Then replace with any defined on the command line.
    if (DEFINED(clo_I1_cache)) { *I1c = clo_I1_cache; }
@@ -816,6 +859,7 @@ static void fprint_lineCC(Int fd, lineCC* n)
 static void fprint_CC_table_and_calc_totals(void)
 {
    Int     fd;
+   SysRes  sres;
    Char    buf[512];
    fileCC *curr_fileCC;
    fnCC   *curr_fnCC;
@@ -824,9 +868,9 @@ static void fprint_CC_table_and_calc_totals(void)
 
    VGP_PUSHCC(VgpCacheResults);
 
-   fd = VG_(open)(cachegrind_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
-                                       VKI_S_IRUSR|VKI_S_IWUSR);
-   if (fd < 0) {
+   sres = VG_(open)(cachegrind_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
+                                         VKI_S_IRUSR|VKI_S_IWUSR);
+   if (sres.isError) {
       // If the file can't be opened for whatever reason (conflict
       // between multiple cachegrinded processes?), give up now.
       VG_(message)(Vg_UserMsg,
@@ -835,6 +879,8 @@ static void fprint_CC_table_and_calc_totals(void)
       VG_(message)(Vg_UserMsg,
          "       ... so simulation results will be missing.");
       return;
+   } else {
+      fd = sres.val;
    }
 
    // "desc:" lines (giving I1/D1/L2 cache configuration).  The spaces after
@@ -907,22 +953,6 @@ static UInt ULong_width(ULong n)
    return w + (w-1)/3;   // add space for commas
 }
 
-static
-void percentify(Int n, Int ex, Int field_width, char buf[]) 
-{
-   int i, len, space;
-    
-   VG_(sprintf)(buf, "%d.%d%%", n / ex, n % ex);
-   len = VG_(strlen)(buf);
-   space = field_width - len;
-   if (space < 0) space = 0;     /* Allow for v. small field_width */
-   i = len;
-
-   /* Right justify in field */
-   for (     ; i >= 0;    i--)  buf[i + space] = buf[i];
-   for (i = 0; i < space; i++)  buf[i] = ' ';
-}
-
 static void cg_fini(Int exitcode)
 {
    static char buf1[128], buf2[128], buf3[128], fmt [128];
@@ -954,10 +984,10 @@ static void cg_fini(Int exitcode)
    p = 100;
 
    if (0 == Ir_total.a) Ir_total.a = 1;
-   percentify(Ir_total.m1 * 100 * p / Ir_total.a, p, l1+1, buf1);
+   VG_(percentify)(Ir_total.m1, Ir_total.a, 2, l1+1, buf1);
    VG_(message)(Vg_UserMsg, "I1  miss rate: %s", buf1);
                 
-   percentify(Ir_total.m2 * 100 * p / Ir_total.a, p, l1+1, buf1);
+   VG_(percentify)(Ir_total.m2, Ir_total.a, 2, l1+1, buf1);
    VG_(message)(Vg_UserMsg, "L2i miss rate: %s", buf1);
    VG_(message)(Vg_UserMsg, "");
 
@@ -982,14 +1012,14 @@ static void cg_fini(Int exitcode)
    if (0 == D_total.a)   D_total.a = 1;
    if (0 == Dr_total.a) Dr_total.a = 1;
    if (0 == Dw_total.a) Dw_total.a = 1;
-   percentify( D_total.m1 * 100 * p / D_total.a,  p, l1+1, buf1);
-   percentify(Dr_total.m1 * 100 * p / Dr_total.a, p, l2+1, buf2);
-   percentify(Dw_total.m1 * 100 * p / Dw_total.a, p, l3+1, buf3);
+   VG_(percentify)( D_total.m1,  D_total.a, 1, l1+1, buf1);
+   VG_(percentify)(Dr_total.m1, Dr_total.a, 1, l2+1, buf2);
+   VG_(percentify)(Dw_total.m1, Dw_total.a, 1, l3+1, buf3);
    VG_(message)(Vg_UserMsg, "D1  miss rate: %s (%s   + %s  )", buf1, buf2,buf3);
 
-   percentify( D_total.m2 * 100 * p / D_total.a,  p, l1+1, buf1);
-   percentify(Dr_total.m2 * 100 * p / Dr_total.a, p, l2+1, buf2);
-   percentify(Dw_total.m2 * 100 * p / Dw_total.a, p, l3+1, buf3);
+   VG_(percentify)( D_total.m2,  D_total.a, 1, l1+1, buf1);
+   VG_(percentify)(Dr_total.m2, Dr_total.a, 1, l2+1, buf2);
+   VG_(percentify)(Dw_total.m2, Dw_total.a, 1, l3+1, buf3);
    VG_(message)(Vg_UserMsg, "L2d miss rate: %s (%s   + %s  )", buf1, buf2,buf3);
    VG_(message)(Vg_UserMsg, "");
 
@@ -1007,9 +1037,9 @@ static void cg_fini(Int exitcode)
    VG_(message)(Vg_UserMsg, fmt, "L2 misses:    ",
                             L2_total_m, L2_total_mr, L2_total_mw);
 
-   percentify(L2_total_m  * 100 * p / (Ir_total.a + D_total.a),  p, l1+1, buf1);
-   percentify(L2_total_mr * 100 * p / (Ir_total.a + Dr_total.a), p, l2+1, buf2);
-   percentify(L2_total_mw * 100 * p / Dw_total.a, p, l3+1, buf3);
+   VG_(percentify)(L2_total_m,  (Ir_total.a + D_total.a),  1, l1+1, buf1);
+   VG_(percentify)(L2_total_mr, (Ir_total.a + Dr_total.a), 1, l2+1, buf2);
+   VG_(percentify)(L2_total_mw, Dw_total.a,                1, l3+1, buf3);
    VG_(message)(Vg_UserMsg, "L2 miss rate:  %s (%s   + %s  )", buf1, buf2,buf3);
             
 
@@ -1146,10 +1176,10 @@ static void cg_post_clo_init(void)
    VG_(register_profile_event)(VgpCacheResults,  "cache-results");
 }
 
+static Char base_dir[VKI_PATH_MAX];
+
 static void cg_pre_clo_init(void)
 {
-   Char* base_dir = NULL;
-
    VG_(details_name)            ("Cachegrind");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("an I1/D1/L2 cache profiler");
@@ -1168,19 +1198,18 @@ static void cg_pre_clo_init(void)
                                    cg_print_debug_usage);
 
    /* Get working directory */
-   tl_assert( VG_(getcwd_alloc)(&base_dir) );
+   tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 
    /* Block is big enough for dir name + cachegrind.out.<pid> */
    cachegrind_out_file = VG_(malloc)((VG_(strlen)(base_dir) + 32)*sizeof(Char));
    VG_(sprintf)(cachegrind_out_file, "%s/cachegrind.out.%d",
                 base_dir, VG_(getpid)());
-   VG_(free)(base_dir);
 
-   instr_info_table = VG_(HT_construct)();
+   instr_info_table = VG_(HT_construct)( 4999 );   // prime, biggish
 }
 
 VG_DETERMINE_INTERFACE_VERSION(cg_pre_clo_init, 0)
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                cg_main.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

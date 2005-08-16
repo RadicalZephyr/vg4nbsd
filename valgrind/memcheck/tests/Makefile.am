@@ -23,6 +23,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	custom_alloc.stderr.exp custom_alloc.vgtest \
 	describe-block.stderr.exp describe-block.vgtest \
 	doublefree.stderr.exp doublefree.vgtest \
+	erringfds.stderr.exp erringfds.stdout.exp erringfds.vgtest \
 	error_counts.stderr.exp error_counts.stdout.exp error_counts.vgtest \
 	errs1.stderr.exp errs1.vgtest \
 	exitprog.stderr.exp exitprog.vgtest \
@@ -58,6 +59,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	new_override.stderr.exp new_override.stdout.exp new_override.vgtest \
 	null_socket.stderr.exp null_socket.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
+	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
+	partiallydefinedeq.stdout.exp \
 	pointer-trace.vgtest \
 	pointer-trace.stderr.exp pointer-trace.stderr.exp64 \
 	post-syscall.stderr.exp post-syscall.stdout.exp post-syscall.vgtest \
@@ -65,8 +68,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	realloc2.stderr.exp realloc2.vgtest \
 	realloc3.stderr.exp realloc3.vgtest \
 	sigaltstack.stderr.exp sigaltstack.vgtest \
+	sigkill.stderr.exp sigkill.stderr.exp2 sigkill.vgtest \
 	signal2.stderr.exp signal2.stdout.exp signal2.vgtest \
 	sigprocmask.stderr.exp sigprocmask.vgtest \
+	stack_changes.stderr.exp stack_changes.stdout.exp stack_changes.vgtest \
 	strchr.stderr.exp strchr.vgtest \
 	str_tester.stderr.exp str_tester.vgtest \
 	supp1.stderr.exp supp1.vgtest \
@@ -79,8 +84,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	metadata.stderr.exp metadata.stdout.exp metadata.vgtest-HIDING \
 	vgtest_ume.stderr.exp vgtest_ume.vgtest \
 	writev.stderr.exp writev.stderr.exp2 writev.stderr.exp3 writev.vgtest \
-	xml1.stderr.exp xml1.stderr.exp64 xml1.stdout.exp xml1.vgtest \
-	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.vgtest
+	xml1.stderr.exp xml1.stderr.exp2 xml1.stderr.exp64 xml1.stdout.exp \
+	xml1.vgtest \
+	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.stdout.exp \
+	zeropage.vgtest
 
 check_PROGRAMS = \
 	addressable \
@@ -88,7 +95,7 @@ check_PROGRAMS = \
 	badloop badpoll badrw brk brk2 buflen_check \
 	clientperm custom_alloc \
 	describe-block \
-	doublefree error_counts errs1 exitprog execve execve2 \
+	doublefree error_counts errs1 exitprog execve execve2 erringfds \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-tree leak-regroot leakotron \
 	malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
@@ -96,11 +103,12 @@ check_PROGRAMS = \
 	memalign_test memalign2 memcmptest mempool mmaptest \
 	nanoleak new_nothrow \
 	null_socket overlap \
+	partiallydefinedeq \
 	pointer-trace \
 	post-syscall \
 	realloc1 realloc2 realloc3 \
-	sigaltstack signal2 sigprocmask \
-	strchr str_tester supp1 supp2 suppfree \
+	sigaltstack signal2 sigprocmask sigkill \
+	stack_changes strchr str_tester supp1 supp2 suppfree \
 	trivialleak weirdioctl	\
 	mismatches new_override metadata \
 	vgtest_ume xml1 \
@@ -111,96 +119,24 @@ AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g 
 AM_CXXFLAGS = $(AM_CFLAGS)
 
-# C ones
-addressable_SOURCES	= addressable.c
-badaddrvalue_SOURCES 	= badaddrvalue.c
-badfree_SOURCES 	= badfree.c
-badjump_SOURCES 	= badjump.c
-badjump2_SOURCES 	= badjump2.c
-badloop_SOURCES 	= badloop.c
-badpoll_SOURCES		= badpoll.c
-badrw_SOURCES		= badrw.c
-brk_SOURCES 		= brk.c
-brk2_SOURCES 		= brk2.c
-buflen_check_SOURCES	= buflen_check.c
-clientperm_SOURCES 	= clientperm.c
-custom_alloc_SOURCES 	= custom_alloc.c
-describe_block_SOURCES	= describe-block.c
-doublefree_SOURCES 	= doublefree.c
-error_counts_SOURCES 	= error_counts.c
-errs1_SOURCES 		= errs1.c
-execve_SOURCES 		= execve.c
-execve2_SOURCES 	= execve2.c
-exitprog_SOURCES 	= exitprog.c
-fprw_SOURCES 		= fprw.c
-fwrite_SOURCES 		= fwrite.c
-inits_SOURCES		= inits.c
-inline_SOURCES 	        = inline.c
-leak_0_SOURCES		= leak-0.c
-leak_cycle_SOURCES	= leak-cycle.c
-leak_tree_SOURCES	= leak-tree.c
-leak_regroot_SOURCES	= leak-regroot.c
-leakotron_SOURCES	= leakotron.c
-malloc1_SOURCES 	= malloc1.c
-malloc2_SOURCES 	= malloc2.c
-malloc3_SOURCES 	= malloc3.c
-manuel1_SOURCES 	= manuel1.c
-manuel2_SOURCES 	= manuel2.c
-manuel3_SOURCES 	= manuel3.c
-match_overrun_SOURCES 	= match-overrun.c
-mmaptest_SOURCES 	= mmaptest.c
-memalign_test_SOURCES 	= memalign_test.c
-memalign2_SOURCES 	= memalign2.c
-memcmptest_SOURCES 	= memcmptest.c
+# Extra stuff for C tests
 memcmptest_CFLAGS	= $(AM_CFLAGS) -fno-builtin-memcmp
-mempool_SOURCES 	= mempool.c
-nanoleak_SOURCES 	= nanoleak.c
-null_socket_SOURCES 	= null_socket.c
-overlap_SOURCES 	= overlap.c
 # Don't allow GCC to inline memcpy(), because then we can't intercept it
 overlap_CFLAGS		= $(AM_CFLAGS) -fno-builtin-memcpy
-pointer_trace_SOURCES	= pointer-trace.c
-post_syscall_SOURCES	= post-syscall.c
-realloc1_SOURCES 	= realloc1.c
-realloc2_SOURCES 	= realloc2.c
-realloc3_SOURCES 	= realloc3.c
-signal2_SOURCES 	= signal2.c
-sigprocmask_SOURCES 	= sigprocmask.c
-supp1_SOURCES 		= supp.c
-supp2_SOURCES 		= supp.c
-suppfree_SOURCES 	= suppfree.c
-sigaltstack_SOURCES 	= sigaltstack.c
-trivialleak_SOURCES 	= trivialleak.c
-weirdioctl_SOURCES 	= weirdioctl.c
-metadata_SOURCES	= metadata.c
-strchr_SOURCES		= strchr.c
-str_tester_SOURCES	= str_tester.c
 str_tester_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
-writev_SOURCES		= writev.c
-xml1_SOURCES		= xml1.c
-zeropage_SOURCES	= zeropage.c
+supp1_SOURCES		= supp.c
+supp2_SOURCES		= supp.c
 
-# C++ ones
+# C++ tests
 mismatches_SOURCES	= mismatches.cpp
 new_nothrow_SOURCES 	= new_nothrow.cpp
 new_override_SOURCES 	= new_override.cpp
 
 # Valgrind unit self-tests
-hello_SOURCES		= hello.c
-## If we support PIE, build hello as a PIE, otherwise vgtest_ume cannot load
-## (I'm not completely sure why, since stage2 can load both PIEs and non-PIEs,
-## maybe it's because stage2 is loaded up high;  anyway, it doesn't really
-## matter so long as vgtest_ume can load hello ok.  --njn)
-if USE_PIE
-hello_CFLAGS		= $(AM_CFLAGS) -fpie
-hello_LDFLAGS		= -pie
-else
-hello_LDFLAGS		= -Wl,-defsym,kickstart_base=0x50000000 \
-			  -Wl,-T,../../coregrind/stage2.lds
-hello_DEPENDENCIES 	= ../../coregrind/stage2.lds
-endif
+hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
+			  -Wl,-T,$(top_srcdir)/valt_load_address.lds
+hello_DEPENDENCIES 	= $(top_srcdir)/valt_load_address.lds
 
 vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS)
-vgtest_ume_SOURCES	= vgtest_ume.c
-vgtest_ume_LDADD	= ../../coregrind/ume.o
+vgtest_ume_LDADD	= ../../coregrind/m_ume.o
 

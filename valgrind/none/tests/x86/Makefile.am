@@ -17,23 +17,25 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
 	pushpopseg.stderr.exp pushpopseg.stdout.exp pushpopseg.vgtest \
 	seg_override.stderr.exp seg_override.stdout.exp seg_override.vgtest \
-	sigcontext.stdout.exp sigcontext.stderr.exp sigcontext.vgtest
+	sigcontext.stdout.exp sigcontext.stderr.exp sigcontext.vgtest \
+	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
+	yield.stderr.exp yield.stdout.exp yield.vgtest
 
 check_PROGRAMS = \
 	badseg bt_everything bt_literal cpuid fpu_lazy_eflags \
 	getseg $(INSN_TESTS) \
-	int pushpopseg seg_override sigcontext
+	int pushpopseg seg_override sigcontext smc1 yield
 
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g -I$(top_srcdir)/include
+AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow \
+		-g -I$(top_srcdir)/include \
+		$(FLAG_MMMX) $(FLAG_MSSE)
+
 AM_CXXFLAGS = $(AM_CFLAGS)
 
 # generic C ones
-badseg_SOURCES		= badseg.c
-bt_everything_SOURCES 	= bt_everything.c
-bt_literal_SOURCES 	= bt_literal.c
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
-fpu_lazy_eflags_SOURCES	= fpu_lazy_eflags.c
-getseg_SOURCES 		= getseg.c
+# fpu_lazy_eflags must use these flags -- the bug only occurred with them
+fpu_lazy_eflags_CFLAGS	= -O2 -march=pentiumpro
 insn_basic_SOURCES	= insn_basic.def
 insn_basic_LDADD	= -lm
 insn_fpu_SOURCES	= insn_fpu.def
@@ -48,10 +50,8 @@ insn_sse_SOURCES	= insn_sse.def
 insn_sse_LDADD		= -lm
 insn_sse2_SOURCES	= insn_sse2.def
 insn_sse2_LDADD		= -lm
-int_SOURCES		= int.c
-pushpopseg_SOURCES	= pushpopseg.c
-seg_override_SOURCES 	= seg_override.c
-sigcontext_SOURCES	= sigcontext.c
+yield_CFLAGS		= $(AM_CFLAGS) -D__$(VG_ARCH)__
+yield_LDADD		= -lpthread
 
 .def.c: $(srcdir)/gen_insn_test.pl
 	$(PERL) $(srcdir)/gen_insn_test.pl < $< > $@

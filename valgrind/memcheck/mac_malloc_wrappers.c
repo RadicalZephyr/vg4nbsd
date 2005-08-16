@@ -198,7 +198,6 @@ void* MAC_(new_block) ( ThreadId tid,
 {
    VGP_PUSHCC(VgpCliMalloc);
    cmalloc_n_mallocs ++;
-   cmalloc_bs_mallocd += size;
 
    // Allocate and zero if necessary
    if (p) {
@@ -212,6 +211,9 @@ void* MAC_(new_block) ( ThreadId tid,
       }
       if (is_zeroed) VG_(memset)((void*)p, 0, size);
    }
+
+   // Only update this stat if allocation succeeded.
+   cmalloc_bs_mallocd += size;
 
    add_MAC_Chunk( tid, p, size, kind, table );
 
@@ -439,7 +441,7 @@ void MAC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)
    mp->pool      = pool;
    mp->rzB       = rzB;
    mp->is_zeroed = is_zeroed;
-   mp->chunks    = VG_(HT_construct)();
+   mp->chunks    = VG_(HT_construct)( 3001 );  // prime, not so big
 
    /* Paranoia ... ensure this area is off-limits to the client, so
       the mp->data field isn't visible to the leak checker.  If memory

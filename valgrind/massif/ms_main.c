@@ -43,12 +43,12 @@
 #include "pub_tool_libcmman.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_libcproc.h"
+#include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_profile.h"
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_stacktrace.h"
-#include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 
 #include "valgrind.h"           // For {MALLOC,FREE}LIKE_BLOCK
@@ -265,7 +265,7 @@ static VgHashTable malloc_list  = NULL;   // HP_Chunks
 static UInt n_heap_blocks = 0;
 
 // Current directory at startup.
-static Char* base_dir;
+static Char base_dir[VKI_PATH_MAX];
 
 #define MAX_ALLOC_FNS      32      // includes the builtin ones
 
@@ -1345,12 +1345,13 @@ static void file_err ( Char* file )
  */
 static void write_hp_file(void)
 {
-   Int   i, j;
-   Int   fd, res;
-   Char *hp_file, *ps_file, *aux_file;
-   Char* cmdfmt;
-   Char* cmdbuf;
-   Int   cmdlen;
+   Int    i, j;
+   Int    fd, res;
+   SysRes sres;
+   Char  *hp_file, *ps_file, *aux_file;
+   Char*  cmdfmt;
+   Char*  cmdbuf;
+   Int    cmdlen;
 
    VGP_PUSHCC(VgpPrintHp);
    
@@ -1358,12 +1359,14 @@ static void write_hp_file(void)
    hp_file  = make_filename( base_dir, ".hp" );
    ps_file  = make_filename( base_dir, ".ps" );
    aux_file = make_filename( base_dir, ".aux" );
-   fd = VG_(open)(hp_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
-                           VKI_S_IRUSR|VKI_S_IWUSR);
-   if (fd < 0) {
+   sres = VG_(open)(hp_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
+                             VKI_S_IRUSR|VKI_S_IWUSR);
+   if (sres.isError) {
       file_err( hp_file );
       VGP_POPCC(VgpPrintHp);
       return;
+   } else {
+      fd = sres.val;
    }
 
    // File header, including command line
@@ -1658,9 +1661,10 @@ static void pp_all_XPts(Int fd, XPt* xpt, ULong heap_spacetime,
 static void
 write_text_file(ULong total_ST, ULong heap_ST)
 {
-   Int   fd, i;
-   Char* text_file;
-   Char* maybe_p = ( XHTML == clo_format ? "<p>" : "" );
+   SysRes sres;
+   Int    fd, i;
+   Char*  text_file;
+   Char*  maybe_p = ( XHTML == clo_format ? "<p>" : "" );
 
    VGP_PUSHCC(VgpPrintXPts);
 
@@ -1668,12 +1672,14 @@ write_text_file(ULong total_ST, ULong heap_ST)
    text_file = make_filename( base_dir, 
                               ( XText == clo_format ? ".txt" : ".html" ) );
 
-   fd = VG_(open)(text_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
+   sres = VG_(open)(text_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
                              VKI_S_IRUSR|VKI_S_IWUSR);
-   if (fd < 0) {
+   if (sres.isError) {
       file_err( text_file );
       VGP_POPCC(VgpPrintXPts);
       return;
+   } else {
+      fd = sres.val;
    }
 
    // Header
@@ -1802,9 +1808,7 @@ static void ms_pre_clo_init()
                                    ms_print_usage,
                                    ms_print_debug_usage);
    VG_(needs_client_requests)     (ms_handle_client_request);
-
-   // Malloc replacement
-   VG_(malloc_funcs)              (ms_malloc,
+   VG_(needs_malloc_replacement)  (ms_malloc,
                                    ms___builtin_new,
                                    ms___builtin_vec_new,
                                    ms_memalign,
@@ -1832,12 +1836,12 @@ static void ms_pre_clo_init()
    VG_(register_profile_event)(VgpPrintXPts,      "print-XPts");
 
    // HP_Chunks
-   malloc_list  = VG_(HT_construct)();
+   malloc_list  = VG_(HT_construct)( 80021 );   // prime, big
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(0, NULL, /*is_bottom*/False);
 
-   tl_assert( VG_(getcwd_alloc)(&base_dir) );
+   tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
 
 VG_DETERMINE_INTERFACE_VERSION(ms_pre_clo_init, 0)

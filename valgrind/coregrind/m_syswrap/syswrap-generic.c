@@ -2732,7 +2732,7 @@ POST(sys_fcntl64)
 {
    vg_assert(SUCCESS);
    if (ARG2 == VKI_F_DUPFD) {
-      if (!VG_(fd_allowed)(RES, "fcntl64(DUPFD)", tid, True)) {
+      if (!ML_(fd_allowed)(RES, "fcntl64(DUPFD)", tid, True)) {
          VG_(close)(RES);
          SET_STATUS_Failure( VKI_EMFILE );
       } else {

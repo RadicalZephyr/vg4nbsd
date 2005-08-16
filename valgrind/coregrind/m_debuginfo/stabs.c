@@ -38,7 +38,7 @@
 #include "priv_symtypes.h"
 #include "priv_symtab.h"
 
-#ifdef (VGO_netbsdelf2)
+#if defined (VGO_netbsdelf2)
 #include <sys/types.h>
 #endif
 

@@ -220,6 +220,7 @@ struct vki_sigcontext {
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
 #define VKI_MAP_FIXED	0x10		/* Interpret addr exactly */
 #define VKI_MAP_ANONYMOUS	0x20	/* don't use a file */
+#define VKI_MAP_NORESERVE       0x4000  /* don't check for reservations */
 
 //----------------------------------------------------------------------
 // From linux-2.6.9/include/asm-x86_64/fcntl.h
@@ -416,6 +417,7 @@ struct vki_termios {
 #define VKI_TIOCOUTQ	0x5411
 #define VKI_TIOCGWINSZ	0x5413
 #define VKI_TIOCSWINSZ	0x5414
+#define VKI_TIOCMGET	0x5415
 #define VKI_TIOCMBIS	0x5416
 #define VKI_TIOCMBIC	0x5417
 #define VKI_TIOCMSET	0x5418
@@ -443,6 +445,20 @@ struct vki_pollfd {
 //----------------------------------------------------------------------
 // From linux-2.6.9/include/asm-x86_64/user.h
 //----------------------------------------------------------------------
+
+struct vki_user_i387_struct {
+	unsigned short	cwd;
+	unsigned short	swd;
+	unsigned short	twd; /* Note this is not the same as the 32bit/x87/FSAVE twd */
+	unsigned short	fop;
+	__vki_u64	rip;
+	__vki_u64	rdp;
+	__vki_u32	mxcsr;
+	__vki_u32	mxcsr_mask;
+	__vki_u32	st_space[32];	/* 8*16 bytes for each FP-reg = 128 bytes */
+	__vki_u32	xmm_space[64];	/* 16*16 bytes for each XMM-reg = 256 bytes */
+	__vki_u32	padding[24];
+};
 
 struct vki_user_regs_struct {
 	unsigned long r15,r14,r13,r12,rbp,rbx,r11,r10;
@@ -608,6 +624,15 @@ struct vki_shminfo64 {
 	unsigned long	__unused3;
 	unsigned long	__unused4;
 };
+
+//----------------------------------------------------------------------
+// From linux-2.6.12.2/include/asm-x86_64/ptrace.h
+//----------------------------------------------------------------------
+
+#define VKI_PTRACE_GETREGS            12
+#define VKI_PTRACE_SETREGS            13
+#define VKI_PTRACE_GETFPREGS          14
+#define VKI_PTRACE_SETFPREGS          15
 
 //----------------------------------------------------------------------
 // And that's it!

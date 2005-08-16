@@ -31,20 +31,20 @@
 #ifndef __PUB_TOOL_MACHINE_H
 #define __PUB_TOOL_MACHINE_H
 
-/* VGA_STACK_REDZONE_SZB: how many bytes below the stack pointer are validly
+/* VG_STACK_REDZONE_SZB: how many bytes below the stack pointer are validly
  * addressible? */
 #if defined(VGA_x86)
-#  define VGA_MIN_INSTR_SZB         1
-#  define VGA_MAX_INSTR_SZB        16
-#  define VGA_STACK_REDZONE_SZB     0
+#  define VG_MIN_INSTR_SZB          1
+#  define VG_MAX_INSTR_SZB         16
+#  define VG_STACK_REDZONE_SZB      0
 #elif defined(VGA_amd64)
-#  define VGA_MIN_INSTR_SZB         1
-#  define VGA_MAX_INSTR_SZB        16
-#  define VGA_STACK_REDZONE_SZB   128
-#elif defined(VGA_arm)
-#  define VGA_MIN_INSTR_SZB         4
-#  define VGA_MAX_INSTR_SZB         4 
-#  define VGA_STACK_REDZONE_SZB     0
+#  define VG_MIN_INSTR_SZB          1
+#  define VG_MAX_INSTR_SZB         16
+#  define VG_STACK_REDZONE_SZB    128
+#elif defined(VGA_ppc32)
+#  define VG_MIN_INSTR_SZB          4
+#  define VG_MAX_INSTR_SZB          4 
+#  define VG_STACK_REDZONE_SZB      0
 #else
 #  error Unknown arch
 #endif
@@ -69,6 +69,12 @@ extern void VG_(set_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
 // This is very Memcheck-specific -- it's used to find the roots when
 // doing leak checking.
 extern void VG_(apply_to_GP_regs)(void (*f)(UWord val));
+
+// Searches through all thread stacks to see if any match.  Returns
+// VG_INVALID_THREADID if none match.
+extern ThreadId VG_(first_matching_thread_stack)
+                        ( Bool (*p) ( Addr stack_min, Addr stack_max, void* d ),
+                          void* d );
 
 #endif   // __PUB_TOOL_MACHINE_H
 

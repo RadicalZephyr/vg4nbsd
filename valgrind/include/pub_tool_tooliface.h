@@ -130,8 +130,9 @@ extern void VG_(details_bug_reports_to)   ( Char* bug_reports_to );
 extern void VG_(needs_libc_freeres) ( void );
 
 /* Want to have errors detected by Valgrind's core reported?  Includes:
-   - pthread API errors (many;  eg. unlocking a non-locked mutex)
-   - invalid file descriptors to blocking syscalls read() and write()
+   - pthread API errors (many;  eg. unlocking a non-locked mutex) 
+     [currently disabled]
+   - invalid file descriptors to syscalls like read() and write()
    - bad signal numbers passed to sigaction()
    - attempt to install signal handler for SIGKILL or SIGSTOP */
 extern void VG_(needs_core_errors) ( void );
@@ -253,11 +254,9 @@ extern void VG_(needs_data_syms) ( void );
 /* Does the tool need shadow memory allocated? */
 extern void VG_(needs_shadow_memory)( void );
 
-/* ------------------------------------------------------------------ */
-/* Malloc replacement */
-
+/* Does the tool replace malloc() and friends with its own versions? */
 // The 'p' prefix avoids GCC complaints about overshadowing global names.
-extern void VG_(malloc_funcs)(
+extern void VG_(needs_malloc_replacement)(
    void* (*pmalloc)               ( ThreadId tid, SizeT n ),
    void* (*p__builtin_new)        ( ThreadId tid, SizeT n ),
    void* (*p__builtin_vec_new)    ( ThreadId tid, SizeT n ),
@@ -316,21 +315,21 @@ void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
    specialising can optimise things significantly.  If any of the
    specialised cases are defined, the general case must be defined too.
 
-   Nb: all the specialised ones must use the VGA_REGPARM(n) attribute.
+   Nb: all the specialised ones must use the VG_REGPARM(n) attribute.
  */
-void VG_(track_new_mem_stack_4) (VGA_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_8) (VGA_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_12)(VGA_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_16)(VGA_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_32)(VGA_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack)                  (void(*f)(Addr a, SizeT len));
+void VG_(track_new_mem_stack_4) (VG_REGPARM(1) void(*f)(Addr new_ESP));
+void VG_(track_new_mem_stack_8) (VG_REGPARM(1) void(*f)(Addr new_ESP));
+void VG_(track_new_mem_stack_12)(VG_REGPARM(1) void(*f)(Addr new_ESP));
+void VG_(track_new_mem_stack_16)(VG_REGPARM(1) void(*f)(Addr new_ESP));
+void VG_(track_new_mem_stack_32)(VG_REGPARM(1) void(*f)(Addr new_ESP));
+void VG_(track_new_mem_stack)                 (void(*f)(Addr a, SizeT len));
 
-void VG_(track_die_mem_stack_4) (VGA_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_8) (VGA_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_12)(VGA_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_16)(VGA_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_32)(VGA_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack)                  (void(*f)(Addr a, SizeT len));
+void VG_(track_die_mem_stack_4) (VG_REGPARM(1) void(*f)(Addr die_ESP));
+void VG_(track_die_mem_stack_8) (VG_REGPARM(1) void(*f)(Addr die_ESP));
+void VG_(track_die_mem_stack_12)(VG_REGPARM(1) void(*f)(Addr die_ESP));
+void VG_(track_die_mem_stack_16)(VG_REGPARM(1) void(*f)(Addr die_ESP));
+void VG_(track_die_mem_stack_32)(VG_REGPARM(1) void(*f)(Addr die_ESP));
+void VG_(track_die_mem_stack)                 (void(*f)(Addr a, SizeT len));
 
 /* Used for redzone at end of thread stacks */
 void VG_(track_ban_mem_stack)      (void(*f)(Addr a, SizeT len));
@@ -400,9 +399,7 @@ void VG_(track_post_deliver_signal)(void(*f)(ThreadId tid, Int sigNo));
 
 /* Others... condition variables...
    ...
-   Shadow memory management
  */
-void VG_(track_init_shadow_page)(void(*f)(Addr p));
 
 #endif   // __PUB_TOOL_TOOLIFACE_H
 

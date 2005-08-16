@@ -70,6 +70,8 @@
 #  include "vki_posixtypes-x86-linux.h"
 #elif defined(VGA_amd64)
 #  include "vki_posixtypes-amd64-linux.h"
+#elif defined(VGA_ppc32)
+#  include "vki_posixtypes-ppc32-linux.h"
 #else
 #  error Unknown platform
 #endif
@@ -148,6 +150,8 @@ typedef unsigned int	        vki_uint;
 #  include "vki-x86-linux.h"
 #elif defined(VGA_amd64)
 #  include "vki-amd64-linux.h"
+#elif defined(VGA_ppc32)
+#  include "vki-ppc32-linux.h"
 #else
 #  error Unknown platform
 #endif
@@ -346,14 +350,6 @@ struct vki_sched_param {
 };
 
 //----------------------------------------------------------------------
-// From nowhere: constants internal to Valgrind
-//----------------------------------------------------------------------
-
-/* Use high signals because native pthreads wants to use low */
-#define VKI_SIGVGKILL       (VG_(max_signal)-0) // [[internal: kill]]
-#define VKI_SIGVGRTUSERMAX  (VG_(max_signal)-1) // [[internal: last user-usable RT signal]]
-
-//----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-generic/siginfo.h
 //----------------------------------------------------------------------
 
@@ -444,13 +440,17 @@ typedef struct vki_siginfo {
 #define VKI_SI_USER	0		/* sent by kill, sigsend, raise */
 #define VKI_SI_TKILL	-6		/* sent by tkill system call */
 
-#define VKI_SIGEV_MAX_SIZE	64
-#ifndef VKI_SIGEV_PAD_SIZE
-#define VKI_SIGEV_PAD_SIZE	((VKI_SIGEV_MAX_SIZE/sizeof(int)) - 3)
+/*
+ * This works because the alignment is ok on all current architectures
+ * but we leave open this being overridden in the future
+ */
+#ifndef VKI___ARCH_SIGEV_PREAMBLE_SIZE
+#define VKI___ARCH_SIGEV_PREAMBLE_SIZE	(sizeof(int) * 2 + sizeof(vki_sigval_t))
 #endif
 
-// [[Nb: in 2.6.8.1, this constant is never defined...]]
-#ifndef HAVE_ARCH_SIGEVENT_T
+#define VKI_SIGEV_MAX_SIZE	64
+#define VKI_SIGEV_PAD_SIZE	((VKI_SIGEV_MAX_SIZE - VKI___ARCH_SIGEV_PREAMBLE_SIZE) \
+		/ sizeof(int))
 
 typedef struct vki_sigevent {
 	vki_sigval_t sigev_value;
@@ -466,8 +466,6 @@ typedef struct vki_sigevent {
 		} _sigev_thread;
 	} _sigev_un;
 } vki_sigevent_t;
-
-#endif
 
 //----------------------------------------------------------------------
 // From elsewhere...
@@ -849,8 +847,13 @@ struct vki_elf_prpsinfo
 };
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/eventpoll.h
+// From linux-2.6.12.1/include/linux/eventpoll.h
 //----------------------------------------------------------------------
+
+/* Valid opcodes to issue to sys_epoll_ctl() */
+#define VKI_EPOLL_CTL_ADD 1
+#define VKI_EPOLL_CTL_DEL 2
+#define VKI_EPOLL_CTL_MOD 3
 
 #ifdef __x86_64__
 #define VKI_EPOLL_PACKED __attribute__((packed))
@@ -858,7 +861,7 @@ struct vki_elf_prpsinfo
 #define VKI_EPOLL_PACKED
 #endif
 
-struct epoll_event {
+struct vki_epoll_event {
 	__vki_u32 events;
 	__vki_u64 data;
 } VKI_EPOLL_PACKED;
@@ -1128,11 +1131,10 @@ struct vki_io_event {
 	__vki_s64	result2;	/* secondary result */
 };
 
-#define VKI_PADDED(x,y)	x, y
 #if defined(VKI_LITTLE_ENDIAN)
-#define VKI_PADDED(x,y)	x, y
+#  define VKI_PADDED(x,y)	x, y
 #elif defined(VKI_BIG_ENDIAN)
-#define VKI_PADDED(x,y)	y, x
+#  define VKI_PADDED(x,y)	y, x
 #else
 #error edit for your odd byteorder.
 #endif
@@ -1423,7 +1425,18 @@ struct vki_ppdev_frob_struct {
 // From linux-2.6.8.1/include/linux/fs.h
 //----------------------------------------------------------------------
 
+#define VKI_BLKROSET   _VKI_IO(0x12,93)	/* set device read-only (0 = read-write) */
+#define VKI_BLKROGET   _VKI_IO(0x12,94)	/* get read-only status (0 = read_write) */
 #define VKI_BLKGETSIZE _VKI_IO(0x12,96) /* return device size /512 (long *arg) */
+#define VKI_BLKRASET   _VKI_IO(0x12,98)	/* set read ahead for block device */
+#define VKI_BLKRAGET   _VKI_IO(0x12,99)	/* get current read ahead setting */
+#define VKI_BLKFRASET  _VKI_IO(0x12,100)/* set filesystem (mm/filemap.c) read-ahead */
+#define VKI_BLKFRAGET  _VKI_IO(0x12,101)/* get filesystem (mm/filemap.c) read-ahead */
+#define VKI_BLKSECTGET _VKI_IO(0x12,103)/* get max sectors per request (ll_rw_blk.c) */
+#define VKI_BLKSSZGET  _VKI_IO(0x12,104)/* get block device sector size */
+#define VKI_BLKBSZGET  _VKI_IOR(0x12,112,vki_size_t)
+#define VKI_BLKBSZSET  _VKI_IOW(0x12,113,vki_size_t)
+#define VKI_BLKGETSIZE64 _VKI_IOR(0x12,114,vki_size_t) /* return device size in bytes (u64 *arg) */
 
 #define VKI_FIBMAP	_VKI_IO(0x00,1)	/* bmap access */
 #define VKI_FIGETBSZ    _VKI_IO(0x00,2)	/* get the block size used for bmap */
@@ -1708,6 +1721,14 @@ typedef struct vki_audio_buf_info {
 // From linux-2.6.8.1/include/linux/hdreg.h
 //----------------------------------------------------------------------
 
+struct vki_hd_geometry {
+      unsigned char heads;
+      unsigned char sectors;
+      unsigned short cylinders;
+      unsigned long start;
+};
+
+#define VKI_HDIO_GETGEO		0x0301	/* get device geometry */
 #define VKI_HDIO_GET_IDENTITY	0x030d	/* get IDE identification info */
 
 // [[Nb: done like this because the original type is a huge struct that will

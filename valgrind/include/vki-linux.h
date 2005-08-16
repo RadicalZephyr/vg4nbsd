@@ -481,6 +481,11 @@ typedef struct vki_sigevent {
 #define VKI_MAP_NOSYMS  0x40000000      // internal: disable symbol loading
 #define VKI_MAP_CLIENT  0x80000000      // internal: distinguish client mappings
 
+/* These numbers are obtained by experimentation */
+#define	VKI_X_OK	0x01	/* test for execute or search permission */
+#define	VKI_W_OK	0x02	/* test for write permission */
+#define	VKI_R_OK	0x04	/* test for read permission */
+
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/net.h
 //----------------------------------------------------------------------

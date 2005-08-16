@@ -188,19 +188,11 @@ Int VG_(getdents) (UInt fd, struct vki_dirent *dirp, UInt count)
    nonzero otherwise. */
 Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 {
-#if defined(VGO_linux)
-   /* Very annoyingly, I cannot find any definition for R_OK et al in
-      the kernel interfaces.  Therefore I reluctantly resort to
-      hardwiring in these magic numbers that I determined by
-      experimentation. */
-   UWord w = (irusr ? 4/*R_OK*/ : 0)
-             | (iwusr ? 2/*W_OK*/ : 0)
-             | (ixusr ? 1/*X_OK*/ : 0);
+   UWord w = (irusr ? VKI_R_OK : 0)
+	     | (iwusr ? VKI_W_OK : 0)
+	     | (ixusr ? VKI_X_OK : 0);
    SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
    return res.isError ? 1 : res.val;
-#else
-#  error "Don't know how to do VG_(access) on this OS"
-#endif
 }
 
 SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset )

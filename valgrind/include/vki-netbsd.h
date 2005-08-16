@@ -441,8 +441,6 @@ typedef struct vki_sigevent {
 // From elsewhere...
 //----------------------------------------------------------------------
 
-// [[The kernel actually uses the numbers 0,1,2 directly here, believe it or
-// not.  So we introduce our own constants, based on the glibc ones.]]
 #define VKI_SEEK_SET              0
 #define VKI_SEEK_CUR              1
 #define VKI_SEEK_END              2
@@ -450,6 +448,12 @@ typedef struct vki_sigevent {
 // [[Our own additional mmap flags]]
 #define VKI_MAP_NOSYMS  0x40000000      // internal: disable symbol loading
 #define VKI_MAP_CLIENT  0x80000000      // internal: distinguish client mappings
+
+/* access function */
+#define	VKI_F_OK	0	/* test for existence of file */
+#define	VKI_X_OK	0x01	/* test for execute or search permission */
+#define	VKI_W_OK	0x02	/* test for write permission */
+#define	VKI_R_OK	0x04	/* test for read permission */
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/net.h

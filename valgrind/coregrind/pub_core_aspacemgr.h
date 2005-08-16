@@ -44,6 +44,10 @@
 
 #include "pub_tool_aspacemgr.h"
 
+// So we include that header, because otherwise we get a compile error about
+// SegInfo...
+#include "pub_core_debuginfo.h"
+
 // Address space globals
 extern Addr VG_(client_base);	 // client address space limits
 extern Addr VG_(client_end);

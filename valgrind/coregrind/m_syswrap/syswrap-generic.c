@@ -2194,9 +2194,6 @@ PRE(sys_getsid)
 // platforms only and treats the offset as two values - the
 // kernel relies on stack based argument passing conventions
 // to merge the two together.
-// XXX: only for 32-bit archs
-// XXX even more: this in fact gets used by amd64-linux.  Someone
-// should look into this properly.
 PRE(sys_pread64)
 {
    *flags |= SfMayBlock;
@@ -2363,14 +2360,6 @@ PRE(sys_execve)
    if (ARG3 != 0) {
       envp = VG_(env_clone)( (Char**)ARG3 );
       VG_(env_remove_valgrind_env_stuff)( envp );
-   { // Remove the valgrind-specific stuff from the environment so the
-     // child doesn't get vg_preload_core.so, vg_preload_TOOL.so, etc.  
-     // This is done unconditionally, since if we are tracing the child,
-     // stage1/2 will set up the appropriate client environment.
-     Char** envp = (Char**)ARG3;
-     if (envp != NULL) {
-        VG_(env_remove_valgrind_env_stuff)( envp );
-     }
    }
 
    if (VG_(clo_trace_children)) {
@@ -2748,8 +2737,7 @@ POST(sys_fcntl64)
          SET_STATUS_Failure( VKI_EMFILE );
       } else {
          if (VG_(clo_track_fds))
-            VG_(record_fd_open)(tid, RES, 
-                                VG_(resolve_filename)(RES));
+            record_fd_open_named(tid, RES);
       }
    }
 }
@@ -4874,7 +4862,7 @@ PRE(sys_readv)
    PRE_REG_READ3(ssize_t, "readv",
                  unsigned long, fd, const struct iovec *, vector,
                  unsigned long, count);
-   if (!VG_(fd_allowed)(ARG1, "readv", tid, False)) {
+   if (!ML_(fd_allowed)(ARG1, "readv", tid, False)) {
       SET_STATUS_Failure( VKI_EBADF );
    } else {
       PRE_MEM_READ( "readv(vector)", ARG2, ARG3 * sizeof(struct vki_iovec) );
@@ -5246,7 +5234,7 @@ PRE(sys_writev)
    PRE_REG_READ3(ssize_t, "writev",
                  unsigned long, fd, const struct iovec *, vector,
                  unsigned long, count);
-   if (!VG_(fd_allowed)(ARG1, "writev", tid, False)) {
+   if (!ML_(fd_allowed)(ARG1, "writev", tid, False)) {
       SET_STATUS_Failure( VKI_EBADF );
    } else {
       PRE_MEM_READ( "writev(vector)", 
@@ -5620,7 +5608,7 @@ PRE(sys_mq_timedreceive)
                  vki_mqd_t, mqdes, char *, msg_ptr, vki_size_t, msg_len,
                  unsigned int *, msg_prio,
                  const struct timespec *, abs_timeout);
-   if (!VG_(fd_allowed)(ARG1, "mq_timedreceive", tid, False)) {
+   if (!ML_(fd_allowed)(ARG1, "mq_timedreceive", tid, False)) {
       SET_STATUS_Failure( VKI_EBADF );
    } else {
       PRE_MEM_WRITE( "mq_timedreceive(msg_ptr)", ARG2, ARG3 );
@@ -5658,7 +5646,7 @@ PRE(sys_mq_getsetattr)
    PRE_REG_READ3(long, "mq_getsetattr",
                  vki_mqd_t, mqdes, const struct mq_attr *, mqstat,
                  struct mq_attr *, omqstat);
-   if (!VG_(fd_allowed)(ARG1, "mq_getsetattr", tid, False)) {
+   if (!ML_(fd_allowed)(ARG1, "mq_getsetattr", tid, False)) {
       SET_STATUS_Failure( VKI_EBADF );
    } else {
       if (ARG2 != 0) {

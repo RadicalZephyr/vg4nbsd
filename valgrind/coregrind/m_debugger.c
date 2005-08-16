@@ -40,6 +40,7 @@
 
 // We can remove these easily by implementing our own VG_(ptrace)() and
 // VG_(fork)().
+#include <sys/types.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <unistd.h>

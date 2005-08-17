@@ -162,10 +162,10 @@ VEX_PRIMARY_SOURCES = \
 #
 # So we search for the line with a hex value "+ SIZEOF_HEADERS", and replace
 # all the hex values in that line with "valt_load_address".
-valt_load_address.lds: Makefile
-	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/d' \
-		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
-	|| rm -f $@
+#valt_load_address.lds: Makefile
+#	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
+#		-e '1,/^=====\+$$/d' \
+#		-e '/^=====\+$$/d' \
+#		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+#	|| rm -f $@
 

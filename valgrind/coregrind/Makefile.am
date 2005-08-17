@@ -158,7 +158,7 @@ libcoregrind_a_LIBADD= $(libcoregrind_a_extra) $(libcoregrind_a_extra2)
 
 vg_preload_core_so_SOURCES = vg_preloaded.c
 vg_preload_core_so_CFLAGS = $(AM_CFLAGS) -fpic
-vg_preload_core_so_LDADD = -ldl
+vg_preload_core_so_LDADD = $(LIBDL)
 vg_preload_core_so_LDFLAGS = \
 	-shared \
 	-Wl,--soname,vg_preload_core.so \

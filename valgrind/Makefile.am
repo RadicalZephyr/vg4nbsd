@@ -31,8 +31,8 @@ pkgconfig_DATA = valgrind.pc
 incincdir = $(includedir)/valgrind
 nodist_incinc_HEADERS = $(VEX_PUBLIC_HDRS)
 
-BUILT_SOURCES  = default.supp valgrind.pc valt_load_address.lds
-CLEANFILES     = valt_load_address.lds
+BUILT_SOURCES  = default.supp valgrind.pc
+CLEANFILES     =
 DISTCLEANFILES = default.supp
 
 default.supp: $(SUPP_FILES)

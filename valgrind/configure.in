@@ -202,6 +202,10 @@ case "${host_os}" in
         AC_MSG_RESULT([ok (${host_os})])
         VG_OS="netbsdelf2"
         ;;
+     *netbsdelf3*)
+        AC_MSG_RESULT([ok (${host_os})])
+        VG_OS="netbsdelf2"
+        ;;
 
      *) 
 	AC_MSG_RESULT([no (${host_os})])

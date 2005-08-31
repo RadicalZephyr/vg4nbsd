@@ -202,6 +202,7 @@ static void scan_auxv(void* init_sp)
 #        endif
 
          case AT_PHDR:
+		 VG_(printf)("AT_PHDR\n");
             VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
             break;
 
@@ -230,7 +231,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
    }
 
    VG_(valgrind_last)  = VG_ROUNDUP(argc_addr, 0x10000) - 1; // stack
-
+   VG_(printf)("valgrind base %p\n valgrind_last :%p\n",VG_(valgrind_base),VG_(valgrind_last));
    // This gives the client the largest possible address space while
    // taking into account the tool's shadow needs.
    client_size         = VG_ROUNDDN((VG_(valgrind_base)-REDZONE_SIZE) / (1.+ratio),
@@ -247,7 +248,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
 
 #define SEGSIZE(a,b) ((VG_(b) - VG_(a))/(1024*1024))
 
-   if (0)
+   if (1)
       VG_(printf)(
          "client_base        %p (%dMB)\n"
          "client_mapbase     %p (%dMB)\n"

@@ -101,6 +101,8 @@ void* VG_(get_memory_from_mmap) ( SizeT nBytes, Char* who )
 {
    static SizeT tot_alloc = 0;
    void* p;
+	   VG_(printf)("valgrind base %p , valgrind last %p\n",VG_(valgrind_base),VG_(valgrind_last));
+
    p = VG_(mmap)(0, nBytes,
                  VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC,
                  VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, SF_VALGRIND, -1, 0);
@@ -109,9 +111,9 @@ void* VG_(get_memory_from_mmap) ( SizeT nBytes, Char* who )
       vg_assert((void*)VG_(valgrind_base) <= p && p <= (void*)VG_(valgrind_last));
       tot_alloc += nBytes;
       if (0)
-         VG_(printf)(
-            "get_memory_from_mmap: %llu tot, %llu req = %p .. %p, caller %s\n",
-            (ULong)tot_alloc, (ULong)nBytes, p, ((char*)p) + nBytes - 1, who );
+	      VG_(printf)(
+		      "get_memory_from_mmap: %llu tot, %llu req = %p .. %p, caller %s\n",
+		      (ULong)tot_alloc, (ULong)nBytes, p, ((char*)p) + nBytes - 1, who );
       return p;
    }
 

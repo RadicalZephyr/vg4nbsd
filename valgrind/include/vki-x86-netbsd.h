@@ -255,7 +255,7 @@ typedef struct vki_sigcontext {
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
 //#define VKI_MAP_TYPE	0x0f		/* Mask for type of mapping */
 #define VKI_MAP_FIXED	0x10		/* Interpret addr exactly */
-#define VKI_MAP_ANONYMOUS	0x20	/* don't use a file */
+#define VKI_MAP_ANONYMOUS	0x1000	/* don't use a file */
 #define VKI_MAP_NORESERVE	0x4000		/* don't check for reservations */
 
 //----------------------------------------------------------------------

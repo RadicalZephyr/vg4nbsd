@@ -236,14 +236,14 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
    // taking into account the tool's shadow needs.
    client_size         = VG_ROUNDDN((VG_(valgrind_base)-REDZONE_SIZE) / (1.+ratio),
                          CLIENT_SIZE_MULTIPLE);
-   VG_(client_base)    =/*  0x09000000 */0 ;
+   VG_(client_base)    = 0  ;
    VG_(client_end)     = VG_(client_base) + client_size;
    /* where !FIXED mmap goes */
    VG_(client_mapbase) = VG_(client_base) +
          VG_PGROUNDDN((Addr)(client_size * CLIENT_HEAP_PROPORTION));
 
    VG_(shadow_base)    = VG_(client_end) + REDZONE_SIZE;
-   VG_(shadow_end)     = VG_(valgrind_base);
+   VG_(shadow_end)     = /* VG_(valgrind_base) */ VG_(shadow_base) + 0x50000000;
    shadow_size         = VG_(shadow_end) - VG_(shadow_base);
 
 #define SEGSIZE(a,b) ((VG_(b) - VG_(a))/(1024*1024))
@@ -521,7 +521,7 @@ static void get_command_line( int argc, char** argv,
 	 augment_command_line(&vg_argc0, &vg_argv0);
    }
 
-   if (0) {
+   if (1) {
       Int i;
       for (i = 0; i < vg_argc0; i++)
          VG_(printf)("vg_argv0[%d]=\"%s\"\n", i, vg_argv0[i]);
@@ -1988,13 +1988,13 @@ static void setup_file_descriptors(void)
    VG_(fd_soft_limit) = rl.rlim_cur - N_RESERVED_FDS;
    VG_(fd_hard_limit) = rl.rlim_cur - N_RESERVED_FDS;
 
-   /* Update the soft limit. */
    VG_(setrlimit)(VKI_RLIMIT_NOFILE, &rl);
 
    if (vgexecfd != -1)
       vgexecfd = VG_(safe_fd)( vgexecfd );
    if (VG_(clexecfd) != -1)
       VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
+   VG_(printf)("returning from set_file_descr\n");
 }
 
 /*====================================================================*/
@@ -2501,6 +2501,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup file descriptors\n");
    setup_file_descriptors();
+   VG_(printf)("after setup\n");
 
    //--------------------------------------------------------------
    // Build segment map (Valgrind segments only)

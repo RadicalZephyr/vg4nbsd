@@ -282,7 +282,12 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
    // Map shadow memory.
    // Initially all inaccessible, incrementally initialized as it is used
    if (shadow_size != 0) {
-      res = VG_(mmap_native)((char *)VG_(shadow_base), shadow_size,
+	   Addr shadow_s ;
+	   int count;
+	   Addr chunk = 0x4000000;
+	   shadow_s = shadow_size;
+	   for (count =0 ;  (shadow_s > 0 ); count ++ ) {
+      res = VG_(mmap_native)((char *)VG_(shadow_base) + (count * chunk), /* shadow_size */ ((shadow_s >= chunk) ? chunk : shadow_s),
                   VKI_PROT_NONE,
                   VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_FIXED|VKI_MAP_NORESERVE,
                   -1, 0);
@@ -301,7 +306,10 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
          ); 
          VG_(exit)(1);
       }
+      shadow_s -= chunk;
    }
+   }
+   
 }
 
 /*====================================================================*/

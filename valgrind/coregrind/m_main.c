@@ -236,7 +236,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
    // taking into account the tool's shadow needs.
    client_size         = VG_ROUNDDN((VG_(valgrind_base)-REDZONE_SIZE) / (1.+ratio),
                          CLIENT_SIZE_MULTIPLE);
-   VG_(client_base)    = 0;
+   VG_(client_base)    =/*  0x09000000 */0 ;
    VG_(client_end)     = VG_(client_base) + client_size;
    /* where !FIXED mmap goes */
    VG_(client_mapbase) = VG_(client_base) +
@@ -269,8 +269,9 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
 #undef SEGSIZE
 
    // Ban redzone
-   res = VG_(mmap_native)((void *)VG_(client_end), REDZONE_SIZE, VKI_PROT_NONE,
-               VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE|VKI_MAP_NORESERVE,
+
+   res = VG_(mmap_native)((void *)VG_(client_end) , REDZONE_SIZE , VKI_PROT_NONE,
+			  VKI_MAP_FIXED | VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE |VKI_MAP_NORESERVE,
                -1, 0);
    vg_assert(!res.isError);
 
@@ -2331,7 +2332,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    /* Start the debugging-log system ASAP.  First find out how many 
       "-d"s were specified.  This is a pre-scan of the command line. */
-   printf("In stage 2 main!\n");
+   VG_(printf)("In stage 2 main!\n");
    loglevel = 0;
    for (i = 1; i < argc; i++) {
       if (argv[i][0] != '-')
@@ -2342,12 +2343,12 @@ Int main(Int argc, HChar **argv, HChar **envp)
          loglevel++;
    }
 
-   printf("dooing debuglog startup\n");
+   VG_(printf)("dooing debuglog startup\n");
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
 
-   printf("after debuglog startup\n");
+   VG_(printf)("after debuglog startup\n");
    //============================================================
    // Command line argument handling order:
    // * If --help/--help-debug are present, show usage message 
@@ -2361,9 +2362,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // This prevents any internal uses of brk() from having any effect.
    // We remember the old value so we can restore it on exec, so that
    // child processes will have a reasonable brk value.
-   VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
-   zero.rlim_max = VG_(client_rlimit_data).rlim_max;
-   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
+//   VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
+   // zero.rlim_max = VG_(client_rlimit_data).rlim_max;
+   //  VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
 
    // Get the current process stack rlimit.
    VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));

@@ -92,8 +92,8 @@ SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
       res = VG_(do_syscall1)(__NR_mmap, (UWord)args );
    }
 #elif defined(VGP_x86_netbsdelf2)
-   res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
-                         prot, flags, fd, offset);
+   res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length, 
+                         prot, flags, fd, 0 , (offset));
 #elif defined(VGP_amd64_linux)
    res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
                          prot, flags, fd, offset);

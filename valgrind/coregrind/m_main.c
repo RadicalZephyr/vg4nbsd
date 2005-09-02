@@ -1990,6 +1990,7 @@ static void setup_file_descriptors(void)
 
    VG_(setrlimit)(VKI_RLIMIT_NOFILE, &rl);
 
+
    if (vgexecfd != -1)
       vgexecfd = VG_(safe_fd)( vgexecfd );
    if (VG_(clexecfd) != -1)

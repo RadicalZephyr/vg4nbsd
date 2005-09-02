@@ -769,8 +769,8 @@ struct	vki_rusage {
 };
 
 struct vki_rlimit {
-	unsigned long	rlim_cur;
-	unsigned long	rlim_max;
+	long long int rlim_cur;
+	long long int	rlim_max;
 };
 
 //----------------------------------------------------------------------

@@ -112,14 +112,23 @@ Int VG_(pipe) ( Int fd[2] )
    SysRes res = VG_(do_syscall1)(__NR_pipe, (UWord)fd);
    return res.isError ? -1 : 0;
 }
-
+#if defined (VGO_netbsdelf2)
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
-   SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
+	SysRes res = VG_(do_syscall4)(__NR_lseek, fd,0 /* pad */, offset, whence);
    return res.isError ? (-1) : 0;
    /* if you change the error-reporting conventions of this, also
       change VG_(pread) and all other usage points. */
 }
+#else
+OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
+{
+	SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
+   return res.isError ? (-1) : 0;
+   /* if you change the error-reporting conventions of this, also
+      change VG_(pread) and all other usage points. */
+}
+#endif 
 
 SysRes VG_(stat) ( Char* file_name, struct vki_stat* buf )
 {

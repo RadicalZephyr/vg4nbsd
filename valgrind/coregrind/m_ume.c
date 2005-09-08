@@ -284,7 +284,7 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
 	char ** argu;
 	long argc = 0;
 	argu = ( const char **) &sp[1];
-	printf("The argu is %s\n",argu[0]);
+	VG_(printf)("The argu is %s\n",argu[0]);
 	argc = *(long *)sp;
 	sp+=2+argc ; /* skip over argc arguments and null terminator */
         while(*sp++!=0) { } /* skip over environment and null terminator */
@@ -338,6 +338,7 @@ struct elfinfo *readelf(int fd, const char *filename)
       VG_(printf)("valgrind: %s: bad ELF magic number\n", filename);
       goto bad;
    }
+
    if (e->e.e_ident[EI_CLASS] != VG_ELF_CLASS) {
       VG_(printf)("valgrind: wrong ELF executable class "
                   "(eg. 32-bit instead of 64-bit)\n");
@@ -366,7 +367,7 @@ struct elfinfo *readelf(int fd, const char *filename)
    phsz = sizeof(ESZ(Phdr)) * e->e.e_phnum;
    e->p = hack_malloc(phsz);
    vg_assert(e->p);
-
+   VG_(printf)("e_phoff is %x\n",e->e.e_phoff);
    if (VG_(pread)(fd, e->p, phsz, e->e.e_phoff) != phsz) {
       VG_(printf)("valgrind: can't read phdr: %s\n", 
                   VG_(strerror)(errno));
@@ -378,6 +379,7 @@ struct elfinfo *readelf(int fd, const char *filename)
 
   bad:
     //FIXME    VG_(free)(e);
+   VG_(printf)("Something is bad bye\n");
    return NULL;
 }
 
@@ -498,7 +500,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    ebase = info->exe_base;
 #endif
 
-   printf("In load_ELF!\n");
+   VG_(printf)("In load_ELF!\n");
    e = readelf(fd, name);
 
    if (e == NULL)
@@ -507,25 +509,28 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    /* The kernel maps position-independent executables at TASK_SIZE*2/3;
       duplicate this behavior as close as we can. */
    if (e->e.e_type == ET_DYN && ebase == 0) {
+	   VG_(printf)("screwing up \n"); 
       ebase = VG_PGROUNDDN(info->exe_base + (info->exe_end - info->exe_base) * 2 / 3);
    }
 
    info->phnum = e->e.e_phnum;
-   info->entry = e->e.e_entry + ebase;
+   info->entry = e->e.e_entry +ebase;
    info->phdr = 0;
-
+   if(1){
+	   VG_(printf)("info->phnum:%d\n , info->entry:%p\n",info->phnum, info->entry); 
+   }
    for(i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
-
+      VG_(printf)("p_type = %p\n",ph->p_type);
       switch(ph->p_type) {
       case PT_PHDR:
       printf("in pt_hdr\n");
 	 info->phdr = ph->p_vaddr + ebase;
-	 printf("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
+	 VG_(printf)("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
 	 break;
 
       case PT_LOAD:
-	 printf ("in pt_load\n");
+	 VG_(printf) ("in pt_load\n");
 	 if (ph->p_vaddr < minaddr)
 	    minaddr = ph->p_vaddr;
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
@@ -533,12 +538,12 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 break;
 
       case PT_DYNAMIC:
-         printf ("in pt_dynamic\n");
+         VG_(printf) ("in pt_dynamic\n");
 	 if (ph->p_vaddr < minaddr)
 	    minaddr = ph->p_vaddr;
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
 	    maxaddr = ph->p_vaddr+ph->p_memsz;
-	 printf("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
+	 VG_(printf)("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
 	 break;
 			
       case PT_INTERP: {
@@ -546,17 +551,26 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 int j;
 	 int intfd;
 	 int baseaddr_set;
+	 SysRes res;
 
          vg_assert(buf);
 	 VG_(pread)(fd, buf, ph->p_filesz, ph->p_offset);
 	 buf[ph->p_filesz] = '\0';
 
-	 intfd = open(buf, O_RDONLY);
-	 if (intfd == -1) {
-	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
-	    VG_(exit)(1);
-	 }
+/* 	 intfd = VG_(open)(buf, O_RDONLY, 444); // WAS just open - kailash // */
 
+/* 	 if (intfd == -1) { */
+/* 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n"); */
+/* 	    VG_(exit)(1); */
+/* 	 } */
+	 res = VG_(open)(buf, VKI_O_RDONLY, VKI_S_IRUSR);
+	 if ( !res.isError ) {
+		 intfd = res.val;
+	 }
+	 else {
+		 VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
+		 VG_(exit)(1);
+	 }
 	 interp = readelf(intfd, buf);
 	 if (interp == NULL) {
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");

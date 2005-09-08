@@ -1994,8 +1994,7 @@ static void setup_file_descriptors(void)
    if (vgexecfd != -1)
       vgexecfd = VG_(safe_fd)( vgexecfd );
    if (VG_(clexecfd) != -1)
-      VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
-   VG_(printf)("returning from set_file_descr\n");
+	   VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
 }
 
 /*====================================================================*/

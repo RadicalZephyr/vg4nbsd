@@ -117,13 +117,12 @@ asm(
     "popl %eax\n"
     "push %ecx\n"
     "int $0x80\n"
-    "push %ecx\n"
     "jae 1f\n"
     "movl $-1,%eax\n"
     "1:\n"
     "ret\n"
     );
-
+/* there was a push %ecx\n after int 80h, i dont know why its there so its removed */
 /*
  * All args on the stack, syscall number in %eax.
  */

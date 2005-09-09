@@ -463,10 +463,10 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 bytes = bss & (VKI_PAGE_SIZE - 1);
 
          // The 'prot' condition allows for a read-only bss
-         if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {
-	    bytes = VKI_PAGE_SIZE - bytes;
-	    VG_(memset)((char *)bss, 0, bytes);
-	 }
+     /*     if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {  - XXXX KAILASH for now */ 
+/* 	    bytes = VKI_PAGE_SIZE - bytes; */
+/* 	    VG_(memset)((char *)bss, 0, bytes); */
+/* 	 } */
       }
    }
 
@@ -644,14 +644,14 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       Char*  base = (Char *)info->exe_base;
       Char*  baseoff;
       Int flags = VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS;
-
+      VG_(printf)("info->exebase %p\n info->map_base %p\n",info->exe_base,info->map_base);
       if (info->map_base != 0) {
 	 base = (char *)VG_ROUNDUP(info->map_base, interp_align);
 	 flags |= VKI_MAP_FIXED;
       }
 
       printf("doing mmap here\n");
-      res = VG_(mmap_native)(base, interp_size, VKI_PROT_NONE, flags, -1, 0);
+      res = VG_(mmap_native)( base  , interp_size, VKI_PROT_NONE, flags, -1, 0);
       check_mmap(res, base, interp_size);
       vg_assert(!res.isError);
       base = (Char*)res.val;

@@ -55,7 +55,7 @@ static inline Bool fd_exists(Int fd)
 Int VG_(safe_fd)(Int oldfd)
 {
    Int newfd;
-
+  VG_(printf)("fd hard limit %d\n", VG_(fd_hard_limit));
    vg_assert(VG_(fd_hard_limit) != -1);
 
    newfd = VG_(fcntl)(oldfd, VKI_F_DUPFD, VG_(fd_hard_limit));
@@ -106,12 +106,42 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
    return res.isError ? -1 : res.val;
 }
+#if defined (VGP_x86_netbsdelf2) 
+/* Int VG_(do_pipe_inner)(int pipeno ,Int fd[2]) */
+/* { */
+	asm(
+		"do_pipe_inner:\n"
+		"popl %ecx\n"
+		"popl %eax\n"
+		"push %ecx\n"
+		"int     $0x80\n"
+		"jb      1f\n"
+		"movl    4(%esp),%ecx\n"  /* fill in fd1 and 2 */
+		"movl    %eax,(%ecx)\n"
+		"movl    %edx,4(%ecx)\n"
+		"movl    $0,%eax\n"
+		"ret\n"
+		"1:\n"
+		"negl    %eax\n"
+		"ret\n"
+		);
 
+Int VG_(pipe) ( Int fd[2])
+{ int ret;
+	ret =   do_pipe_inner(__NR_pipe, fd);
+VG_(printf)("fd 1 is %d\n",fd[0]);
+VG_(printf)("fd 2 is %d\n",fd[1]);
+
+	return ret;
+}
+
+#else
 Int VG_(pipe) ( Int fd[2] )
 {
-   SysRes res = VG_(do_syscall1)(__NR_pipe, (UWord)fd);
+   SysRes res = VG_(do_syscall0)(__NR_pipe, (UWord)fd);
    return res.isError ? -1 : 0;
 }
+#endif 
 #if defined (VGO_netbsdelf2)
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {

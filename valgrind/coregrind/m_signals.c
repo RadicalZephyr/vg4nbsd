@@ -386,7 +386,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-   if (0)
+   if (1)
       pp_SKSS();
 }
 
@@ -479,7 +479,7 @@ static void handle_SCSS_change ( Bool force_update )
       VG_(sigdelset)( &ksa.sa_mask, VKI_SIGSTOP );
 
       if (VG_(clo_trace_signals) && VG_(clo_verbosity) > 2)
-         VG_(message)(Vg_DebugMsg, 
+         VG_(printf)(
             "setting ksig %d to: hdlr 0x%x, flags 0x%x, "
             "mask(63..0) 0x%x 0x%x",
             sig, ksa.ksa_handler,
@@ -487,8 +487,8 @@ static void handle_SCSS_change ( Bool force_update )
             ksa.sa_mask.sig[1], 
             ksa.sa_mask.sig[0] 
          );
-
-      res = VG_(sigaction)( sig, &ksa, &ksa_old );
+      VG_(printf)("calling sigaction sig = %d\n",sig);
+      res = VG_(sigaction)(sig, &ksa, &ksa_old );
       vg_assert(res == 0);
 
       /* Since we got the old sigaction more or less for free, might

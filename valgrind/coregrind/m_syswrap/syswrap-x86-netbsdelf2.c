@@ -139,6 +139,7 @@ SSizeT VG_(stack_unused)(ThreadId tid)
 */
 static void run_a_thread_NORETURN ( Word tidW )
 {
+	VG_(printf)("in run a thread_noreturn\n");
    ThreadId tid = (ThreadId)tidW;
 
    VG_(debugLog)(1, "syswrap-x86-netbsd", 

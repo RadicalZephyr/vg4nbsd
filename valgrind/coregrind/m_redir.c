@@ -369,8 +369,11 @@ void VG_(setup_code_redirect_table) ( void )
    //CAB: TODO
 
 #elif defined(VGP_x86_netbsdelf2)
-   // NetBSD: TODO
-   I_die_here;
+   // NetBSD: TODO - XXXX 
+/*  add_redirect_sym_to_addr( */
+/*       "soname:ld-elf.so", "_dl_sysinfo_int80", */
+/*       (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80) */
+/*    ); */
 
 #else
 #  error Unknown platform

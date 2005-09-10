@@ -144,6 +144,24 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 /* The functions sigaction, sigprocmask, sigpending and sigsuspend
    return 0 on success and -1 on error.  
 */
+/* #if defined (VGP_x86_netbsdelf2) */
+/* asm(  */
+/* 	"do_sigprocmask_inner:\n" */
+/* 	"movl    8(%esp),%ecx\n"            /\*  fetch new sigset pointer *\/ */
+/* 	"testl   %ecx,%ecx\n"               /\*  check new sigset pointer *\/ */
+/* 	"jnz     1f\n"                      /\*  if not null, indirect *\/ */
+/* 	"movl    $1,4(%esp)\n "             /\*  SIG_BLOCK *\/ */
+/* 	"jmp     2f\n" */
+/* 	"1:movl    (%ecx),%ecx\n"             /\*  fetch indirect  ... *\/ */
+/* 	"movl    %ecx,8(%esp)\n"             /\* to new mask arg *\/ */
+/* 	"2:movl $48,%eax\n" /\*  move syscall no to eax  *\/ */
+/* 	"int $0x80\n" */
+/* 	"jae 3f\n" */
+/* 	"movl $-1,%eax\n" */
+/* 	"3:\n" */
+/* 	"ret\n" */
+/* 	); */
+/* #endif  */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
 #  if !defined(VGP_x86_netbsdelf2)
@@ -152,7 +170,9 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-   I_die_here;
+   SysRes res = VG_(do_syscall3)(__NR___sigprocmask14, how,(UWord)set,(UWord)oldset);
+/*    return do_sigprocmask_inner(how,set,oldset); */
+   return res.isError ? -1 : 0;
 #endif
 }
 
@@ -166,7 +186,10 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-   I_die_here;
+SysRes res = VG_(do_syscall4)(__NR_compat_13_sigaction13,
+                                 signum, (UWord)act, (UWord)oldact, 
+                                 _VKI_NSIG_WORDS * sizeof(UWord));
+   return res.isError ? -1 : 0;
 #endif
 }
 

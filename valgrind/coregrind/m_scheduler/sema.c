@@ -49,6 +49,7 @@ void ML_(sema_init)(vg_sema_t *sema)
 
    /* create initial token */
    VG_(write)(sema->pipe[1], "T", 1);
+   VG_(printf)("Out of sema_init\n");
 }
 
 void ML_(sema_deinit)(vg_sema_t *sema)

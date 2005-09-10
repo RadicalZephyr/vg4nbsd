@@ -81,7 +81,7 @@ typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 #define VKI_SIG_IGN	((__vki_sighandler_t)1)	/* ignore signal */
 
 
-#define _VKI_NSIG       64  /* true for linux 2.2.X and 2.4.X */
+#define _VKI_NSIG       63  /* true for linux 2.2.X and 2.4.X */
 #define _VKI_NSIG_BPW   32  /* since we're using UInts */
 #define _VKI_NSIG_WORDS 4
 

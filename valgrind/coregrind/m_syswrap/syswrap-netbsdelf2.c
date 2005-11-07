@@ -55,7 +55,7 @@ VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
    VG_(debugLog)(1, "core_os",
                     "ML_(thread_wrapper)(tid=%lld): entry\n",
                     (ULong)tidW);
-
+   VG_(printf)("in ml_threadwrapper\n");
    VgSchedReturnCode ret;
    ThreadId     tid = (ThreadId)tidW;
    ThreadState* tst = VG_(get_ThreadState)(tid);
@@ -65,20 +65,20 @@ VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
    /* make sure we get the CPU lock before doing anything significant */
    VG_(set_running)(tid);
 
-   if (0)
+   if (1)
       VG_(printf)("thread tid %d started: stack = %p\n",
 		  tid, &tid);
 
    VG_TRACK ( post_thread_create, tst->os_state.parent, tid );
-
+   VG_(printf)("before VG_Getpid\n");
    tst->os_state.lwpid = VG_(gettid)();
    tst->os_state.threadgroup = VG_(getpid)();
-
+   VG_(printf)("after VG_Getpid\n");
    /* Thread created with all signals blocked; scheduler will set the
       appropriate mask */
 
    ret = VG_(scheduler)(tid);
-
+   VG_(printf)("after VG_scheduler\n");
    vg_assert(VG_(is_exiting)(tid));
    
    vg_assert(tst->status == VgTs_Runnable);

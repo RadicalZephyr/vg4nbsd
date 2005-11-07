@@ -2391,7 +2391,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   if (0) {  HChar *cp = VG_(getenv)(VALGRINDLIB);
+   if (1) {  HChar *cp = VG_(getenv)(VALGRINDLIB);
       if (cp != NULL)
 	 VG_(libdir) = cp;
    }
@@ -2661,8 +2661,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //         aren't identified as part of the client, which would waste
    //         > 20M of virtual address space.]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
    VG_(init_tt_tc)();
+   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+
 
    //--------------------------------------------------------------
    // Initialise the redirect table.
@@ -2706,8 +2707,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // register client stack
    //--------------------------------------------------------------
+   VG_(printf)("registering client stack... ");
    VG_(clstk_id) = VG_(register_stack)(VG_(clstk_base), VG_(clstk_end));
-
+   VG_(printf)("registered! ");
    //--------------------------------------------------------------
    // Run!
    //--------------------------------------------------------------

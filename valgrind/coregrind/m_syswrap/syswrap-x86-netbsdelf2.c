@@ -83,6 +83,7 @@ static UWord* allocstack(ThreadId tid)
    UWord *esp;
 
    if (tst->os_state.valgrind_stack_base == 0) {
+	   VG_(printf)("stackbase = 0 so mmap stk ptr\n");
       void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE,
 			    VKI_PROT_READ|VKI_PROT_WRITE,
 			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS,
@@ -104,11 +105,11 @@ static UWord* allocstack(ThreadId tid)
       *esp = FILL;
    /* esp is left at top of stack */
 
-   if (0)
+   if (1)
       VG_(printf)("stack for tid %d at %p (%x); esp=%p\n",
 		  tid, tst->os_state.valgrind_stack_base, 
                   *(UWord*)(tst->os_state.valgrind_stack_base), esp);
-
+/* XXX - Kailash is this correct ? Within our layout*/
    return esp;
 }
 
@@ -244,14 +245,13 @@ asm(
 */
 void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
-	VG_(debugLog)(1, "syswrap-x86-netbsd", 
-		      "entering VG_(main_thread_wrapper_NORETURN)\n"); 
+	VG_(printf)( "syswrap-x86-netbsd  entering VG_(main_thread_wrapper_NORETURN)\n"); 
 
    UWord* esp = allocstack(tid);
 
    /* shouldn't be any other threads around yet */
    vg_assert( VG_(count_living_threads)() == 1 );
-
+   VG_(printf)("calling call on new_stack\n");
    call_on_new_stack_0_1( 
       (Addr)esp,              /* stack */
       0,                      /*bogus return address*/

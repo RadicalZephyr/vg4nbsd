@@ -604,8 +604,8 @@ void VG_(init_tt_tc) ( void )
    /* Otherwise lots of things go wrong... */
    vg_assert(sizeof(ULong) == 8);
    vg_assert(sizeof(Addr64) == 8);
-
-   if (VG_(clo_verbosity) > 2)
+   VG_(printf)("In init tt_cc\n");
+/*    if (VG_(clo_verbosity) > 2) */
       VG_(message)(Vg_DebugMsg, 
                    "TT/TC: VG_(init_tt_tc) "
                    "(startup of code management)");

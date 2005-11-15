@@ -227,7 +227,7 @@ void VG_(change_stack)(UWord id, Addr start, Addr end)
    tracked by the tool, and one of the specialised cases
    (eg. new_mem_stack_4) isn't used in preference.  
 */
-VG_REGPARM(2)
+VGA_REGPARM(2)
 void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
 {
    static Int moans = 3;

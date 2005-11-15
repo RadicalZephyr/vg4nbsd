@@ -421,16 +421,16 @@ extern void MAC_(do_detect_memory_leaks) (
           Bool (*is_valid_aligned_word)     ( Addr )
        );
 
-extern VG_REGPARM(1) void MAC_(new_mem_stack_4)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_4)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_8)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_8)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_12) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_12) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_16) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_16) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_32) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_32) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(new_mem_stack_4)  ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(die_mem_stack_4)  ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(new_mem_stack_8)  ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(die_mem_stack_8)  ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(new_mem_stack_12) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(die_mem_stack_12) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(new_mem_stack_16) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(die_mem_stack_16) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(new_mem_stack_32) ( Addr old_ESP );
+extern VGA_REGPARM(1) void MAC_(die_mem_stack_32) ( Addr old_ESP );
 extern               void MAC_(die_mem_stack) ( Addr a, SizeT len);
 extern               void MAC_(new_mem_stack) ( Addr a, SizeT len);
 

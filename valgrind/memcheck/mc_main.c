@@ -1563,7 +1563,7 @@ void MC_(helperc_STOREV8) ( Addr aA, ULong vbytes )
 
 #define MAKE_LOADV8(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VG_REGPARM(1)							\
+   VGA_REGPARM(1)							\
    ULong nAME ( Addr aA )	                                        \
    {									\
       PROF_EVENT(200, #nAME);				                \
@@ -1610,7 +1610,7 @@ MAKE_LOADV8( MC_(helperc_LOADV8le), False/*littleendian*/ );
 
 #define MAKE_STOREV8(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VG_REGPARM(1)							\
+   VGA_REGPARM(1)							\
    void nAME ( Addr aA, ULong vbytes )		                        \
    {									\
       PROF_EVENT(210, #nAME);				                \
@@ -1661,7 +1661,7 @@ MAKE_STOREV8( MC_(helperc_STOREV8le), False/*littleendian*/ );
 
 #define MAKE_LOADV4(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VG_REGPARM(1)							\
+   VGA_REGPARM(1)							\
    UWord nAME ( Addr aA )						\
    {									\
       PROF_EVENT(220, #nAME);						\
@@ -1716,7 +1716,7 @@ MAKE_LOADV4( MC_(helperc_LOADV4le), False/*littleendian*/ );
 
 #define MAKE_STOREV4(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VG_REGPARM(2)							\
+   VGA_REGPARM(2)							\
    void nAME ( Addr aA, UWord vbytes )					\
    {									\
       PROF_EVENT(230, #nAME);						\
@@ -1768,7 +1768,7 @@ MAKE_STOREV4( MC_(helperc_STOREV4le), False/*littleendian*/ );
 
 #define MAKE_LOADV2(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VG_REGPARM(1)							\
+   VGA_REGPARM(1)							\
    UWord nAME ( Addr aA )						\
    {									\
       PROF_EVENT(240, #nAME);						\
@@ -1819,7 +1819,7 @@ MAKE_LOADV2( MC_(helperc_LOADV2le), False/*littleendian*/ );
 
 #define MAKE_STOREV2(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VG_REGPARM(2)							\
+   VGA_REGPARM(2)							\
    void nAME ( Addr aA, UWord vbytes )					\
    {									\
       PROF_EVENT(250, #nAME);						\
@@ -1868,7 +1868,7 @@ MAKE_STOREV2( MC_(helperc_STOREV2le), False/*littleendian*/ );
 /* ------------------------ Size = 1 ------------------------ */
 /* Note: endianness is irrelevant for size == 1 */
 
-VG_REGPARM(1)
+VGA_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr aA )
 {
    PROF_EVENT(260, "helperc_LOADV1");
@@ -1916,7 +1916,7 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
 }
 
 
-VG_REGPARM(2)
+VGA_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
 {
    PROF_EVENT(270, "helperc_STOREV1");
@@ -1985,7 +1985,7 @@ void MC_(helperc_value_check8_fail) ( void )
    mc_record_value_error ( VG_(get_running_tid)(), 8 );
 }
 
-VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
+VGA_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 {
    mc_record_value_error ( VG_(get_running_tid)(), (Int)sz );
 }

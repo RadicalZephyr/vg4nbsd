@@ -19,7 +19,6 @@ PRIV_HEADERS = 	priv/host-x86/hdefs.h			\
 		priv/main/vex_globals.h			\
 		priv/main/vex_util.h			\
 		priv/guest-generic/g_generic_x87.h	\
-		priv/guest-generic/bb_to_IR.h		\
 		priv/guest-x86/gdefs.h			\
 		priv/guest-amd64/gdefs.h		\
 		priv/guest-arm/gdefs.h			\
@@ -45,7 +44,6 @@ LIB_OBJS = 	priv/ir/irdefs.o			\
 		priv/host-generic/h_generic_simd64.o	\
 		priv/host-generic/reg_alloc2.o		\
 		priv/guest-generic/g_generic_x87.o	\
-		priv/guest-generic/bb_to_IR.o		\
 		priv/guest-x86/ghelpers.o		\
 		priv/guest-amd64/ghelpers.o		\
 		priv/guest-arm/ghelpers.o		\
@@ -92,12 +90,9 @@ libvex.a: $(LIB_OBJS)
 	rm -f libvex.a
 	ar clq libvex.a $(LIB_OBJS)
 
-# This doesn't get rid of priv/main/vex_svnversion.h, because
-# that can't be regenerated in the final Valgrind tarball, and
-# so if 'make clean' did get rid of it, then in the tarball,
-# doing 'make ; make clean ; make' (or distclean) would fail.
 clean:
 	rm -f $(LIB_OBJS) libvex.a vex test_main.o \
+		priv/main/vex_svnversion.h \
 		pub/libvex_guest_offsets.h
 
 version:
@@ -207,10 +202,6 @@ priv/guest-x86/toIR.o: $(ALL_HEADERS) priv/guest-x86/toIR.c
 priv/guest-generic/g_generic_x87.o: $(ALL_HEADERS) priv/guest-generic/g_generic_x87.c
 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest-generic/g_generic_x87.o \
 					 -c priv/guest-generic/g_generic_x87.c
-
-priv/guest-generic/bb_to_IR.o: $(ALL_HEADERS) priv/guest-generic/bb_to_IR.c
-	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest-generic/bb_to_IR.o \
-					 -c priv/guest-generic/bb_to_IR.c
 
 priv/guest-x86/ghelpers.o: $(ALL_HEADERS) priv/guest-x86/ghelpers.c
 	$(CC) $(CCFLAGS) $(ALL_INCLUDES) -o priv/guest-x86/ghelpers.o \

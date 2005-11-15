@@ -8,7 +8,7 @@
 #include <elf.h>
 #include <fcntl.h>
 #include <string.h>
-//#include <malloc.h>
+#include <malloc.h>
 
 #include "linker.h"
 
@@ -44,27 +44,6 @@ static void* calloc_below2G ( Int n, Int m )
    calloc_used += n*m;
    return p;
 }
-
-#define MYMALLOC_MAX 50*1000*1000
-static HChar mymalloc_area[MYMALLOC_MAX];
-static UInt  mymalloc_used = 0;
-void* mymalloc ( Int n )
-{
-   void* p;
-   while 
-      ((UInt)(mymalloc_area+mymalloc_used) & 0xFFF)
-      mymalloc_used++;
-   assert(mymalloc_used+n < MYMALLOC_MAX);
-   p = (void*)(&mymalloc_area[mymalloc_used]);
-   mymalloc_used += n;
-   //   printf("mymalloc(%d) = %p\n", n, p);
-   return p;
-}
-
-void myfree ( void* p )
-{
-}
-
 
 ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////
@@ -211,7 +190,7 @@ typedef struct _ObjectCode {
 static void addProddableBlock ( ObjectCode* oc, void* start, int size )
 {
    ProddableBlock* pb
-      = mymalloc(sizeof(ProddableBlock));
+      = malloc(sizeof(ProddableBlock));
    if (debug_linker)
       fprintf(stderr, "aPB oc=%p %p %d   (%p .. %p)\n", oc, start, size,
 	      start, ((char*)start)+size-1 );
@@ -262,19 +241,19 @@ typedef
 
 static StringMap* new_StringMap ( void )
 {
-   StringMap* sm = mymalloc(sizeof(StringMap));
+   StringMap* sm = malloc(sizeof(StringMap));
    sm->sm_size = 10;
    sm->sm_used = 0;
-   sm->maplets = mymalloc(10 * sizeof(Maplet));
+   sm->maplets = malloc(10 * sizeof(Maplet));
    return sm;
 }
 
 static void delete_StringMap ( StringMap* sm )
 {
    assert(sm->maplets != NULL);
-   myfree(sm->maplets);
+   free(sm->maplets);
    sm->maplets = NULL;
-   myfree(sm);
+   free(sm);
 }
 
 static void ensure_StringMap ( StringMap* sm )
@@ -285,10 +264,10 @@ static void ensure_StringMap ( StringMap* sm )
    if (sm->sm_used < sm->sm_size)
      return;
    sm->sm_size *= 2;
-   mp2 = mymalloc(sm->sm_size * sizeof(Maplet));
+   mp2 = malloc(sm->sm_size * sizeof(Maplet));
    for (i = 0; i < sm->sm_used; i++)
       mp2[i] = sm->maplets[i];
-   myfree(sm->maplets);
+   free(sm->maplets);
    sm->maplets = mp2;
 }
 
@@ -1182,7 +1161,7 @@ ocGetNames_ELF ( ObjectCode* oc )
       nent = shdr[i].sh_size / sizeof(Elf_Sym);
 
       oc->n_symbols = nent;
-      oc->symbols = mymalloc(oc->n_symbols * sizeof(char*));
+      oc->symbols = malloc(oc->n_symbols * sizeof(char*));
 
       for (j = 0; j < nent; j++) {
 
@@ -1201,7 +1180,7 @@ ocGetNames_ELF ( ObjectCode* oc )
 #           else
             ad = calloc(1, stab[j].st_size);
 #           endif
-    //	    assert( Ptr_to_ULong(ad) < 0xF0000000ULL );
+	    assert( Ptr_to_ULong(ad) < 0xF0000000ULL );
 
 	    if (0)
             fprintf(stderr, "COMMON symbol, size %lld name %s  allocd %p\n",
@@ -1329,7 +1308,7 @@ int loadObj( char *path )
        }
    }
 
-   oc = mymalloc(sizeof(ObjectCode));
+   oc = malloc(sizeof(ObjectCode));
 
    oc->formatName = "ELF";
 
@@ -1337,7 +1316,7 @@ int loadObj( char *path )
    if (r == -1) { return 0; }
 
    /* sigh, strdup() isn't a POSIX function, so do it the long way */
-   oc->fileName = mymalloc( strlen(path)+1 );
+   oc->fileName = malloc( strlen(path)+1 );
    strcpy(oc->fileName, path);
 
    oc->fileSize          = st.st_size;
@@ -1364,9 +1343,8 @@ int loadObj( char *path )
       relocations for jump distances > 64M. */
 
    pagesize = getpagesize();
-   //   p = memalign(pagesize, N_FIXUP_PAGES * pagesize
-   //                          + oc->fileSize);
-   p = mymalloc(N_FIXUP_PAGES * pagesize + oc->fileSize);
+   p = memalign(pagesize, N_FIXUP_PAGES * pagesize
+                          + oc->fileSize);
    if (0) fprintf(stderr,"XXXX p = %p\n", p);
    if (p == NULL) {
       fprintf(stderr,"loadObj: failed to allocate space for `%s'\n", path);

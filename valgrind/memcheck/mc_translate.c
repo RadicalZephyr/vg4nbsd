@@ -1687,9 +1687,10 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
          return assignNew(mce, Ity_I16, binop(Iop_8HLto16, vHi8, vLo8));
       }
 
-      case Iop_DivS32:
-      case Iop_DivU32:
-         return mkLazy2(mce, Ity_I32, vatom1, vatom2);
+      // XXX spoty change test
+      //case Iop_DivS32:
+      //case Iop_DivU32:
+      //   return mkLazy2(mce, Ity_I32, vatom1, vatom2);
 
       case Iop_Add32:
          if (mce->bogusLiterals)
@@ -1706,11 +1707,15 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       cheap_AddSub32:
       case Iop_Mul32:
-      case Iop_CmpORD32S:
-      case Iop_CmpORD32U:
          return mkLeft32(mce, mkUifU32(mce, vatom1,vatom2));
+      //case Iop_CmpORD32S:
+      //case Iop_CmpORD32U:
 
+      case Iop_Mul64:
       case Iop_Add64:
+      case Iop_Sub64:
+         return mkLeft64(mce, mkUifU64(mce, vatom1,vatom2));
+	 /*
          if (mce->bogusLiterals)
             return expensiveAddSub(mce,True,Ity_I64, 
                                    vatom1,vatom2, atom1,atom2);
@@ -1726,6 +1731,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       cheap_AddSub64:
       case Iop_Mul64:
          return mkLeft64(mce, mkUifU64(mce, vatom1,vatom2));
+	 */
 
       case Iop_Mul16:
       case Iop_Add16:
@@ -1960,10 +1966,14 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
 
 
 /* Worker function; do not call directly. */
+/*
 static
 IRAtom* expr2vbits_Load_WRK ( MCEnv* mce, 
                               IREndness end, IRType ty, 
                               IRAtom* addr, UInt bias )
+			      */
+static
+IRAtom* expr2vbits_LDle_WRK ( MCEnv* mce, IRType ty, IRAtom* addr, UInt bias )
 {
    void*    helper;
    Char*    hname;
@@ -1972,7 +1982,9 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
    IRAtom*  addrAct;
 
    tl_assert(isOriginalAtom(mce,addr));
+   /*
    tl_assert(end == Iend_LE || end == Iend_BE);
+   */
 
    /* First, emit a definedness test for the address.  This also sets
       the address (shadow) to 'defined' following the test. */
@@ -1981,24 +1993,41 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
    /* Now cook up a call to the relevant helper function, to read the
       data V bits from shadow memory. */
    ty = shadowType(ty);
+   switch (ty) {
+      case Ity_I64: helper = &MC_(helperc_LOADV8);
+                    hname = "MC_(helperc_LOADV8)";
+                    break;
+      case Ity_I32: helper = &MC_(helperc_LOADV4);
+                    hname = "MC_(helperc_LOADV4)";
+                    break;
+      case Ity_I16: helper = &MC_(helperc_LOADV2);
+                    hname = "MC_(helperc_LOADV2)";
+                    break;
+      case Ity_I8:  helper = &MC_(helperc_LOADV1);
+                    hname = "MC_(helperc_LOADV1)";
+                    break;
+      default:      ppIRType(ty);
+                    VG_(tool_panic)("memcheck:do_shadow_LDle");
+   }
 
+   /*
    if (end == Iend_LE) {   
-      switch (ty) {
-         case Ity_I64: helper = &MC_(helperc_LOADV8le);
-                       hname = "MC_(helperc_LOADV8le)";
-                       break;
-         case Ity_I32: helper = &MC_(helperc_LOADV4le);
-                       hname = "MC_(helperc_LOADV4le)";
-                       break;
-         case Ity_I16: helper = &MC_(helperc_LOADV2le);
-                       hname = "MC_(helperc_LOADV2le)";
-                       break;
-         case Ity_I8:  helper = &MC_(helperc_LOADV1);
-                       hname = "MC_(helperc_LOADV1)";
-                       break;
-         default:      ppIRType(ty);
-                       VG_(tool_panic)("memcheck:do_shadow_Load(LE)");
-      }
+       switch (ty) {
+	   case Ity_I64: helper = &MC_(helperc_LOADV8le);
+			 hname = "MC_(helperc_LOADV8le)";
+			 break;
+	   case Ity_I32: helper = &MC_(helperc_LOADV4le);
+		     hname = "MC_(helperc_LOADV4le)";
+			 break;
+	   case Ity_I16: helper = &MC_(helperc_LOADV2le);
+			 hname = "MC_(helperc_LOADV2le)";
+			 break;
+	   case Ity_I8:  helper = &MC_(helperc_LOADV1);
+			 hname = "MC_(helperc_LOADV1)";
+			 break;
+	   default:      ppIRType(ty);
+			 VG_(tool_panic)("memcheck:do_shadow_Load(LE)");
+       }
    } else {
       switch (ty) {
          case Ity_I64: helper = &MC_(helperc_LOADV8be);
@@ -2017,6 +2046,7 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
                        VG_(tool_panic)("memcheck:do_shadow_Load(BE)");
       }
    }
+   */
 
    /* Generate the actual address into addrAct. */
    if (bias == 0) {
@@ -2044,27 +2074,26 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
 }
 
 
+/*
 static
 IRAtom* expr2vbits_Load ( MCEnv* mce, 
                           IREndness end, IRType ty, 
                           IRAtom* addr, UInt bias )
+			  */
+static
+IRAtom* expr2vbits_LDle ( MCEnv* mce, IRType ty, IRAtom* addr, UInt bias )
 {
    IRAtom *v64hi, *v64lo;
-   tl_assert(end == Iend_LE || end == Iend_BE);
+   //tl_assert(end == Iend_LE || end == Iend_BE);
    switch (shadowType(ty)) {
       case Ity_I8: 
       case Ity_I16: 
       case Ity_I32: 
       case Ity_I64:
-         return expr2vbits_Load_WRK(mce, end, ty, addr, bias);
+         return expr2vbits_LDle_WRK(mce, ty, addr, bias);
       case Ity_V128:
-         if (end == Iend_LE) {
-            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias);
-            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias+8);
-         } else {
-            v64hi = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias);
-            v64lo = expr2vbits_Load_WRK(mce, end, Ity_I64, addr, bias+8);
-         }
+	 v64lo = expr2vbits_LDle_WRK(mce, Ity_I64, addr, bias);
+	 v64hi = expr2vbits_LDle_WRK(mce, Ity_I64, addr, bias+8);
          return assignNew( mce, 
                            Ity_V128, 
                            binop(Iop_64HLtoV128, v64hi, v64lo));

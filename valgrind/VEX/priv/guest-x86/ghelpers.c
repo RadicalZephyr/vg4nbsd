@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (guest-x86/ghelpers.c) is                     ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004-2005 OpenWorks, LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex_basictypes.h"
@@ -51,7 +40,6 @@
 #include "libvex.h"
 
 #include "main/vex_util.h"
-#include "guest-generic/bb_to_IR.h"
 #include "guest-x86/gdefs.h"
 #include "guest-generic/g_generic_x87.h"
 
@@ -737,8 +725,6 @@ UInt LibVEX_GuestX86_get_eflags ( /*IN*/VexGuestX86State* vex_state )
       eflags |= (1<<10);
    if (vex_state->guest_IDFLAG == 1)
       eflags |= (1<<21);
-   if (vex_state->guest_ACFLAG == 1)
-      eflags |= (1<<18);
 					     
    return eflags;
 }
@@ -1975,7 +1961,6 @@ void LibVEX_GuestX86_initialise ( /*OUT*/VexGuestX86State* vex_state )
    vex_state->guest_CC_NDEP = 0;
    vex_state->guest_DFLAG   = 1; /* forwards */
    vex_state->guest_IDFLAG  = 0;
-   vex_state->guest_ACFLAG  = 0;
 
    vex_state->guest_EIP = 0;
 
@@ -2075,7 +2060,7 @@ VexGuestLayout
 
           /* Describe any sections to be regarded by Memcheck as
              'always-defined'. */
-          .n_alwaysDefd = 22,
+          .n_alwaysDefd = 19,
 
           /* flags thunk: OP and NDEP are always defd, whereas DEP1
              and DEP2 have to be tracked.  See detailed comment in
@@ -2085,24 +2070,21 @@ VexGuestLayout
                  /*  1 */ ALWAYSDEFD(guest_CC_NDEP),
                  /*  2 */ ALWAYSDEFD(guest_DFLAG),
                  /*  3 */ ALWAYSDEFD(guest_IDFLAG),
-                 /*  4 */ ALWAYSDEFD(guest_ACFLAG),
-                 /*  5 */ ALWAYSDEFD(guest_EIP),
-                 /*  6 */ ALWAYSDEFD(guest_FTOP),
-                 /*  7 */ ALWAYSDEFD(guest_FPTAG),
-                 /*  8 */ ALWAYSDEFD(guest_FPROUND),
-                 /*  9 */ ALWAYSDEFD(guest_FC3210),
-                 /* 10 */ ALWAYSDEFD(guest_CS),
-                 /* 11 */ ALWAYSDEFD(guest_DS),
-                 /* 12 */ ALWAYSDEFD(guest_ES),
-                 /* 13 */ ALWAYSDEFD(guest_FS),
-                 /* 14 */ ALWAYSDEFD(guest_GS),
-                 /* 15 */ ALWAYSDEFD(guest_SS),
-                 /* 16 */ ALWAYSDEFD(guest_LDT),
-                 /* 17 */ ALWAYSDEFD(guest_GDT),
-                 /* 18 */ ALWAYSDEFD(guest_EMWARN),
-                 /* 19 */ ALWAYSDEFD(guest_SSEROUND),
-                 /* 20 */ ALWAYSDEFD(guest_TISTART),
-                 /* 21 */ ALWAYSDEFD(guest_TILEN)
+                 /*  4 */ ALWAYSDEFD(guest_EIP),
+                 /*  5 */ ALWAYSDEFD(guest_FTOP),
+                 /*  6 */ ALWAYSDEFD(guest_FPTAG),
+                 /*  7 */ ALWAYSDEFD(guest_FPROUND),
+                 /*  8 */ ALWAYSDEFD(guest_FC3210),
+                 /*  9 */ ALWAYSDEFD(guest_CS),
+                 /* 10 */ ALWAYSDEFD(guest_DS),
+                 /* 11 */ ALWAYSDEFD(guest_ES),
+                 /* 12 */ ALWAYSDEFD(guest_FS),
+                 /* 13 */ ALWAYSDEFD(guest_GS),
+                 /* 14 */ ALWAYSDEFD(guest_SS),
+                 /* 15 */ ALWAYSDEFD(guest_LDT),
+                 /* 16 */ ALWAYSDEFD(guest_GDT),
+                 /* 17 */ ALWAYSDEFD(guest_EMWARN),
+                 /* 18 */ ALWAYSDEFD(guest_SSEROUND)
                }
         };
 

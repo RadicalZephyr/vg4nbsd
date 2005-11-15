@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (main/vex_main.c) is                          ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004 OpenWorks, LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex.h"
@@ -60,7 +49,6 @@
 #include "host-amd64/hdefs.h"
 #include "host-ppc32/hdefs.h"
 
-#include "guest-generic/bb_to_IR.h"
 #include "guest-x86/gdefs.h"
 #include "guest-amd64/gdefs.h"
 #include "guest-arm/gdefs.h"
@@ -131,6 +119,12 @@ void LibVEX_Init (
    vassert(vcon->guest_chase_thresh >= 0);
    vassert(vcon->guest_chase_thresh < vcon->guest_max_insns);
 
+   /* All the guest state structs must have an 8-aligned size. */
+   vassert(0 == sizeof(VexGuestX86State)   % 8);
+   vassert(0 == sizeof(VexGuestAMD64State) % 8);
+   vassert(0 == sizeof(VexGuestPPC32State) % 8);
+   vassert(0 == sizeof(VexGuestARMState)   % 8);
+
    /* Check that Vex has been built with sizes of basic types as
       stated in priv/libvex_basictypes.h.  Failure of any of these is
       a serious configuration error and should be corrected
@@ -174,10 +168,10 @@ void LibVEX_Init (
 
 VexTranslateResult LibVEX_Translate (
    /* The instruction sets we are translating from and to. */
-   VexArch      arch_guest,
-   VexArchInfo* archinfo_guest,
-   VexArch      arch_host,
-   VexArchInfo* archinfo_host,
+   VexArch    arch_guest,
+   VexSubArch subarch_guest,
+   VexArch    arch_host,
+   VexSubArch subarch_host,
    /* IN: the block to translate, and its guest address. */
    UChar*  guest_bytes,
    Addr64  guest_bytes_addr,
@@ -195,8 +189,6 @@ VexTranslateResult LibVEX_Translate (
    IRBB*   (*instrument2) ( IRBB*, VexGuestLayout*, 
                             IRType gWordTy, IRType hWordTy ),
    Bool    cleanup_after_instrumentation,
-   /* IN: should this translation be self-checking? */
-   Bool    do_self_check,
    /* IN: optionally, an access check function for guest code. */
    Bool    (*byte_accessible) ( Addr64 ),
    /* IN: debug: trace vex activity at various points */
@@ -215,12 +207,15 @@ VexTranslateResult LibVEX_Translate (
    HInstr*      (*genReload)   ( HReg, Int );
    void         (*ppInstr)     ( HInstr* );
    void         (*ppReg)       ( HReg );
-   HInstrArray* (*iselBB)      ( IRBB*, VexArchInfo* );
+   HInstrArray* (*iselBB)      ( IRBB*, VexSubArch );
+   IRBB*        (*bbToIR)      ( UChar*, Addr64, 
+                                 VexGuestExtents*, 
+                                 Bool(*)(Addr64), 
+                                 Bool(*)(Addr64), 
+                                 Bool, VexSubArch );
    Int          (*emit)        ( UChar*, Int, HInstr* );
    IRExpr*      (*specHelper)  ( HChar*, IRExpr** );
    Bool         (*preciseMemExnsFn) ( Int, Int );
-
-   DisOneInstrFn disInstrFn;
 
    VexGuestLayout* guest_layout;
    Bool            host_is_bigendian = False;
@@ -228,7 +223,6 @@ VexTranslateResult LibVEX_Translate (
    HInstrArray*    vcode;
    HInstrArray*    rcode;
    Int             i, j, k, out_used, guest_sizeB;
-   Int             offB_TISTART, offB_TILEN;
    UChar           insn_bytes[32];
    IRType          guest_word_type;
    IRType          host_word_type;
@@ -244,14 +238,12 @@ VexTranslateResult LibVEX_Translate (
    ppInstr                = NULL;
    ppReg                  = NULL;
    iselBB                 = NULL;
+   bbToIR                 = NULL;
    emit                   = NULL;
    specHelper             = NULL;
    preciseMemExnsFn       = NULL;
-   disInstrFn             = NULL;
    guest_word_type        = Ity_INVALID;
    host_word_type         = Ity_INVALID;
-   offB_TISTART           = 0;
-   offB_TILEN             = 0;
 
    vex_traceflags = traceflags;
 
@@ -278,9 +270,9 @@ VexTranslateResult LibVEX_Translate (
          emit        = (Int(*)(UChar*,Int,HInstr*)) emit_X86Instr;
          host_is_bigendian = False;
          host_word_type    = Ity_I32;
-         vassert(archinfo_host->subarch == VexSubArchX86_sse0
-                 || archinfo_host->subarch == VexSubArchX86_sse1
-                 || archinfo_host->subarch == VexSubArchX86_sse2);
+         vassert(subarch_host == VexSubArchX86_sse0
+                 || subarch_host == VexSubArchX86_sse1
+                 || subarch_host == VexSubArchX86_sse2);
          break;
 
       case VexArchAMD64:
@@ -297,7 +289,7 @@ VexTranslateResult LibVEX_Translate (
          emit        = (Int(*)(UChar*,Int,HInstr*)) emit_AMD64Instr;
          host_is_bigendian = False;
          host_word_type    = Ity_I64;
-         vassert(archinfo_host->subarch == VexSubArch_NONE);
+         vassert(subarch_host == VexSubArch_NONE);
          break;
 
       case VexArchPPC32:
@@ -314,8 +306,8 @@ VexTranslateResult LibVEX_Translate (
          emit        = (Int(*)(UChar*,Int,HInstr*)) emit_PPC32Instr;
          host_is_bigendian = True;
          host_word_type    = Ity_I32;
-         vassert(archinfo_guest->subarch == VexSubArchPPC32_noAV
-                 || archinfo_guest->subarch == VexSubArchPPC32_AV);
+         vassert(subarch_guest == VexSubArchPPC32_noAV
+                 || subarch_guest == VexSubArchPPC32_AV);
          break;
 
       default:
@@ -327,62 +319,45 @@ VexTranslateResult LibVEX_Translate (
 
       case VexArchX86:
          preciseMemExnsFn = guest_x86_state_requires_precise_mem_exns;
-         disInstrFn       = disInstr_X86;
+         bbToIR           = bbToIR_X86;
          specHelper       = guest_x86_spechelper;
          guest_sizeB      = sizeof(VexGuestX86State);
          guest_word_type  = Ity_I32;
          guest_layout     = &x86guest_layout;
-         offB_TISTART     = offsetof(VexGuestX86State,guest_TISTART);
-         offB_TILEN       = offsetof(VexGuestX86State,guest_TILEN);
-         vassert(archinfo_guest->subarch == VexSubArchX86_sse0
-                 || archinfo_guest->subarch == VexSubArchX86_sse1
-                 || archinfo_guest->subarch == VexSubArchX86_sse2);
-         vassert(0 == sizeof(VexGuestX86State) % 8);
-         vassert(sizeof( ((VexGuestX86State*)0)->guest_TISTART ) == 4);
-         vassert(sizeof( ((VexGuestX86State*)0)->guest_TILEN ) == 4);
+         vassert(subarch_guest == VexSubArchX86_sse0
+                 || subarch_guest == VexSubArchX86_sse1
+                 || subarch_guest == VexSubArchX86_sse2);
          break;
 
       case VexArchAMD64:
          preciseMemExnsFn = guest_amd64_state_requires_precise_mem_exns;
-         disInstrFn       = disInstr_AMD64;
+         bbToIR           = bbToIR_AMD64;
          specHelper       = guest_amd64_spechelper;
          guest_sizeB      = sizeof(VexGuestAMD64State);
          guest_word_type  = Ity_I64;
          guest_layout     = &amd64guest_layout;
-         offB_TISTART     = offsetof(VexGuestAMD64State,guest_TISTART);
-         offB_TILEN       = offsetof(VexGuestAMD64State,guest_TILEN);
-         vassert(archinfo_guest->subarch == VexSubArch_NONE);
-         vassert(0 == sizeof(VexGuestAMD64State) % 8);
-         vassert(sizeof( ((VexGuestAMD64State*)0)->guest_TISTART ) == 8);
-         vassert(sizeof( ((VexGuestAMD64State*)0)->guest_TILEN ) == 8);
+         vassert(subarch_guest == VexSubArch_NONE);
          break;
 
       case VexArchARM:
          preciseMemExnsFn = guest_arm_state_requires_precise_mem_exns;
-         disInstrFn       = NULL; /* HACK */
+         bbToIR           = bbToIR_ARM;
          specHelper       = guest_arm_spechelper;
          guest_sizeB      = sizeof(VexGuestARMState);
          guest_word_type  = Ity_I32;
          guest_layout     = &armGuest_layout;
-         offB_TISTART     = 0; /* hack ... arm has bitrot */
-         offB_TILEN       = 0; /* hack ... arm has bitrot */
-         vassert(archinfo_guest->subarch == VexSubArchARM_v4);
+         vassert(subarch_guest == VexSubArchARM_v4);
          break;
 
       case VexArchPPC32:
          preciseMemExnsFn = guest_ppc32_state_requires_precise_mem_exns;
-         disInstrFn       = disInstr_PPC32;
+         bbToIR           = bbToIR_PPC32;
          specHelper       = guest_ppc32_spechelper;
          guest_sizeB      = sizeof(VexGuestPPC32State);
          guest_word_type  = Ity_I32;
          guest_layout     = &ppc32Guest_layout;
-         offB_TISTART     = offsetof(VexGuestPPC32State,guest_TISTART);
-         offB_TILEN       = offsetof(VexGuestPPC32State,guest_TILEN);
-         vassert(archinfo_guest->subarch == VexSubArchPPC32_noAV
-                 || archinfo_guest->subarch == VexSubArchPPC32_AV);
-         vassert(0 == sizeof(VexGuestPPC32State) % 8);
-         vassert(sizeof( ((VexGuestPPC32State*)0)->guest_TISTART ) == 4);
-         vassert(sizeof( ((VexGuestPPC32State*)0)->guest_TILEN ) == 4);
+         vassert(subarch_guest == VexSubArchPPC32_noAV
+                 || subarch_guest == VexSubArchPPC32_AV);
          break;
 
       default:
@@ -394,7 +369,7 @@ VexTranslateResult LibVEX_Translate (
       /* doesn't necessarily have to be true, but if it isn't it means
          we are simulating one flavour of an architecture a different
          flavour of the same architecture, which is pretty strange. */
-      vassert(archinfo_guest->subarch == archinfo_host->subarch);
+      vassert(subarch_guest == subarch_host);
    }
 
    if (vex_traceflags & VEX_TRACE_FE)
@@ -402,17 +377,13 @@ VexTranslateResult LibVEX_Translate (
                    " Front end "
                    "------------------------\n\n");
 
-   irbb = bb_to_IR ( guest_extents,
-                     disInstrFn,
-                     guest_bytes, 
-                     guest_bytes_addr,
-                     chase_into_ok,
-                     host_is_bigendian,
-                     archinfo_guest,
-                     guest_word_type,
-                     do_self_check,
-                     offB_TISTART,
-                     offB_TILEN );
+   irbb = bbToIR ( guest_bytes, 
+                   guest_bytes_addr,
+                   guest_extents,
+                   byte_accessible,
+                   chase_into_ok,
+                   host_is_bigendian,
+                   subarch_guest );
 
    if (irbb == NULL) {
       /* Access failure. */
@@ -518,7 +489,7 @@ VexTranslateResult LibVEX_Translate (
                    " Instruction selection "
                    "------------------------\n");
 
-   vcode = iselBB ( irbb, archinfo_host );
+   vcode = iselBB ( irbb, subarch_host );
 
    if (vex_traceflags & VEX_TRACE_VCODE)
       vex_printf("\n");
@@ -614,16 +585,12 @@ HChar* LibVEX_EmWarn_string ( VexEmWarn ew )
         return "Setting %mxcsr.fz (SSE flush-underflows-to-zero mode)";
      case EmWarn_X86_daz:
         return "Setting %mxcsr.daz (SSE treat-denormals-as-zero mode)";
-     case EmWarn_X86_acFlag:
-        return "Setting %eflags.ac (setting noted but ignored)";
-     case EmWarn_PPC32exns:
-        return "Unmasking PPC32 FP exceptions";
      default: 
         vpanic("LibVEX_EmWarn_string: unknown warning");
    }
 }
 
-/* --------- Arch/Subarch stuff. --------- */
+/* --------- Arch/Subarch names. --------- */
 
 const HChar* LibVEX_ppVexArch ( VexArch arch )
 {
@@ -651,14 +618,6 @@ const HChar* LibVEX_ppVexSubArch ( VexSubArch subarch )
       default:                   return "VexSubArch???";
    }
 }
-
-/* Write default settings info *vai. */
-void LibVEX_default_VexArchInfo ( /*OUT*/VexArchInfo* vai )
-{
-   vai->subarch              = VexSubArch_INVALID;
-   vai->ppc32_cache_line_szB = 0;
-}
-
 
 /*---------------------------------------------------------------*/
 /*--- end                                     main/vex_main.c ---*/

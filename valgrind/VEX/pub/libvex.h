@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (libvex.h) is                                 ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004-2005 OpenWorks LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #ifndef __LIBVEX_H
@@ -57,7 +46,7 @@
 /*---------------------------------------------------------------*/
 
 /*-------------------------------------------------------*/
-/*--- Architectures, variants, and other arch info    ---*/
+/*--- Architectures and architecture variants         ---*/
 /*-------------------------------------------------------*/
 
 typedef 
@@ -74,7 +63,7 @@ typedef
    enum {
       VexSubArch_INVALID,
       VexSubArch_NONE,        /* Arch has no variants */
-      VexSubArchX86_sse0,     /* no SSE state; or SSE state but no insns */
+      VexSubArchX86_sse0,     /* has SSE state but no insns (Pentium II) */
       VexSubArchX86_sse1,     /* SSE1 support (Pentium III) */
       VexSubArchX86_sse2,     /* SSE2 support (Pentium 4) */
       VexSubArchARM_v4,       /* ARM version 4 */
@@ -87,24 +76,6 @@ typedef
 
 extern const HChar* LibVEX_ppVexArch    ( VexArch );
 extern const HChar* LibVEX_ppVexSubArch ( VexSubArch );
-
-
-/* This struct is a bit of a hack, but is needed to carry misc
-   important bits of info about an arch.  Fields which are optional or
-   ignored on some arch should be set to zero. */
-
-typedef
-   struct {
-      /* This is the only mandatory field. */
-      VexSubArch subarch;
-      /* PPC32 only: size of cache line */
-      Int ppc32_cache_line_szB;
-   }
-   VexArchInfo;
-
-/* Write default settings info *vai. */
-extern 
-void LibVEX_default_VexArchInfo ( /*OUT*/VexArchInfo* vai );
 
 
 /*-------------------------------------------------------*/
@@ -182,7 +153,7 @@ extern void LibVEX_ShowAllocStats ( void );
 
 /* The max number of guest state chunks which we can describe as
    always defined (for the benefit of Memcheck). */
-#define VEXGLO_N_ALWAYSDEFD  22
+#define VEXGLO_N_ALWAYSDEFD  19
 
 typedef
    struct {
@@ -276,10 +247,10 @@ typedef
 extern 
 VexTranslateResult LibVEX_Translate (
    /* The instruction sets we are translating from and to. */
-   VexArch      arch_guest,
-   VexArchInfo* archinfo_guest,
-   VexArch      arch_host,
-   VexArchInfo* archinfo_host,
+   VexArch    arch_guest,
+   VexSubArch subarch_guest,
+   VexArch    arch_host,
+   VexSubArch subarch_host,
    /* IN: the block to translate, and its guest address. */
    UChar*  guest_bytes,
    Addr64  guest_bytes_addr,
@@ -297,25 +268,11 @@ VexTranslateResult LibVEX_Translate (
    IRBB*   (*instrument2) ( IRBB*, VexGuestLayout*, 
                             IRType gWordTy, IRType hWordTy ),
    Bool    cleanup_after_instrumentation,
-   /* IN: should this translation be self-checking? */
-   Bool    do_self_check,
    /* IN: optionally, an access check function for guest code. */
    Bool    (*byte_accessible) ( Addr64 ),
    /* IN: debug: trace vex activity at various points */
    Int     traceflags
 );
-
-/* A subtlety re interaction between self-checking translations and
-   bb-chasing.  The supplied chase_into_ok function should say NO
-   (False) when presented with any address for which you might want to
-   make a self-checking translation.
-
-   If it doesn't do that, you may end up with Vex chasing from BB #1
-   to BB #2 (fine); but if you wanted checking for #2 and not #1, that
-   would not be the result.  Therefore chase_into_ok should disallow
-   following into #2.  That will force the caller to eventually
-   request a new translation starting at #2, at which point Vex will
-   correctly observe the make-a-self-check flag.  */
 
 
 /*-------------------------------------------------------*/
@@ -356,15 +313,9 @@ extern void LibVEX_ShowStats ( void );
    stack tags will not be as expected, and (2) after returning to
    generated code, the generated code is likely to go wrong.  This
    really should be fixed.
-
-   ALL GUEST ARCHITECTURES
-   ~~~~~~~~~~~~~~~~~~~~~~~
-   The architecture must contain two pseudo-registers, guest_TISTART
-   and guest_TILEN.  These are used to pass the address of areas of
-   guest code, translations of which are to be invalidated, back to
-   the despatcher.  Both pseudo-regs must have size equal to the guest
-   word size.
 */
+
+
 #endif /* ndef __LIBVEX_H */
 
 /*---------------------------------------------------------------*/

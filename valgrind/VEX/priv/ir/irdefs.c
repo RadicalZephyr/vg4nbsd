@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (ir/irdefs.c) is                              ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004 OpenWorks, LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex_basictypes.h"
@@ -199,9 +188,6 @@ void ppIROp ( IROp op )
       case Iop_CmpNEZ16: vex_printf("CmpNEZ16"); return;
       case Iop_CmpNEZ32: vex_printf("CmpNEZ32"); return;
       case Iop_CmpNEZ64: vex_printf("CmpNEZ64"); return;
-
-      case Iop_CmpORD32U: vex_printf("CmpORD32U"); return;
-      case Iop_CmpORD32S: vex_printf("CmpORD32S"); return;
 
       case Iop_Neg8:  vex_printf("Neg8"); return;
       case Iop_Neg16: vex_printf("Neg16"); return;
@@ -515,11 +501,11 @@ void ppIRExpr ( IRExpr* e )
       ppIRExpr(e->Iex.Unop.arg);
       vex_printf( ")" );
       break;
-    case Iex_Load:
-      vex_printf( "LD%s:", e->Iex.Load.end==Iend_LE ? "le" : "be" );
-      ppIRType(e->Iex.Load.ty);
+    case Iex_LDle:
+      vex_printf( "LDle:" );
+      ppIRType(e->Iex.LDle.ty);
       vex_printf( "(" );
-      ppIRExpr(e->Iex.Load.addr);
+      ppIRExpr(e->Iex.LDle.addr);
       vex_printf( ")" );
       break;
     case Iex_Const:
@@ -599,18 +585,17 @@ void ppIRDirty ( IRDirty* d )
 void ppIRJumpKind ( IRJumpKind kind )
 {
    switch (kind) {
-      case Ijk_Boring:      vex_printf("Boring"); break;
-      case Ijk_Call:        vex_printf("Call"); break;
-      case Ijk_Ret:         vex_printf("Return"); break;
-      case Ijk_ClientReq:   vex_printf("ClientReq"); break;
-      case Ijk_Syscall:     vex_printf("Syscall"); break;
-      case Ijk_Yield:       vex_printf("Yield"); break;
-      case Ijk_EmWarn:      vex_printf("EmWarn"); break;
-      case Ijk_NoDecode:    vex_printf("NoDecode"); break;
-      case Ijk_MapFail:     vex_printf("MapFail"); break;
-      case Ijk_TInval:      vex_printf("Invalidate"); break;
-      case Ijk_SysenterX86: vex_printf("SysenterX86"); break;
-      default:              vpanic("ppIRJumpKind");
+      case Ijk_Boring:    vex_printf("Boring"); break;
+      case Ijk_Call:      vex_printf("Call"); break;
+      case Ijk_Ret:       vex_printf("Return"); break;
+      case Ijk_ClientReq: vex_printf("ClientReq"); break;
+      case Ijk_Syscall:   vex_printf("Syscall"); break;
+      case Ijk_Yield:     vex_printf("Yield"); break;
+      case Ijk_EmWarn:    vex_printf("EmWarn"); break;
+      case Ijk_NoDecode:  vex_printf("NoDecode"); break;
+      case Ijk_MapFail:   vex_printf("MapFail"); break;
+      case Ijk_TInval:    vex_printf("Invalidate"); break;
+      default:            vpanic("ppIRJumpKind");
    }
 }
 
@@ -650,11 +635,11 @@ void ppIRStmt ( IRStmt* s )
          vex_printf( " = " );
          ppIRExpr(s->Ist.Tmp.data);
          break;
-      case Ist_Store:
-         vex_printf( "ST%s(", s->Ist.Store.end==Iend_LE ? "le" : "be" );
-         ppIRExpr(s->Ist.Store.addr);
+      case Ist_STle:
+         vex_printf( "STle(");
+         ppIRExpr(s->Ist.STle.addr);
          vex_printf( ") = ");
-         ppIRExpr(s->Ist.Store.data);
+         ppIRExpr(s->Ist.STle.data);
          break;
       case Ist_Dirty:
          ppIRDirty(s->Ist.Dirty.details);
@@ -852,13 +837,11 @@ IRExpr* IRExpr_Unop ( IROp op, IRExpr* arg ) {
    e->Iex.Unop.arg = arg;
    return e;
 }
-IRExpr* IRExpr_Load ( IREndness end, IRType ty, IRExpr* addr ) {
+IRExpr* IRExpr_LDle  ( IRType ty, IRExpr* addr ) {
    IRExpr* e        = LibVEX_Alloc(sizeof(IRExpr));
-   e->tag           = Iex_Load;
-   e->Iex.Load.end  = end;
-   e->Iex.Load.ty   = ty;
-   e->Iex.Load.addr = addr;
-   vassert(end == Iend_LE || end == Iend_BE);
+   e->tag           = Iex_LDle;
+   e->Iex.LDle.ty   = ty;
+   e->Iex.LDle.addr = addr;
    return e;
 }
 IRExpr* IRExpr_Const ( IRConst* con ) {
@@ -1001,13 +984,11 @@ IRStmt* IRStmt_Tmp ( IRTemp tmp, IRExpr* data ) {
    s->Ist.Tmp.data = data;
    return s;
 }
-IRStmt* IRStmt_Store ( IREndness end, IRExpr* addr, IRExpr* data ) {
-   IRStmt* s         = LibVEX_Alloc(sizeof(IRStmt));
-   s->tag            = Ist_Store;
-   s->Ist.Store.end  = end;
-   s->Ist.Store.addr = addr;
-   s->Ist.Store.data = data;
-   vassert(end == Iend_LE || end == Iend_BE);
+IRStmt* IRStmt_STle ( IRExpr* addr, IRExpr* data ) {
+   IRStmt* s        = LibVEX_Alloc(sizeof(IRStmt));
+   s->tag           = Ist_STle;
+   s->Ist.STle.addr = addr;
+   s->Ist.STle.data = data;
    return s;
 }
 IRStmt* IRStmt_Dirty ( IRDirty* d )
@@ -1142,10 +1123,9 @@ IRExpr* dopyIRExpr ( IRExpr* e )
       case Iex_Unop: 
          return IRExpr_Unop(e->Iex.Unop.op,
                             dopyIRExpr(e->Iex.Unop.arg));
-      case Iex_Load: 
-         return IRExpr_Load(e->Iex.Load.end,
-                            e->Iex.Load.ty,
-                            dopyIRExpr(e->Iex.Load.addr));
+      case Iex_LDle: 
+         return IRExpr_LDle(e->Iex.LDle.ty,
+                            dopyIRExpr(e->Iex.LDle.addr));
       case Iex_Const: 
          return IRExpr_Const(dopyIRConst(e->Iex.Const.con));
       case Iex_CCall:
@@ -1201,10 +1181,9 @@ IRStmt* dopyIRStmt ( IRStmt* s )
       case Ist_Tmp:
          return IRStmt_Tmp(s->Ist.Tmp.tmp,
                            dopyIRExpr(s->Ist.Tmp.data));
-      case Ist_Store: 
-         return IRStmt_Store(s->Ist.Store.end,
-                             dopyIRExpr(s->Ist.Store.addr),
-                             dopyIRExpr(s->Ist.Store.data));
+      case Ist_STle: 
+         return IRStmt_STle(dopyIRExpr(s->Ist.STle.addr),
+                            dopyIRExpr(s->Ist.STle.data));
       case Ist_Dirty: 
          return IRStmt_Dirty(dopyIRDirty(s->Ist.Dirty.details));
       case Ist_MFence:
@@ -1275,8 +1254,6 @@ void typeOfPrimop ( IROp op, IRType* t_dst, IRType* t_arg1, IRType* t_arg2 )
       case Iop_Or16:  case Iop_And16: case Iop_Xor16:
          BINARY(Ity_I16, Ity_I16,Ity_I16);
 
-      case Iop_CmpORD32U:
-      case Iop_CmpORD32S:
       case Iop_Add32: case Iop_Sub32: case Iop_Mul32:
       case Iop_Or32:  case Iop_And32: case Iop_Xor32:
          BINARY(Ity_I32, Ity_I32,Ity_I32);
@@ -1619,8 +1596,8 @@ IRType typeOfIRExpr ( IRTypeEnv* tyenv, IRExpr* e )
    IRType t_dst, t_arg1, t_arg2;
  start:
    switch (e->tag) {
-      case Iex_Load:
-         return e->Iex.Load.ty;
+      case Iex_LDle:
+         return e->Iex.LDle.ty;
       case Iex_Get:
          return e->Iex.Get.ty;
       case Iex_GetI:
@@ -1707,7 +1684,7 @@ Bool isFlatIRStmt ( IRStmt* st )
                                     isIRAtom(e->Iex.Binop.arg1) 
                                     && isIRAtom(e->Iex.Binop.arg2));
             case Iex_Unop:   return isIRAtom(e->Iex.Unop.arg);
-            case Iex_Load:   return isIRAtom(e->Iex.Load.addr);
+            case Iex_LDle:   return isIRAtom(e->Iex.LDle.addr);
             case Iex_Const:  return True;
             case Iex_CCall:  for (i = 0; e->Iex.CCall.args[i]; i++)
                                 if (!isIRAtom(e->Iex.CCall.args[i])) 
@@ -1721,9 +1698,9 @@ Bool isFlatIRStmt ( IRStmt* st )
          }
          /*notreached*/
          vassert(0);
-      case Ist_Store:
-         return toBool( isIRAtom(st->Ist.Store.addr) 
-                        && isIRAtom(st->Ist.Store.data) );
+      case Ist_STle:
+         return toBool( isIRAtom(st->Ist.STle.addr) 
+                        && isIRAtom(st->Ist.STle.data) );
       case Ist_Dirty:
          di = st->Ist.Dirty.details;
          if (!isIRAtom(di->guard)) 
@@ -1848,8 +1825,8 @@ void useBeforeDef_Expr ( IRBB* bb, IRStmt* stmt, IRExpr* expr, Int* def_counts )
       case Iex_Unop:
          useBeforeDef_Expr(bb,stmt,expr->Iex.Unop.arg,def_counts);
          break;
-      case Iex_Load:
-         useBeforeDef_Expr(bb,stmt,expr->Iex.Load.addr,def_counts);
+      case Iex_LDle:
+         useBeforeDef_Expr(bb,stmt,expr->Iex.LDle.addr,def_counts);
          break;
       case Iex_Const:
          break;
@@ -1888,9 +1865,9 @@ void useBeforeDef_Stmt ( IRBB* bb, IRStmt* stmt, Int* def_counts )
       case Ist_Tmp:
          useBeforeDef_Expr(bb,stmt,stmt->Ist.Tmp.data,def_counts);
          break;
-      case Ist_Store:
-         useBeforeDef_Expr(bb,stmt,stmt->Ist.Store.addr,def_counts);
-         useBeforeDef_Expr(bb,stmt,stmt->Ist.Store.data,def_counts);
+      case Ist_STle:
+         useBeforeDef_Expr(bb,stmt,stmt->Ist.STle.addr,def_counts);
+         useBeforeDef_Expr(bb,stmt,stmt->Ist.STle.data,def_counts);
          break;
       case Ist_Dirty:
          d = stmt->Ist.Dirty.details;
@@ -1971,12 +1948,10 @@ void tcExpr ( IRBB* bb, IRStmt* stmt, IRExpr* expr, IRType gWordTy )
          if (t_arg1 != typeOfIRExpr(tyenv, expr->Iex.Unop.arg))
             sanityCheckFail(bb,stmt,"Iex.Unop: arg ty doesn't match op ty");
          break;
-      case Iex_Load:
-         tcExpr(bb,stmt, expr->Iex.Load.addr, gWordTy);
-         if (typeOfIRExpr(tyenv, expr->Iex.Load.addr) != gWordTy)
-            sanityCheckFail(bb,stmt,"Iex.Load.addr: not :: guest word type");
-         if (expr->Iex.Load.end != Iend_LE && expr->Iex.Load.end != Iend_BE)
-            sanityCheckFail(bb,stmt,"Iex.Load.end: bogus endianness");
+      case Iex_LDle:
+         tcExpr(bb,stmt, expr->Iex.LDle.addr, gWordTy);
+         if (typeOfIRExpr(tyenv, expr->Iex.LDle.addr) != gWordTy)
+            sanityCheckFail(bb,stmt,"Iex.LDle.addr: not :: guest word type");
          break;
       case Iex_CCall:
          if (!saneIRCallee(expr->Iex.CCall.cee))
@@ -2056,15 +2031,13 @@ void tcStmt ( IRBB* bb, IRStmt* stmt, IRType gWordTy )
              != typeOfIRExpr(tyenv, stmt->Ist.Tmp.data))
             sanityCheckFail(bb,stmt,"IRStmt.Put.Tmp: tmp and expr do not match");
          break;
-      case Ist_Store:
-         tcExpr( bb, stmt, stmt->Ist.Store.addr, gWordTy );
-         tcExpr( bb, stmt, stmt->Ist.Store.data, gWordTy );
-         if (typeOfIRExpr(tyenv, stmt->Ist.Store.addr) != gWordTy)
-            sanityCheckFail(bb,stmt,"IRStmt.Store.addr: not :: guest word type");
-         if (typeOfIRExpr(tyenv, stmt->Ist.Store.data) == Ity_I1)
-            sanityCheckFail(bb,stmt,"IRStmt.Store.data: cannot Store :: Ity_I1");
-         if (stmt->Ist.Store.end != Iend_LE && stmt->Ist.Store.end != Iend_BE)
-            sanityCheckFail(bb,stmt,"Ist.Store.end: bogus endianness");
+      case Ist_STle:
+         tcExpr( bb, stmt, stmt->Ist.STle.addr, gWordTy );
+         tcExpr( bb, stmt, stmt->Ist.STle.data, gWordTy );
+         if (typeOfIRExpr(tyenv, stmt->Ist.STle.addr) != gWordTy)
+            sanityCheckFail(bb,stmt,"IRStmt.STle.addr: not :: guest word type");
+         if (typeOfIRExpr(tyenv, stmt->Ist.STle.data) == Ity_I1)
+            sanityCheckFail(bb,stmt,"IRStmt.STle.data: cannot STle :: Ity_I1");
          break;
       case Ist_Dirty:
          /* Mostly check for various kinds of ill-formed dirty calls. */

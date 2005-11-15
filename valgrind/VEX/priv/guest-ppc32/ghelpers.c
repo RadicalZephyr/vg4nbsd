@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (guest-ppc32/ghelpers.c) is                   ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,48 +10,35 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004 OpenWorks, LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex_basictypes.h"
-#include "libvex_emwarn.h"
 #include "libvex_guest_ppc32.h"
 #include "libvex_ir.h"
 #include "libvex.h"
 
 #include "main/vex_util.h"
-#include "guest-generic/bb_to_IR.h"
 #include "guest-ppc32/gdefs.h"
 
 
@@ -69,6 +56,28 @@
 
 
 #define INT32_MIN               (-2147483647-1)
+
+
+
+/* CALLED FROM GENERATED CODE: CLEAN HELPER */
+/* Calculates CR7[LT,GT,EQ,SO] flags from the supplied
+   thunk parameters.
+   Returns values in high field (correct wrt actual CR)
+ */
+UInt ppc32g_calculate_cr7_all ( UInt op, UInt val, UInt xer_so )
+{
+   if (op) {   // val contains cr7 flags to be returned
+      return (val & 0xF0000000);
+   } else {    // val contains result to be tested
+      Int sval = (Int)val;
+      xer_so = xer_so & 1;
+      return ( ((xer_so == 1) ? (1<<28) : 0)
+               | ((sval == 0) ? (1<<29) : 0)
+               | ((sval >  0) ? (1<<30) : 0)
+               | ((sval <  0) ? (1<<31) : 0) );
+   }
+}
+
 
 // Calculate XER_OV
 UInt ppc32g_calculate_xer_ov ( UInt op, UInt res, UInt argL, UInt argR )
@@ -88,7 +97,7 @@ UInt ppc32g_calculate_xer_ov ( UInt op, UInt res, UInt argL, UInt argR )
    case PPC32G_FLAG_OP_MULLW: { // mullwo
       /* OV true if result can't be represented in 32 bits
          i.e sHi != sign extension of sLo */
-      Long l_res = ((Long)((Int)argL)) * ((Long)((Int)argR));
+      Long l_res = (Long)((Int)argL) * (Long)((Int)argR);
       Int sHi = (Int)toUInt(l_res >> 32);
       Int sLo = (Int)l_res;
       return (sHi != (sLo >> /*s*/ 31)) ? 1:0;
@@ -112,21 +121,21 @@ UInt ppc32g_calculate_xer_ov ( UInt op, UInt res, UInt argL, UInt argR )
 
 // Calculate XER_CA
 UInt ppc32g_calculate_xer_ca ( UInt op, UInt res,
-                               UInt argL, UInt argR, UInt old_ca )
+                               UInt argL, UInt argR, UInt ca )
 {
   switch (op) {
    case PPC32G_FLAG_OP_ADD:     // addc[o], addic
       return (res < argL) ? 1:0;
 
    case PPC32G_FLAG_OP_ADDE:    // adde[o], addze[o], addme[o]
-      return (res < argL || (old_ca==1 && res==argL)) ? 1:0;
+      return (res < argL || (ca==1 && res==argL)) ? 1:0;
 
    case PPC32G_FLAG_OP_SUBFC:   // subfc[o]
    case PPC32G_FLAG_OP_SUBFI:   // subfic
       return (res <= argR) ? 1:0;
 
    case PPC32G_FLAG_OP_SUBFE:   // subfe[o], subfze[o], subfme[o]
-      return ((res < argR) || (old_ca == 1 && res == argR)) ? 1:0;
+      return ((res < argR) || (ca == 1 && res == argR)) ? 1:0;
 
    case PPC32G_FLAG_OP_SRAW:    // sraw
       if ((argR & 0x20) == 0) {  // shift <= 31
@@ -151,6 +160,23 @@ UInt ppc32g_calculate_xer_ca ( UInt op, UInt res,
 }
 
 
+
+
+
+
+
+/* Used by the optimiser to try specialisations.  Returns an
+   equivalent expression, or NULL if none. */
+
+#if 0
+/* temporarily unused */
+static Bool isU32 ( IRExpr* e, UInt n )
+{
+   return (e->tag == Iex_Const
+           && e->Iex.Const.con->tag == Ico_U32
+           && e->Iex.Const.con->Ico.U32 == n);
+}
+#endif
 IRExpr* guest_ppc32_spechelper ( HChar* function_name,
                                  IRExpr** args )
 {
@@ -163,73 +189,24 @@ IRExpr* guest_ppc32_spechelper ( HChar* function_name,
 /*----------------------------------------------*/
 
 /* VISIBLE TO LIBVEX CLIENT */
-UInt LibVEX_GuestPPC32_get_CR ( /*IN*/VexGuestPPC32State* vex_state )
-{
-#  define FIELD(_n)                                    \
-      ( ( (UInt)                                       \
-           ( (vex_state->guest_CR##_n##_321 & (7<<1))  \
-             | (vex_state->guest_CR##_n##_0 & 1)       \
-           )                                           \
-        )                                              \
-        << (4 * (7-(_n)))                              \
-      )
-
-   return 
-      FIELD(0) | FIELD(1) | FIELD(2) | FIELD(3)
-      | FIELD(4) | FIELD(5) | FIELD(6) | FIELD(7);
-
-#  undef FIELD
-}
-
-
-/* VISIBLE TO LIBVEX CLIENT */
-void LibVEX_GuestPPC32_put_CR ( UInt cr_native,
-                                /*OUT*/VexGuestPPC32State* vex_state )
-{
-   UInt t;
-
-#  define FIELD(_n)                                           \
-      do {                                                    \
-         t = cr_native >> (4*(7-(_n)));                       \
-         vex_state->guest_CR##_n##_0 = (UChar)(t & 1);        \
-         vex_state->guest_CR##_n##_321 = (UChar)(t & (7<<1)); \
-      } while (0)
-
-   FIELD(0);
-   FIELD(1);
-   FIELD(2);
-   FIELD(3);
-   FIELD(4);
-   FIELD(5);
-   FIELD(6);
-   FIELD(7);
-
-#  undef FIELD
-}
-
-
-/* VISIBLE TO LIBVEX CLIENT */
-UInt LibVEX_GuestPPC32_get_XER ( /*IN*/VexGuestPPC32State* vex_state )
-{
-   UInt w = 0;
-   w |= ( ((UInt)vex_state->guest_XER_BC) & 0xFF );
-   w |= ( (((UInt)vex_state->guest_XER_SO) & 0x1) << 31 );
-   w |= ( (((UInt)vex_state->guest_XER_OV) & 0x1) << 30 );
-   w |= ( (((UInt)vex_state->guest_XER_CA) & 0x1) << 29 );
-   return w;
-}
-
-
-/* VISIBLE TO LIBVEX CLIENT */
-void LibVEX_GuestPPC32_put_XER ( UInt xer_native,
+#if 0
+void LibVEX_GuestPPC32_put_flags ( UInt flags_native,
                                  /*OUT*/VexGuestPPC32State* vex_state )
 {
-   vex_state->guest_XER_BC = (UChar)(xer_native & 0xFF);
-   vex_state->guest_XER_SO = (UChar)((xer_native >> 31) & 0x1);
-   vex_state->guest_XER_OV = (UChar)((xer_native >> 30) & 0x1);
-   vex_state->guest_XER_CA = (UChar)((xer_native >> 29) & 0x1);
+   vassert(0); // FIXME
 }
+#endif
 
+/* VISIBLE TO LIBVEX CLIENT */
+UInt LibVEX_GuestPPC32_get_flags ( /*IN*/VexGuestPPC32State* vex_state )
+{
+   UInt flags = ppc32g_calculate_cr7_all(
+      vex_state->guest_CC_OP,
+      vex_state->guest_CC_DEP1,
+      vex_state->guest_CC_DEP2
+      );
+   return flags;
+}
 
 /* VISIBLE TO LIBVEX CLIENT */
 void LibVEX_GuestPPC32_initialise ( /*OUT*/VexGuestPPC32State* vex_state )
@@ -267,166 +244,42 @@ void LibVEX_GuestPPC32_initialise ( /*OUT*/VexGuestPPC32State* vex_state )
    vex_state->guest_GPR30 = 0;
    vex_state->guest_GPR31 = 0;
 
-   vex_state->guest_FPR0  = 0;
-   vex_state->guest_FPR1  = 0;
-   vex_state->guest_FPR2  = 0;
-   vex_state->guest_FPR3  = 0;
-   vex_state->guest_FPR4  = 0;
-   vex_state->guest_FPR5  = 0;
-   vex_state->guest_FPR6  = 0;
-   vex_state->guest_FPR7  = 0;
-   vex_state->guest_FPR8  = 0;
-   vex_state->guest_FPR9  = 0;
-   vex_state->guest_FPR10 = 0;
-   vex_state->guest_FPR11 = 0;
-   vex_state->guest_FPR12 = 0;
-   vex_state->guest_FPR13 = 0;
-   vex_state->guest_FPR14 = 0;
-   vex_state->guest_FPR15 = 0;
-   vex_state->guest_FPR16 = 0;
-   vex_state->guest_FPR17 = 0;
-   vex_state->guest_FPR18 = 0;
-   vex_state->guest_FPR19 = 0;
-   vex_state->guest_FPR20 = 0;
-   vex_state->guest_FPR21 = 0;
-   vex_state->guest_FPR22 = 0;
-   vex_state->guest_FPR23 = 0;
-   vex_state->guest_FPR24 = 0;
-   vex_state->guest_FPR25 = 0;
-   vex_state->guest_FPR26 = 0;
-   vex_state->guest_FPR27 = 0;
-   vex_state->guest_FPR28 = 0;
-   vex_state->guest_FPR29 = 0;
-   vex_state->guest_FPR30 = 0;
-   vex_state->guest_FPR31 = 0;
-
-   /* Initialise the vector state. */
-#  define VECZERO(_vr) _vr[0]=_vr[1]=_vr[2]=_vr[3] = 0;
-
-   VECZERO(vex_state->guest_VR0 );
-   VECZERO(vex_state->guest_VR1 );
-   VECZERO(vex_state->guest_VR2 );
-   VECZERO(vex_state->guest_VR3 );
-   VECZERO(vex_state->guest_VR4 );
-   VECZERO(vex_state->guest_VR5 );
-   VECZERO(vex_state->guest_VR6 );
-   VECZERO(vex_state->guest_VR7 );
-   VECZERO(vex_state->guest_VR8 );
-   VECZERO(vex_state->guest_VR9 );
-   VECZERO(vex_state->guest_VR10);
-   VECZERO(vex_state->guest_VR11);
-   VECZERO(vex_state->guest_VR12);
-   VECZERO(vex_state->guest_VR13);
-   VECZERO(vex_state->guest_VR14);
-   VECZERO(vex_state->guest_VR15);
-   VECZERO(vex_state->guest_VR16);
-   VECZERO(vex_state->guest_VR17);
-   VECZERO(vex_state->guest_VR18);
-   VECZERO(vex_state->guest_VR19);
-   VECZERO(vex_state->guest_VR20);
-   VECZERO(vex_state->guest_VR21);
-   VECZERO(vex_state->guest_VR22);
-   VECZERO(vex_state->guest_VR23);
-   VECZERO(vex_state->guest_VR24);
-   VECZERO(vex_state->guest_VR25);
-   VECZERO(vex_state->guest_VR26);
-   VECZERO(vex_state->guest_VR27);
-   VECZERO(vex_state->guest_VR28);
-   VECZERO(vex_state->guest_VR29);
-   VECZERO(vex_state->guest_VR30);
-   VECZERO(vex_state->guest_VR31);
-
-#  undef VECZERO
-
    vex_state->guest_CIA  = 0;
    vex_state->guest_LR   = 0;
    vex_state->guest_CTR  = 0;
 
-   vex_state->guest_XER_SO = 0;
-   vex_state->guest_XER_OV = 0;
-   vex_state->guest_XER_CA = 0;
-   vex_state->guest_XER_BC = 0;
+   vex_state->guest_CC_OP   = 0;
+   vex_state->guest_CC_DEP1 = 0;
+   vex_state->guest_CC_DEP2 = 0;
 
-   vex_state->guest_CR0_321 = 0;
-   vex_state->guest_CR0_0   = 0;
-   vex_state->guest_CR1_321 = 0;
-   vex_state->guest_CR1_0   = 0;
-   vex_state->guest_CR2_321 = 0;
-   vex_state->guest_CR2_0   = 0;
-   vex_state->guest_CR3_321 = 0;
-   vex_state->guest_CR3_0   = 0;
-   vex_state->guest_CR4_321 = 0;
-   vex_state->guest_CR4_0   = 0;
-   vex_state->guest_CR5_321 = 0;
-   vex_state->guest_CR5_0   = 0;
-   vex_state->guest_CR6_321 = 0;
-   vex_state->guest_CR6_0   = 0;
-   vex_state->guest_CR7_321 = 0;
-   vex_state->guest_CR7_0   = 0;
+   vex_state->guest_CR0to6 = 0;
 
-   vex_state->guest_FPROUND = (UInt)PPC32rm_NEAREST;
+   vex_state->guest_XER = 0;
 
-   vex_state->guest_VRSAVE = 0;
-
-   vex_state->guest_VSCR = 0;
-
-   vex_state->guest_EMWARN = EmWarn_NONE;
-
+   vex_state->guest_EMWARN = 0;
    vex_state->guest_TISTART = 0;
    vex_state->guest_TILEN   = 0;
-
-   vex_state->guest_RESVN   = 0;
 }
 
 
 /*-----------------------------------------------------------*/
-/*--- Describing the ppc32 guest state, for the benefit   ---*/
+/*--- Describing the ppc32 guest state, for the benefit     ---*/
 /*--- of iropt and instrumenters.                         ---*/
 /*-----------------------------------------------------------*/
 
 /* Figure out if any part of the guest state contained in minoff
    .. maxoff requires precise memory exceptions.  If in doubt return
    True (but this is generates significantly slower code).  
-
-   By default we enforce precise exns for guest R1 (stack pointer),
-   CIA (current insn address) and LR (link register).  These are the
-   minimum needed to extract correct stack backtraces from ppc32
-   code. [[NB: not sure if keeping LR up to date is actually
-   necessary.]]
 */
 Bool guest_ppc32_state_requires_precise_mem_exns ( Int minoff, 
-                                                   Int maxoff )
+                                                 Int maxoff)
 {
-   Int lr_min  = offsetof(VexGuestPPC32State, guest_LR);
-   Int lr_max  = lr_min + 4 - 1;
-   Int r1_min  = offsetof(VexGuestPPC32State, guest_GPR1);
-   Int r1_max  = r1_min + 4 - 1;
-   Int cia_min = offsetof(VexGuestPPC32State, guest_CIA);
-   Int cia_max = cia_min + 4 - 1;
-
-   if (maxoff < lr_min || minoff > lr_max) {
-      /* no overlap with LR */
-   } else {
-      return True;
-   }
-
-   if (maxoff < r1_min || minoff > r1_max) {
-      /* no overlap with R1 */
-   } else {
-      return True;
-   }
-
-   if (maxoff < cia_min || minoff > cia_max) {
-      /* no overlap with CIA */
-   } else {
-      return True;
-   }
-
-   return False;
+   return True; // FIXME (also comment above)
 }
 
 
-#define ALWAYSDEFD(field)                             \
+
+#define ALWAYSDEFD(field)                           \
     { offsetof(VexGuestPPC32State, field),            \
       (sizeof ((VexGuestPPC32State*)0)->field) }
 
@@ -446,17 +299,12 @@ VexGuestLayout
 
           /* Describe any sections to be regarded by Memcheck as
              'always-defined'. */
-          .n_alwaysDefd = 7,
+          .n_alwaysDefd = 1,
+          /* flags thunk: only using last_result, which is always defd. */
 
           .alwaysDefd 
-	  = { /*  0 */ ALWAYSDEFD(guest_CIA),
-	      /*  1 */ ALWAYSDEFD(guest_EMWARN),
-	      /*  2 */ ALWAYSDEFD(guest_TISTART),
-	      /*  3 */ ALWAYSDEFD(guest_TILEN),
-	      /*  4 */ ALWAYSDEFD(guest_VSCR),
-	      /*  5 */ ALWAYSDEFD(guest_FPROUND),
-	      /*  6 */ ALWAYSDEFD(guest_RESVN)
-            }
+             = { /*  0 */ ALWAYSDEFD(guest_CC_OP)
+               }
         };
 
 

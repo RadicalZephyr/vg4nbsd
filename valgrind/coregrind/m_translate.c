@@ -53,19 +53,14 @@
 /*--- Determining arch/subarch.                            ---*/
 /*------------------------------------------------------------*/
 
-// Returns the architecture and auxiliary information, or indicates
-// that this subarchitecture is unable to run Valgrind.  Returns False
-// to indicate we cannot proceed further.
-
-static Bool getArchAndArchInfo( /*OUT*/VexArch*     vex_arch, 
-                                /*OUT*/VexArchInfo* vai )
+// Returns the architecture and subarchitecture, or indicates
+// that this subarchitecture is unable to run Valgrind
+// Returns False to indicate we cannot proceed further.
+static Bool getArchAndSubArch( /*OUT*/VexArch*    vex_arch, 
+                               /*OUT*/VexSubArch* vex_subarch )
 {
-   // Whack default settings into vai, so that we only need to fill in
-   // any interesting bits.
-   LibVEX_default_VexArchInfo(vai);
-
 #if defined(VGA_x86)
-   Bool have_sse1, have_sse2;
+   Bool have_sse0, have_sse1, have_sse2;
    UInt eax, ebx, ecx, edx;
 
    if (!VG_(has_cpuid)())
@@ -80,46 +75,107 @@ static Bool getArchAndArchInfo( /*OUT*/VexArch*     vex_arch,
    /* get capabilities bits into edx */
    VG_(cpuid)(1, &eax, &ebx, &ecx, &edx);
 
+   have_sse0 = (edx & (1<<24)) != 0; /* True => have fxsave/fxrstor */
    have_sse1 = (edx & (1<<25)) != 0; /* True => have sse insns */
    have_sse2 = (edx & (1<<26)) != 0; /* True => have sse2 insns */
 
-   VG_(have_mxcsr_x86) = 1;
-
-   if (have_sse2 && have_sse1) {
+   if (have_sse2 && have_sse1 && have_sse0) {
       *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse2;
+      *vex_subarch = VexSubArchX86_sse2;
       return True;
    }
 
-   if (have_sse1) {
+   if (have_sse1 && have_sse0) {
       *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse1;
+      *vex_subarch = VexSubArchX86_sse1;
       return True;
    }
 
-   {
+   if (have_sse0) {
       *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse0;
-      VG_(have_mxcsr_x86) = 0;
+      *vex_subarch = VexSubArchX86_sse0;
       return True;
    }
 
+   /* we need at least SSE state to operate. */
+   return False;
 #elif defined(VGA_amd64)
    vg_assert(VG_(has_cpuid)());
-   *vex_arch    = VexArchAMD64;
-   vai->subarch = VexSubArch_NONE;
+   *vex_arch = VexArchAMD64;
+   *vex_subarch = VexSubArch_NONE;
    return True;
-
-#elif defined(VGA_ppc32)
-   *vex_arch    = VexArchPPC32;
-   vai->subarch = VexSubArchPPC32_noAV;
-   vai->ppc32_cache_line_szB = VG_(cache_line_size_ppc32);
-   return True;
-
 #else
 #  error Unknown architecture
 #endif
 }
+
+// Returns the architecture and auxiliary information, or indicates
+// that this subarchitecture is unable to run Valgrind.  Returns False
+// to indicate we cannot proceed further.
+
+//static Bool getArchAndArchInfo( /*OUT*/VexArch*     vex_arch, 
+//                                /*OUT*/VexArchInfo* vai )
+//{
+   // Whack default settings into vai, so that we only need to fill in
+   // any interesting bits.
+//   LibVEX_default_VexArchInfo(vai);
+//
+//#if defined(VGA_x86)
+//   Bool have_sse1, have_sse2;
+//   UInt eax, ebx, ecx, edx;
+//
+//   if (!VG_(has_cpuid)())
+//      /* we can't do cpuid at all.  Give up. */
+//      return False;
+//
+//   VG_(cpuid)(0, &eax, &ebx, &ecx, &edx);
+//   if (eax < 1)
+//     /* we can't ask for cpuid(x) for x > 0.  Give up. */
+//     return False;
+//
+//   /* get capabilities bits into edx */
+//   VG_(cpuid)(1, &eax, &ebx, &ecx, &edx);
+//
+//   have_sse1 = (edx & (1<<25)) != 0; /* True => have sse insns */
+//   have_sse2 = (edx & (1<<26)) != 0; /* True => have sse2 insns */
+//
+//   VG_(have_mxcsr_x86) = 1;
+//
+//   if (have_sse2 && have_sse1) {
+//      *vex_arch    = VexArchX86;
+//      vai->subarch = VexSubArchX86_sse2;
+//      return True;
+//   }
+//
+//   if (have_sse1) {
+//      *vex_arch    = VexArchX86;
+//      vai->subarch = VexSubArchX86_sse1;
+//      return True;
+//   }
+//
+//   {
+//      *vex_arch    = VexArchX86;
+//      vai->subarch = VexSubArchX86_sse0;
+//      VG_(have_mxcsr_x86) = 0;
+//      return True;
+//   }
+//
+//#elif defined(VGA_amd64)
+//   vg_assert(VG_(has_cpuid)());
+//   *vex_arch    = VexArchAMD64;
+//   vai->subarch = VexSubArch_NONE;
+//   return True;
+//
+//#elif defined(VGA_ppc32)
+//   *vex_arch    = VexArchPPC32;
+//   vai->subarch = VexSubArchPPC32_noAV;
+//   vai->ppc32_cache_line_szB = VG_(cache_line_size_ppc32);
+//   return True;
+//
+//#else
+//#  error Unknown architecture
+//#endif
+//}
 
 
 /*------------------------------------------------------------*/
@@ -446,15 +502,17 @@ Bool VG_(translate) ( ThreadId tid,
 
    /* Indicates what arch we are running on, and other important info
       (subarch variant, cache line size). */
-   static VexArchInfo vex_archinfo;
    static VexArch     vex_arch    = VexArch_INVALID;
+   static VexSubArch vex_subarch = VexSubArch_INVALID;
+   //static VexArchInfo vex_archinfo;
 
    /* Make sure Vex is initialised right. */
    VexTranslateResult tres;
    static Bool vex_init_done = False;
 
    if (!vex_init_done) {
-      Bool ok = getArchAndArchInfo( &vex_arch, &vex_archinfo );
+      Bool ok = getArchAndSubArch( &vex_arch, &vex_subarch );
+      //Bool ok = getArchAndArchInfo( &vex_arch, &vex_archinfo );
       if (!ok) {
          VG_(printf)("\n");
          VG_(printf)("valgrind: fatal error: unsupported CPU.\n");
@@ -470,7 +528,8 @@ Bool VG_(translate) ( ThreadId tid,
          VG_(message)(Vg_DebugMsg, 
                       "Host CPU: arch = %s, subarch = %s",
                       LibVEX_ppVexArch   ( vex_arch ),
-                      LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
+                      LibVEX_ppVexSubArch( vex_subarch ) );
+                      //LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
       }
 
       LibVEX_Init ( &failure_exit, &log_bytes, 
@@ -582,9 +641,12 @@ Bool VG_(translate) ( ThreadId tid,
    /* Set up closure arg for "chase_into_ok" */
    chase_into_ok__CLOSURE_tid = tid;
 
+   //vex_arch, &vex_archinfo,
+   //vex_arch, &vex_archinfo,
+   //do_self_check,
    tres = LibVEX_Translate ( 
-             vex_arch, &vex_archinfo,
-             vex_arch, &vex_archinfo,
+             vex_arch, vex_subarch,
+             vex_arch, vex_subarch,
              (UChar*)ULong_to_Ptr(orig_addr), 
              (Addr64)orig_addr, 
              chase_into_ok,
@@ -595,7 +657,6 @@ Bool VG_(translate) ( ThreadId tid,
                 ? vg_SP_update_pass
                 : NULL,
              True, /* cleanup after instrumentation */
-             do_self_check,
              NULL,
              verbosity
           );
@@ -614,11 +675,11 @@ Bool VG_(translate) ( ThreadId tid,
    if (!debugging_translation) {
       // Note that we use orig_addr0, not orig_addr, which might have been
       // changed by the redirection
+      //do_self_check );
       VG_(add_to_transtab)( &vge,
                             orig_addr0,
                             (Addr)(&tmpbuf[0]), 
-                            tmpbuf_used,
-                            do_self_check );
+                            tmpbuf_used );
    }
 
    VGP_POPCC(VgpTranslate);

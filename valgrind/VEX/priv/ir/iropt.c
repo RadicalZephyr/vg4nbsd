@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (ir/iropt.c) is                               ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004-2005 OpenWorks LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex_basictypes.h"
@@ -264,8 +253,8 @@ static Bool isFlat ( IRExpr* e )
    if (e->tag == Iex_Binop)
       return toBool( isIRAtom(e->Iex.Binop.arg1) 
                      && isIRAtom(e->Iex.Binop.arg2) );
-   if (e->tag == Iex_Load)
-      return isIRAtom(e->Iex.Load.addr);
+   if (e->tag == Iex_LDle)
+      return isIRAtom(e->Iex.LDle.addr);
    return False;
 }
 
@@ -311,12 +300,11 @@ static IRExpr* flatten_Expr ( IRBB* bb, IRExpr* ex )
                         flatten_Expr(bb, ex->Iex.Unop.arg))));
          return IRExpr_Tmp(t1);
 
-      case Iex_Load:
+      case Iex_LDle:
          t1 = newIRTemp(bb->tyenv, ty);
          addStmtToIRBB(bb, IRStmt_Tmp(t1,
-            IRExpr_Load(ex->Iex.Load.end,
-                        ex->Iex.Load.ty, 
-                        flatten_Expr(bb, ex->Iex.Load.addr))));
+            IRExpr_LDle(ex->Iex.LDle.ty, 
+                        flatten_Expr(bb, ex->Iex.LDle.addr))));
          return IRExpr_Tmp(t1);
 
       case Iex_CCall:
@@ -401,10 +389,10 @@ static void flatten_Stmt ( IRBB* bb, IRStmt* st )
             addStmtToIRBB(bb, IRStmt_Tmp(st->Ist.Tmp.tmp, e1));
          }
          break;
-      case Ist_Store:
-         e1 = flatten_Expr(bb, st->Ist.Store.addr);
-         e2 = flatten_Expr(bb, st->Ist.Store.data);
-         addStmtToIRBB(bb, IRStmt_Store(st->Ist.Store.end, e1,e2));
+      case Ist_STle:
+         e1 = flatten_Expr(bb, st->Ist.STle.addr);
+         e2 = flatten_Expr(bb, st->Ist.STle.data);
+         addStmtToIRBB(bb, IRStmt_STle(e1,e2));
          break;
       case Ist_Dirty:
          d = st->Ist.Dirty.details;
@@ -664,7 +652,7 @@ static void handle_gets_Stmt (
                isGet = True;
                key = mk_key_GetIPutI ( e->Iex.GetI.descr );
                break;
-            case Iex_Load:
+            case Iex_LDle:
                isGet = False;
                memRW = True;
                break;
@@ -698,9 +686,9 @@ static void handle_gets_Stmt (
          break;
 
       /* all other cases are boring. */
-      case Ist_Store:
-         vassert(isIRAtom(st->Ist.Store.addr));
-         vassert(isIRAtom(st->Ist.Store.data));
+      case Ist_STle:
+         vassert(isIRAtom(st->Ist.STle.addr));
+         vassert(isIRAtom(st->Ist.STle.data));
          memRW = True;
          break;
 
@@ -904,11 +892,6 @@ static IRExpr* fold_Expr ( IRExpr* e )
                     ? 1 : 0));
             break;
 
-         case Iop_1Sto16:
-            e2 = IRExpr_Const(IRConst_U16(toUShort(
-                    e->Iex.Unop.arg->Iex.Const.con->Ico.U1
-                    ? 0xFFFF : 0)));
-            break;
          case Iop_1Sto32:
             e2 = IRExpr_Const(IRConst_U32(
                     e->Iex.Unop.arg->Iex.Const.con->Ico.U1
@@ -1305,24 +1288,6 @@ static IRExpr* fold_Expr ( IRExpr* e )
                         < (UInt)(e->Iex.Binop.arg2->Iex.Const.con->Ico.U32)))));
                break;
 
-            /* -- CmpORD -- */
-            case Iop_CmpORD32S: {
-               /* very paranoid */
-               UInt  u32a = e->Iex.Binop.arg1->Iex.Const.con->Ico.U32;
-               UInt  u32b = e->Iex.Binop.arg2->Iex.Const.con->Ico.U32;
-               Int   s32a = (Int)u32a;
-               Int   s32b = (Int)u32b;
-               Int   r = 0x2; /* EQ */
-               if (s32a < s32b) {
-                  r = 0x8; /* LT */
-               } 
-               else if (s32a > s32b) {
-                  r = 0x4; /* GT */
-               }
-               e2 = IRExpr_Const(IRConst_U32(r));
-               break;
-            }
-
             /* -- nHLto2n -- */
             case Iop_32HLto64:
                e2 = IRExpr_Const(IRConst_U64(
@@ -1392,13 +1357,6 @@ static IRExpr* fold_Expr ( IRExpr* e )
              && e->Iex.Binop.arg2->tag == Iex_Const
              && e->Iex.Binop.arg2->Iex.Const.con->Ico.U32 == 0xFFFFFFFF) {
             e2 = e->Iex.Binop.arg1;
-         } else
-
-         /* And32(x,0) ==> 0 */
-         if (e->Iex.Binop.op == Iop_And32
-             && e->Iex.Binop.arg2->tag == Iex_Const
-             && e->Iex.Binop.arg2->Iex.Const.con->Ico.U32 == 0) {
-            e2 = IRExpr_Const(IRConst_U32(0));
          } else
 
          /* Or32(0,x) ==> x */
@@ -1511,12 +1469,11 @@ static IRExpr* subst_Expr ( IRExpr** env, IRExpr* ex )
                    subst_Expr(env, ex->Iex.Unop.arg)
                 );
 
-      case Iex_Load:
-         vassert(isIRAtom(ex->Iex.Load.addr));
-         return IRExpr_Load(
-                   ex->Iex.Load.end,
-                   ex->Iex.Load.ty,
-                   subst_Expr(env, ex->Iex.Load.addr)
+      case Iex_LDle:
+         vassert(isIRAtom(ex->Iex.LDle.addr));
+         return IRExpr_LDle(
+                   ex->Iex.LDle.ty,
+                   subst_Expr(env, ex->Iex.LDle.addr)
                 );
 
       case Iex_CCall: {
@@ -1595,13 +1552,12 @@ static IRStmt* subst_and_fold_Stmt ( IRExpr** env, IRStmt* st )
                    fold_Expr(subst_Expr(env, st->Ist.Tmp.data))
                 );
 
-      case Ist_Store:
-         vassert(isIRAtom(st->Ist.Store.addr));
-         vassert(isIRAtom(st->Ist.Store.data));
-         return IRStmt_Store(
-                   st->Ist.Store.end,
-                   fold_Expr(subst_Expr(env, st->Ist.Store.addr)),
-                   fold_Expr(subst_Expr(env, st->Ist.Store.data))
+      case Ist_STle:
+         vassert(isIRAtom(st->Ist.STle.addr));
+         vassert(isIRAtom(st->Ist.STle.data));
+         return IRStmt_STle(
+                   fold_Expr(subst_Expr(env, st->Ist.STle.addr)),
+                   fold_Expr(subst_Expr(env, st->Ist.STle.data))
                 );
 
       case Ist_Dirty: {
@@ -1768,8 +1724,8 @@ static void addUses_Expr ( Bool* set, IRExpr* e )
          for (i = 0; e->Iex.CCall.args[i]; i++)
             addUses_Expr(set, e->Iex.CCall.args[i]);
          return;
-      case Iex_Load:
-         addUses_Expr(set, e->Iex.Load.addr);
+      case Iex_LDle:
+         addUses_Expr(set, e->Iex.LDle.addr);
          return;
       case Iex_Binop:
          addUses_Expr(set, e->Iex.Binop.arg1);
@@ -1809,9 +1765,9 @@ static void addUses_Stmt ( Bool* set, IRStmt* st )
       case Ist_Put:
          addUses_Expr(set, st->Ist.Put.data);
          return;
-      case Ist_Store:
-         addUses_Expr(set, st->Ist.Store.addr);
-         addUses_Expr(set, st->Ist.Store.data);
+      case Ist_STle:
+         addUses_Expr(set, st->Ist.STle.addr);
+         addUses_Expr(set, st->Ist.STle.data);
          return;
       case Ist_Dirty:
          d = st->Ist.Dirty.details;
@@ -2694,9 +2650,9 @@ Bool guestAccessWhichMightOverlapPutI (
          }
          return False;
 
-      case Ist_Store:
-         vassert(isIRAtom(s2->Ist.Store.addr));
-         vassert(isIRAtom(s2->Ist.Store.data));
+      case Ist_STle:
+         vassert(isIRAtom(s2->Ist.STle.addr));
+         vassert(isIRAtom(s2->Ist.STle.data));
          return False;
 
       default:
@@ -2843,8 +2799,8 @@ static void deltaIRExpr ( IRExpr* e, Int delta )
       case Iex_Unop:
          deltaIRExpr(e->Iex.Unop.arg, delta);
          break;
-      case Iex_Load:
-         deltaIRExpr(e->Iex.Load.addr, delta);
+      case Iex_LDle:
+         deltaIRExpr(e->Iex.LDle.addr, delta);
          break;
       case Iex_CCall:
          for (i = 0; e->Iex.CCall.args[i]; i++)
@@ -2871,7 +2827,6 @@ static void deltaIRStmt ( IRStmt* st, Int delta )
    switch (st->tag) {
       case Ist_NoOp:
       case Ist_IMark:
-      case Ist_MFence:
          break;
       case Ist_AbiHint:
          deltaIRExpr(st->Ist.AbiHint.base, delta);
@@ -2890,9 +2845,9 @@ static void deltaIRStmt ( IRStmt* st, Int delta )
       case Ist_Exit:
          deltaIRExpr(st->Ist.Exit.guard, delta);
          break;
-      case Ist_Store:
-         deltaIRExpr(st->Ist.Store.addr, delta);
-         deltaIRExpr(st->Ist.Store.data, delta);
+      case Ist_STle:
+         deltaIRExpr(st->Ist.STle.addr, delta);
+         deltaIRExpr(st->Ist.STle.data, delta);
          break;
       case Ist_Dirty:
          d = st->Ist.Dirty.details;
@@ -3205,8 +3160,8 @@ static void occCount_Expr ( TmpInfo** env, IRExpr* e )
          occCount_Expr(env, e->Iex.Unop.arg);
          return;
 
-      case Iex_Load:
-         occCount_Expr(env, e->Iex.Load.addr);
+      case Iex_LDle: 
+         occCount_Expr(env, e->Iex.LDle.addr);
          return;
 
       case Iex_CCall:
@@ -3251,9 +3206,9 @@ static void occCount_Stmt ( TmpInfo** env, IRStmt* st )
          occCount_Expr(env, st->Ist.PutI.ix);
          occCount_Expr(env, st->Ist.PutI.data);
          return;
-      case Ist_Store:
-         occCount_Expr(env, st->Ist.Store.addr);
-         occCount_Expr(env, st->Ist.Store.data);
+      case Ist_STle: 
+         occCount_Expr(env, st->Ist.STle.addr);
+         occCount_Expr(env, st->Ist.STle.data);
          return;
       case Ist_Dirty:
          d = st->Ist.Dirty.details;
@@ -3340,11 +3295,10 @@ static IRExpr* tbSubst_Expr ( TmpInfo** env, IRExpr* e )
                    e->Iex.Unop.op,
                    tbSubst_Expr(env, e->Iex.Unop.arg)
                 );
-      case Iex_Load:
-         return IRExpr_Load(
-                   e->Iex.Load.end,
-                   e->Iex.Load.ty,
-                  tbSubst_Expr(env, e->Iex.Load.addr)
+      case Iex_LDle:
+         return IRExpr_LDle(
+                   e->Iex.LDle.ty,
+                  tbSubst_Expr(env, e->Iex.LDle.addr)
                 );
       case Iex_GetI:
          return IRExpr_GetI(
@@ -3374,11 +3328,10 @@ static IRStmt* tbSubst_Stmt ( TmpInfo** env, IRStmt* st )
                    tbSubst_Expr(env, st->Ist.AbiHint.base),
                    st->Ist.AbiHint.len
                 );
-      case Ist_Store:
-         return IRStmt_Store(
-                   st->Ist.Store.end,
-                   tbSubst_Expr(env, st->Ist.Store.addr),
-                   tbSubst_Expr(env, st->Ist.Store.data)
+      case Ist_STle:
+         return IRStmt_STle(
+                   tbSubst_Expr(env, st->Ist.STle.addr),
+                   tbSubst_Expr(env, st->Ist.STle.data)
                 );
       case Ist_Tmp:
          return IRStmt_Tmp(
@@ -3451,9 +3404,9 @@ static void setHints_Expr (Bool* doesLoad, Bool* doesGet, IRExpr* e )
       case Iex_Unop:
          setHints_Expr(doesLoad, doesGet, e->Iex.Unop.arg);
          return;
-      case Iex_Load:
+      case Iex_LDle:
          *doesLoad = True;
-         setHints_Expr(doesLoad, doesGet, e->Iex.Load.addr);
+         setHints_Expr(doesLoad, doesGet, e->Iex.LDle.addr);
          return;
       case Iex_Get:
          *doesGet = True;
@@ -3633,7 +3586,7 @@ static void dumpInvalidated ( TmpInfo** env, IRBB* bb, /*INOUT*/Int* j )
                       || st->tag == Ist_PutI 
                       || st->tag == Ist_Dirty);
 
-      invStore = toBool(st->tag == Ist_Store
+      invStore = toBool(st->tag == Ist_STle
                         || st->tag == Ist_Dirty);
 
       for (k = 0; k < n_tmps; k++) {
@@ -3787,9 +3740,9 @@ static Bool hasGetIorPutI ( IRBB* bb )
          case Ist_Put:
             vassert(isIRAtom(st->Ist.Put.data));
             break;
-         case Ist_Store:
-            vassert(isIRAtom(st->Ist.Store.addr));
-            vassert(isIRAtom(st->Ist.Store.data));
+         case Ist_STle:
+            vassert(isIRAtom(st->Ist.STle.addr));
+            vassert(isIRAtom(st->Ist.STle.data));
             break;
          case Ist_Dirty:
             d = st->Ist.Dirty.details;

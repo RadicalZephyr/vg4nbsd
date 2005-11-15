@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (guest-amd64/ghelpers.c) is                   ---*/
-/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,38 +10,27 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
+   Copyright (C) 2004 OpenWorks, LLP.
 
-   This library is made available under a dual licensing scheme.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; Version 2 dated June 1991 of the
+   license.
 
-   If you link LibVEX against other code all of which is itself
-   licensed under the GNU General Public License, version 2 dated June
-   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
-   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
-   is missing, you can obtain a copy of the GPL v2 from the Free
-   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
-   02110-1301, USA.
-
-   For any other uses of LibVEX, you must first obtain a commercial
-   license from OpenWorks LLP.  Please contact info@open-works.co.uk
-   for information about commercial licensing.
-
-   This software is provided by OpenWorks LLP "as is" and any express
-   or implied warranties, including, but not limited to, the implied
-   warranties of merchantability and fitness for a particular purpose
-   are disclaimed.  In no event shall OpenWorks LLP be liable for any
-   direct, indirect, incidental, special, exemplary, or consequential
-   damages (including, but not limited to, procurement of substitute
-   goods or services; loss of use, data, or profits; or business
-   interruption) however caused and on any theory of liability,
-   whether in contract, strict liability, or tort (including
-   negligence or otherwise) arising in any way out of the use of this
-   software, even if advised of the possibility of such damage.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
+   for damages.  See the GNU General Public License for more details.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+   USA.
 */
 
 #include "libvex_basictypes.h"
@@ -51,7 +40,6 @@
 #include "libvex.h"
 
 #include "main/vex_util.h"
-#include "guest-generic/bb_to_IR.h"
 #include "guest-amd64/gdefs.h"
 #include "guest-generic/g_generic_x87.h"
 
@@ -924,8 +912,8 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
       }
 
       if (isU64(cc_op, AMD64G_CC_OP_SUBL) && isU64(cond, AMD64CondLE)) {
-         /* long sub/cmp, then LE (signed less than or equal) 
-            --> test dst <=s src */
+         /* long sub/cmp, then L (signed less than or equal) 
+            --> test dst <s src */
          return unop(Iop_1Uto64,
                      binop(Iop_CmpLE64S, 
                            binop(Iop_Shl64,cc_dep1,mkU8(32)),
@@ -956,16 +944,6 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
                      binop(Iop_CmpEQ16, 
                            unop(Iop_64to16,cc_dep1),
                            unop(Iop_64to16,cc_dep2)));
-      }
-
-      if (isU64(cc_op, AMD64G_CC_OP_SUBW) && isU64(cond, AMD64CondLE)) {
-         /* 16-bit sub/cmp, then LE (signed less than or equal) 
-            --> test dst <=s src */
-         return unop(Iop_1Uto64,
-                     binop(Iop_CmpLE64S, 
-                           binop(Iop_Shl64,cc_dep1,mkU8(48)),
-                           binop(Iop_Shl64,cc_dep2,mkU8(48))));
-
       }
 
       /*---------------- SUBB ----------------*/
@@ -1003,14 +981,6 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
          /* long and/or/xor, then Z --> test dst==0 */
          return unop(Iop_1Uto64,
                      binop(Iop_CmpEQ64, 
-                           binop(Iop_Shl64,cc_dep1,mkU8(32)), 
-                           mkU64(0)));
-      }
-
-      if (isU64(cc_op, AMD64G_CC_OP_LOGICL) && isU64(cond, AMD64CondNZ)) {
-         /* long and/or/xor, then NZ --> test dst!=0 */
-         return unop(Iop_1Uto64,
-                     binop(Iop_CmpNE64, 
                            binop(Iop_Shl64,cc_dep1,mkU8(32)), 
                            mkU64(0)));
       }
@@ -1060,27 +1030,6 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
 //..                                         mkU32(0)));
 //..       }
 //.. 
-
-      /*---------------- INCB ----------------*/
-
-      if (isU64(cc_op, AMD64G_CC_OP_INCB) && isU64(cond, AMD64CondLE)) {
-         /* 8-bit inc, then LE --> test result <=s 0 */
-         return unop(Iop_1Uto64,
-                     binop(Iop_CmpLE64S, 
-                           binop(Iop_Shl64,cc_dep1,mkU8(56)),
-                           mkU64(0)));
-      }
-
-      /*---------------- DECW ----------------*/
-
-      if (isU64(cc_op, AMD64G_CC_OP_DECW) && isU64(cond, AMD64CondNZ)) {
-         /* 16-bit dec, then NZ --> test dst != 0 */
-         return unop(Iop_1Uto64,
-                     binop(Iop_CmpNE64, 
-                           binop(Iop_Shl64,cc_dep1,mkU8(48)), 
-                           mkU64(0)));
-      }
-
 //..       /*---------------- DECL ----------------*/
 //.. 
 //..       if (isU32(cc_op, AMD64G_CC_OP_DECL) && isU32(cond, X86CondZ)) {
@@ -1241,85 +1190,6 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
 /*---------------------------------------------------------------*/
 /*--- Supporting functions for x87 FPU activities.            ---*/
 /*---------------------------------------------------------------*/
-
-static inline Bool host_is_little_endian ( void )
-{
-   UInt x = 0x76543210;
-   UChar* p = (UChar*)(&x);
-   return toBool(*p == 0x10);
-}
-
-/* Inspect a value and its tag, as per the x87 'FXAM' instruction. */
-/* CALLED FROM GENERATED CODE: CLEAN HELPER */
-ULong amd64g_calculate_FXAM ( ULong tag, ULong dbl ) 
-{
-   Bool   mantissaIsZero;
-   Int    bexp;
-   UChar  sign;
-   UChar* f64;
-
-   vassert(host_is_little_endian());
-
-   /* vex_printf("calculate_FXAM ( %d, %llx ) .. ", tag, dbl ); */
-
-   f64  = (UChar*)(&dbl);
-   sign = toUChar( (f64[7] >> 7) & 1 );
-
-   /* First off, if the tag indicates the register was empty,
-      return 1,0,sign,1 */
-   if (tag == 0) {
-      /* vex_printf("Empty\n"); */
-      return AMD64G_FC_MASK_C3 | 0 | (sign << AMD64G_FC_SHIFT_C1) 
-                                   | AMD64G_FC_MASK_C0;
-   }
-
-   bexp = (f64[7] << 4) | ((f64[6] >> 4) & 0x0F);
-   bexp &= 0x7FF;
-
-   mantissaIsZero
-      = toBool(
-           (f64[6] & 0x0F) == 0 
-           && (f64[5] | f64[4] | f64[3] | f64[2] | f64[1] | f64[0]) == 0
-        );
-
-   /* If both exponent and mantissa are zero, the value is zero.
-      Return 1,0,sign,0. */
-   if (bexp == 0 && mantissaIsZero) {
-      /* vex_printf("Zero\n"); */
-      return AMD64G_FC_MASK_C3 | 0 
-                               | (sign << AMD64G_FC_SHIFT_C1) | 0;
-   }
-   
-   /* If exponent is zero but mantissa isn't, it's a denormal.
-      Return 1,1,sign,0. */
-   if (bexp == 0 && !mantissaIsZero) {
-      /* vex_printf("Denormal\n"); */
-      return AMD64G_FC_MASK_C3 | AMD64G_FC_MASK_C2 
-                               | (sign << AMD64G_FC_SHIFT_C1) | 0;
-   }
-
-   /* If the exponent is 7FF and the mantissa is zero, this is an infinity.
-      Return 0,1,sign,1. */
-   if (bexp == 0x7FF && mantissaIsZero) {
-      /* vex_printf("Inf\n"); */
-      return 0 | AMD64G_FC_MASK_C2 | (sign << AMD64G_FC_SHIFT_C1) 
-                                   | AMD64G_FC_MASK_C0;
-   }
-
-   /* If the exponent is 7FF and the mantissa isn't zero, this is a NaN.
-      Return 0,0,sign,1. */
-   if (bexp == 0x7FF && !mantissaIsZero) {
-      /* vex_printf("NaN\n"); */
-      return 0 | 0 | (sign << AMD64G_FC_SHIFT_C1) | AMD64G_FC_MASK_C0;
-   }
-
-   /* Uh, ok, we give up.  It must be a normal finite number.
-      Return 0,1,sign,0.
-   */
-   /* vex_printf("normal\n"); */
-   return 0 | AMD64G_FC_MASK_C2 | (sign << AMD64G_FC_SHIFT_C1) | 0;
-}
-
 
 // MAYBE NOT TRUE: /* CALLED FROM GENERATED CODE */
 // MAYBE NOT TRUE: /* DIRTY HELPER (writes guest state) */
@@ -1607,75 +1477,6 @@ void amd64g_dirtyhelper_CPUID ( VexGuestAMD64State* st )
 }
 
 
-ULong amd64g_calculate_RCR ( ULong arg, 
-                             ULong rot_amt, 
-                             ULong rflags_in, 
-                             Long  szIN )
-{
-   Bool  wantRflags = toBool(szIN < 0);
-   ULong sz         = wantRflags ? (-szIN) : szIN;
-   ULong tempCOUNT  = rot_amt & (sz == 8 ? 0x3F : 0x1F);
-   ULong cf=0, of=0, tempcf;
-
-   switch (sz) {
-      case 8:
-         cf        = (rflags_in >> AMD64G_CC_SHIFT_C) & 1;
-         of        = ((arg >> 63) ^ cf) & 1;
-         while (tempCOUNT > 0) {
-            tempcf = arg & 1;
-            arg    = (arg >> 1) | (cf << 63);
-            cf     = tempcf;
-            tempCOUNT--;
-         }
-         break;
-      case 4:
-         while (tempCOUNT >= 33) tempCOUNT -= 33;
-         cf        = (rflags_in >> AMD64G_CC_SHIFT_C) & 1;
-         of        = ((arg >> 31) ^ cf) & 1;
-         while (tempCOUNT > 0) {
-            tempcf = arg & 1;
-            arg    = ((arg >> 1) & 0x7FFFFFFFULL) | (cf << 31);
-            cf     = tempcf;
-            tempCOUNT--;
-         }
-         break;
-      case 2:
-         while (tempCOUNT >= 17) tempCOUNT -= 17;
-         cf        = (rflags_in >> AMD64G_CC_SHIFT_C) & 1;
-         of        = ((arg >> 15) ^ cf) & 1;
-         while (tempCOUNT > 0) {
-            tempcf = arg & 1;
-            arg    = ((arg >> 1) & 0x7FFFULL) | (cf << 15);
-            cf     = tempcf;
-            tempCOUNT--;
-         }
-         break;
-      case 1:
-         while (tempCOUNT >= 9) tempCOUNT -= 9;
-         cf        = (rflags_in >> AMD64G_CC_SHIFT_C) & 1;
-         of        = ((arg >> 7) ^ cf) & 1;
-         while (tempCOUNT > 0) {
-            tempcf = arg & 1;
-            arg    = ((arg >> 1) & 0x7FULL) | (cf << 7);
-            cf     = tempcf;
-            tempCOUNT--;
-         }
-         break;
-      default:
-         vpanic("calculate_RCR(amd64g): invalid size");
-   }
-
-   cf &= 1;
-   of &= 1;
-   rflags_in &= ~(AMD64G_CC_MASK_C | AMD64G_CC_MASK_O);
-   rflags_in |= (cf << AMD64G_CC_SHIFT_C) | (of << AMD64G_CC_SHIFT_O);
-
-   /* caller can ask to have back either the resulting flags or
-      resulting value, but not both */
-   return wantRflags ? rflags_in : arg;
-}
-
-
 /*---------------------------------------------------------------*/
 /*--- Helpers for MMX/SSE/SSE2.                               ---*/
 /*---------------------------------------------------------------*/
@@ -1927,7 +1728,7 @@ VexGuestLayout
 
           /* Describe any sections to be regarded by Memcheck as
              'always-defined'. */
-          .n_alwaysDefd = 14,
+          .n_alwaysDefd = 12,
 
           /* flags thunk: OP and NDEP are always defd, whereas DEP1
              and DEP2 have to be tracked.  See detailed comment in
@@ -1952,9 +1753,7 @@ VexGuestLayout
                  // /* */ ALWAYSDEFD(guest_LDT),
                  // /* */ ALWAYSDEFD(guest_GDT),
                  /* 10 */ ALWAYSDEFD(guest_EMWARN),
-                 /* 11 */ ALWAYSDEFD(guest_SSEROUND),
-                 /* 12 */ ALWAYSDEFD(guest_TISTART),
-                 /* 13 */ ALWAYSDEFD(guest_TILEN)
+                 /* 11 */ ALWAYSDEFD(guest_SSEROUND)
                }
         };
 

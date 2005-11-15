@@ -364,11 +364,11 @@ static void invalidate_icache ( void *ptr, Int nbytes )
    pre: youngest_sector points to a valid (although possibly full)
    sector.
 */
+//, Bool             is_self_checking )
 void VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
-                           UInt             code_len,
-                           Bool             is_self_checking )
+                           UInt             code_len )
 {
    Int    tcAvailQ, reqdQ, y, i;
    ULong  *tce, *tce2;
@@ -386,8 +386,10 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
    n_in_count++;
    n_in_tsize += code_len;
    n_in_osize += vge_osize(vge);
+   /*
    if (is_self_checking)
       n_in_sc_count++;
+      */
 
    y = youngest_sector;
    vg_assert(isValidSector(y));
@@ -439,7 +441,8 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
    sectors[y].tc_next += reqdQ;
    sectors[y].tt_n_inuse++;
 
-   invalidate_icache( dstP, code_len );
+   // XXX strangeness spoty
+   //invalidate_icache( dstP, code_len );
 
    /* more paranoia */
    tce2 = sectors[y].tc_next;

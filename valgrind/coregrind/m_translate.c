@@ -30,96 +30,24 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_cpuid.h"
-#include "pub_core_machine.h"       // For VG_(cache_line_size_ppc32)
+
+#include "pub_core_machine.h"       // For VG_(machine_get_VexArchInfo)
                                     // and VG_(get_SP)
-                                    // and VG_(have_mxcsr_x86)
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
+
+#include "pub_core_debuginfo.h"     // Needed for pub_core_redir :(
 #include "pub_core_redir.h"         // For VG_(code_redirect)()
+
 #include "pub_core_signals.h"       // For VG_(synth_fault_{perms,mapping})()
 #include "pub_core_stacks.h"        // For VG_(unknown_SP_update)()
 #include "pub_core_tooliface.h"     // For VG_(tdict)
 #include "pub_core_translate.h"
 #include "pub_core_transtab.h"
-
-
-/*------------------------------------------------------------*/
-/*--- Determining arch/subarch.                            ---*/
-/*------------------------------------------------------------*/
-
-// Returns the architecture and auxiliary information, or indicates
-// that this subarchitecture is unable to run Valgrind.  Returns False
-// to indicate we cannot proceed further.
-
-static Bool getArchAndArchInfo( /*OUT*/VexArch*     vex_arch, 
-                                /*OUT*/VexArchInfo* vai )
-{
-   // Whack default settings into vai, so that we only need to fill in
-   // any interesting bits.
-   LibVEX_default_VexArchInfo(vai);
-
-#if defined(VGA_x86)
-   Bool have_sse1, have_sse2;
-   UInt eax, ebx, ecx, edx;
-
-   if (!VG_(has_cpuid)())
-      /* we can't do cpuid at all.  Give up. */
-      return False;
-
-   VG_(cpuid)(0, &eax, &ebx, &ecx, &edx);
-   if (eax < 1)
-     /* we can't ask for cpuid(x) for x > 0.  Give up. */
-     return False;
-
-   /* get capabilities bits into edx */
-   VG_(cpuid)(1, &eax, &ebx, &ecx, &edx);
-
-   have_sse1 = (edx & (1<<25)) != 0; /* True => have sse insns */
-   have_sse2 = (edx & (1<<26)) != 0; /* True => have sse2 insns */
-
-   VG_(have_mxcsr_x86) = 1;
-
-   if (have_sse2 && have_sse1) {
-      *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse2;
-      return True;
-   }
-
-   if (have_sse1) {
-      *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse1;
-      return True;
-   }
-
-   {
-      *vex_arch    = VexArchX86;
-      vai->subarch = VexSubArchX86_sse0;
-      VG_(have_mxcsr_x86) = 0;
-      return True;
-   }
-
-#elif defined(VGA_amd64)
-   vg_assert(VG_(has_cpuid)());
-   *vex_arch    = VexArchAMD64;
-   vai->subarch = VexSubArch_NONE;
-   return True;
-
-#elif defined(VGA_ppc32)
-   *vex_arch    = VexArchPPC32;
-   vai->subarch = VexSubArchPPC32_noAV;
-   vai->ppc32_cache_line_szB = VG_(cache_line_size_ppc32);
-   return True;
-
-#else
-#  error Unknown architecture
-#endif
-}
 
 
 /*------------------------------------------------------------*/
@@ -161,8 +89,12 @@ static Bool need_to_handle_SP_assignment(void)
 */
 
 static
-IRBB* vg_SP_update_pass ( IRBB* bb_in, VexGuestLayout* layout, 
-                          IRType gWordTy, IRType hWordTy )
+IRBB* vg_SP_update_pass ( IRBB*             bb_in, 
+                          VexGuestLayout*   layout, 
+                          Addr64            orig_addr_noredir,
+                          VexGuestExtents*  vge,
+                          IRType            gWordTy, 
+                          IRType            hWordTy )
 {
    Int      i, j, minoff_ST, maxoff_ST, sizeof_SP, offset_SP;
    IRDirty  *dcall, *d;
@@ -345,6 +277,59 @@ IRBB* vg_SP_update_pass ( IRBB* bb_in, VexGuestLayout* layout,
 /*--- Main entry point for the JITter.                     ---*/
 /*------------------------------------------------------------*/
 
+/* Extra comments re self-checking translations and self-modifying
+   code.  (JRS 14 Oct 05).
+
+   There are 3 modes:
+   (1) no checking: all code assumed to be not self-modifying
+   (2) partial: known-problematic situations get a self-check
+   (3) full checking: all translations get a self-check
+
+   As currently implemented, the default is (2).  (3) is always safe,
+   but very slow.  (1) works mostly, but fails for gcc nested-function
+   code which uses trampolines on the stack; this situation is
+   detected and handled by (2).
+
+   ----------
+
+   A more robust and transparent solution, which is not currently
+   implemented, is a variant of (2): if a translation is made from an
+   area which aspacem says does not have 'w' permission, then it can
+   be non-self-checking.  Otherwise, it needs a self-check.
+
+   This is complicated by Vex's basic-block chasing.  If a self-check
+   is requested, then Vex will not chase over basic block boundaries
+   (it's too complex).  However there is still a problem if it chases
+   from a non-'w' area into a 'w' area.
+
+   I think the right thing to do is:
+
+   - if a translation request starts in a 'w' area, ask for a
+     self-checking translation, and do not allow any chasing (make
+     chase_into_ok return False).  Note that the latter is redundant
+     in the sense that Vex won't chase anyway in this situation.
+
+   - if a translation request starts in a non-'w' area, do not ask for
+     a self-checking translation.  However, do not allow chasing (as
+     determined by chase_into_ok) to go into a 'w' area.
+
+   The result of this is that all code inside 'w' areas is self
+   checking.
+
+   To complete the trick, there is a caveat: we must watch the
+   client's mprotect calls.  If pages are changed from non-'w' to 'w'
+   then we should throw away all translations which intersect the
+   affected area, so as to force them to be redone with self-checks.
+
+   ----------
+
+   The above outlines the conditions under which bb chasing is allowed
+   from a self-modifying-code point of view.  There are other
+   situations pertaining to function redirection in which it is
+   necessary to disallow chasing, but those fall outside the scope of
+   this comment.
+*/
+
 /* Vex dumps the final code in here.  Then we can copy it off
    wherever we like. */
 #define N_TMPBUF 20000
@@ -379,6 +364,24 @@ void log_bytes ( HChar* bytes, Int nbytes )
    'tid' is the identity of the thread needing this block.
 */
 
+/* Look for reasons to disallow making translations from the given
+   segment. */
+
+static Bool translations_allowable_from_seg ( NSegment* seg )
+{
+#  if defined(VGA_x86)
+   Bool allowR = True;
+#  else
+   Bool allowR = False;
+#  endif
+
+   return seg != NULL
+          && (seg->kind == SkAnonC || seg->kind == SkFileC)
+          && (seg->hasX || (seg->hasR && allowR));
+}
+
+
+
 /* This stops Vex from chasing into function entry points that we wish
    to redirect.  Chasing across them obviously defeats the redirect
    mechanism, with bad effects for Memcheck, Addrcheck, and possibly
@@ -395,6 +398,8 @@ void log_bytes ( HChar* bytes, Int nbytes )
 static ThreadId chase_into_ok__CLOSURE_tid;
 static Bool     chase_into_ok ( Addr64 addr64 )
 {
+   NSegment* seg;
+
    /* Work through a list of possibilities why we might not want to
       allow a chase. */
    Addr addr = (Addr)addr64;
@@ -403,15 +408,20 @@ static Bool     chase_into_ok ( Addr64 addr64 )
    if (VG_(clo_smc_check) == Vg_SmcAll)
       goto dontchase;
 
+   /* Check the segment permissions. */
+   seg = VG_(am_find_nsegment)(addr);
+   if (!translations_allowable_from_seg(seg))
+      goto dontchase;
+
    /* AAABBBCCC: if default self-checks are in force, reject if we
       would choose to have a self-check for the dest.  Note, this must
       match the logic at XXXYYYZZZ below. */
    if (VG_(clo_smc_check) == Vg_SmcStack) {
       ThreadId tid = chase_into_ok__CLOSURE_tid;
-      Segment* seg = VG_(find_segment)(addr);
-      if (seg 
-          && seg->addr <= VG_(get_SP)(tid)
-          && VG_(get_SP)(tid) < seg->addr+seg->len)
+      if (seg
+          && (seg->kind == SkAnonC || seg->kind == SkFileC)
+          && seg->start <= VG_(get_SP)(tid)
+          && VG_(get_SP)(tid)+sizeof(Word)-1 <= seg->end)
          goto dontchase;
    }
 
@@ -437,42 +447,21 @@ Bool VG_(translate) ( ThreadId tid,
                       Int      debugging_verbosity,
                       ULong    bbs_done )
 {
-   Addr64    redir, orig_addr0 = orig_addr;
-   Int       tmpbuf_used, verbosity;
-   Bool      notrace_until_done, do_self_check;
-   UInt      notrace_until_limit = 0;
-   Segment*  seg;
-   VexGuestExtents vge;
-
-   /* Indicates what arch we are running on, and other important info
-      (subarch variant, cache line size). */
-   static VexArchInfo vex_archinfo;
-   static VexArch     vex_arch    = VexArch_INVALID;
+   Addr64             redir, orig_addr_noredir = orig_addr;
+   Int                tmpbuf_used, verbosity, i;
+   Bool               notrace_until_done, do_self_check;
+   UInt               notrace_until_limit = 0;
+   NSegment*          seg;
+   VexArch            vex_arch;
+   VexArchInfo        vex_archinfo;
+   VexGuestExtents    vge;
+   VexTranslateResult tres;
 
    /* Make sure Vex is initialised right. */
-   VexTranslateResult tres;
+
    static Bool vex_init_done = False;
 
    if (!vex_init_done) {
-      Bool ok = getArchAndArchInfo( &vex_arch, &vex_archinfo );
-      if (!ok) {
-         VG_(printf)("\n");
-         VG_(printf)("valgrind: fatal error: unsupported CPU.\n");
-         VG_(printf)("   Supported CPUs are:\n");
-         VG_(printf)("   * x86 (practically any; Pentium-I or above), "
-                     "AMD Athlon or above)\n");
-         VG_(printf)("   * AMD Athlon64/Opteron\n");
-         VG_(printf)("   * PowerPC with Altivec\n");
-         VG_(printf)("\n");
-         VG_(exit)(1);
-      }
-      if (VG_(clo_verbosity) > 2) {
-         VG_(message)(Vg_DebugMsg, 
-                      "Host CPU: arch = %s, subarch = %s",
-                      LibVEX_ppVexArch   ( vex_arch ),
-                      LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
-      }
-
       LibVEX_Init ( &failure_exit, &log_bytes, 
                     1,     /* debug_paranoia */ 
                     False, /* valgrind support */
@@ -512,10 +501,9 @@ Bool VG_(translate) ( ThreadId tid,
    notrace_until_done
       = VG_(get_bbs_translated)() >= notrace_until_limit;
 
-   seg = VG_(find_segment)(orig_addr);
-
    if (!debugging_translation)
-      VG_TRACK( pre_mem_read, Vg_CoreTranslate, tid, "", orig_addr, 1 );
+      VG_TRACK( pre_mem_read, Vg_CoreTranslate, 
+                              tid, "(translator)", orig_addr, 1 );
 
    /* If doing any code printing, print a basic block start marker */
    if (VG_(clo_trace_flags) || debugging_translation) {
@@ -527,22 +515,25 @@ Bool VG_(translate) ( ThreadId tid,
               bbs_done);
    }
 
-   if (seg == NULL ||
-       !VG_(seg_contains)(seg, orig_addr, 1) || 
-       (seg->prot & (VKI_PROT_READ|VKI_PROT_EXEC)) == 0) {
+   /* Are we allowed to translate here? */
+
+   seg = VG_(am_find_nsegment)(orig_addr);
+
+   if (!translations_allowable_from_seg(seg)) {
+      /* U R busted, sonny.  Place your hands on your head and step
+         away from the orig_addr. */
       /* Code address is bad - deliver a signal instead */
-      vg_assert(!VG_(is_addressable)(orig_addr, 1, 
-                                     VKI_PROT_READ|VKI_PROT_EXEC));
-
-      if (seg != NULL && VG_(seg_contains)(seg, orig_addr, 1)) {
-         vg_assert((seg->prot & VKI_PROT_EXEC) == 0);
+      if (seg != NULL) {
+         /* There's some kind of segment at the requested place, but we
+            aren't allowed to execute code here. */
          VG_(synth_fault_perms)(tid, orig_addr);
-      } else
+      } else {
+        /* There is no segment at all; we are attempting to execute in
+           the middle of nowhere. */
          VG_(synth_fault_mapping)(tid, orig_addr);
-
+      }
       return False;
-   } else
-      seg->flags |= SF_CODE;        /* contains cached code */
+   }
 
    /* Do we want a self-checking translation? */
    do_self_check = False;
@@ -554,8 +545,8 @@ Bool VG_(translate) ( ThreadId tid,
          do_self_check
             /* = seg ? toBool(seg->flags & SF_GROWDOWN) : False; */
             = seg 
-              ? (seg->addr <= VG_(get_SP)(tid)
-                 && VG_(get_SP)(tid) < seg->addr+seg->len)
+              ? (seg->start <= VG_(get_SP)(tid)
+                 && VG_(get_SP)(tid)+sizeof(Word)-1 <= seg->end)
               : False;
          break;
       default: 
@@ -575,9 +566,12 @@ Bool VG_(translate) ( ThreadId tid,
 
    VGP_PUSHCC(VgpVexTime);
    
-   /* Actually do the translation. */
+   /* ------ Actually do the translation. ------ */
    tl_assert2(VG_(tdict).tool_instrument,
               "you forgot to set VgToolInterface function 'tool_instrument'");
+
+   /* Get the CPU info established at startup. */
+   VG_(machine_get_VexArchInfo)( &vex_arch, &vex_archinfo );
 
    /* Set up closure arg for "chase_into_ok" */
    chase_into_ok__CLOSURE_tid = tid;
@@ -587,6 +581,7 @@ Bool VG_(translate) ( ThreadId tid,
              vex_arch, &vex_archinfo,
              (UChar*)ULong_to_Ptr(orig_addr), 
              (Addr64)orig_addr, 
+             (Addr64)orig_addr_noredir, 
              chase_into_ok,
              &vge,
              tmpbuf, N_TMPBUF, &tmpbuf_used,
@@ -606,16 +601,30 @@ Bool VG_(translate) ( ThreadId tid,
 
    VGP_POPCC(VgpVexTime);
 
+   /* Tell aspacem of all segments that have had translations taken
+      from them.  Optimisation: don't re-look up vge.base[0] since seg
+      should already point to it. */
+
+   vg_assert( vge.base[0] == (Addr64)orig_addr );
+   if (seg->kind == SkFileC || seg->kind == SkAnonC)
+      seg->hasT = True; /* has cached code */
+
+   for (i = 1; i < vge.n_used; i++) {
+      seg = VG_(am_find_nsegment)( vge.base[i] );
+      if (seg->kind == SkFileC || seg->kind == SkAnonC)
+         seg->hasT = True; /* has cached code */
+   }
+
    /* Copy data at trans_addr into the translation cache. */
    vg_assert(tmpbuf_used > 0 && tmpbuf_used < 65536);
 
    // If debugging, don't do anything with the translated block;  we
    // only did this for the debugging output produced along the way.
    if (!debugging_translation) {
-      // Note that we use orig_addr0, not orig_addr, which might have been
-      // changed by the redirection
+      // Note that we use orig_addr_noredir, not orig_addr, which
+      // might have been changed by the redirection
       VG_(add_to_transtab)( &vge,
-                            orig_addr0,
+                            orig_addr_noredir,
                             (Addr)(&tmpbuf[0]), 
                             tmpbuf_used,
                             do_self_check );

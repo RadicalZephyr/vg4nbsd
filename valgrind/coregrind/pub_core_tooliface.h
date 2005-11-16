@@ -105,7 +105,7 @@ typedef struct {
    // Basic functions
    void  (*tool_pre_clo_init) (void);
    void  (*tool_post_clo_init)(void);
-   IRBB* (*tool_instrument)   (IRBB*, VexGuestLayout*, IRType, IRType);
+   IRBB* (*tool_instrument)   (IRBB*, VexGuestLayout*, Addr64, IRType, IRType);
    void  (*tool_fini)         (Int);
 
    // VG_(needs).core_errors

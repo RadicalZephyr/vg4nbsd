@@ -52,9 +52,6 @@
 // For varargs types
 #include <stdarg.h>
 
-// Autoconf-generated settings
-#include "config.h"
-
 // Kernel types.  Might as well have them here, they're used so broadly
 // (eg. in pub_core_threadstate.h).
 #if defined(VGO_linux)
@@ -86,6 +83,8 @@ typedef  Word                 SSizeT;     // 32             64
 
 typedef  Word                   OffT;     // 32             64
 
+typedef ULong                 Off64T;     // 64             64
+
 #if !defined(NULL)
 #  define NULL ((void*)0)
 #endif
@@ -111,7 +110,7 @@ typedef struct {
 SysRes;
 
 /* ---------------------------------------------------------------------
-   Miscellaneous (word size, endianness, regparmness)
+   Miscellaneous (word size, endianness, regparmness, stringification)
    ------------------------------------------------------------------ */
 
 /* Word size: this is going to be either 4 or 8. */
@@ -136,6 +135,10 @@ SysRes;
 #else
 #  error Unknown arch
 #endif
+
+/* Macro games */
+#define VG_STRINGIFZ(__str)  #__str
+#define VG_STRINGIFY(__str)  VG_STRINGIFZ(__str)
 
 #endif /* __PUB_TOOL_BASICS_H */
 

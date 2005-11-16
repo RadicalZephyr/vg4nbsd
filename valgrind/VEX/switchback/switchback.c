@@ -8,6 +8,11 @@ take a single argument which is a function pointer (to "serviceFn").
 
 Test file may not reference any other symbols.
 
+NOTE: POWERPC: it is critical, when using this on ppc, to set
+CacheLineSize to the right value.  Values we currently know of:
+
+   imac (G3):   32
+   G5 (ppc970): 128
 */
 
 #include <stdio.h>
@@ -35,18 +40,21 @@ static Int   n_translations_made = 0;
 #  define VexArch                   VexArchX86
 #  define VexSubArch                VexSubArchX86_sse1
 #  define GuestPC                   guest_EIP
+#  define CacheLineSize             0/*irrelevant*/
 #elif defined(__x86_64__)
 #  define VexGuestState             VexGuestAMD64State
 #  define LibVEX_Guest_initialise   LibVEX_GuestAMD64_initialise
 #  define VexArch                   VexArchAMD64
 #  define VexSubArch                VexSubArch_NONE
 #  define GuestPC                   guest_RIP
+#  define CacheLineSize             0/*irrelevant*/
 #elif defined(__powerpc__)
 #  define VexGuestState             VexGuestPPC32State
 #  define LibVEX_Guest_initialise   LibVEX_GuestPPC32_initialise
 #  define VexArch                   VexArchPPC32
 #  define VexSubArch                VexSubArchPPC32_noAV
 #  define GuestPC                   guest_CIA
+#  define CacheLineSize             128
 #else
 #   error "Unknown arch"
 #endif
@@ -59,8 +67,8 @@ static Int   n_translations_made = 0;
 /* 2: show selected insns */
 /* 1: show after reg-alloc */
 /* 0: show final assembly */
-#define TEST_FLAGS (1<<7)|(1<<3)|(1<<2)|(1<<1) //|(1<<0)
-#define DEBUG_TRACE_FLAGS 0//(1<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<3)|(1<<2)|(1<<1)|(1<<0)
+#define TEST_FLAGS (1<<7)|(1<<3)|(1<<2)|(1<<1)|(0<<0)
+#define DEBUG_TRACE_FLAGS 0 //(1<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<3)|(1<<2)|(1<<1)|(0<<0)
 
 
 /* guest state */
@@ -71,8 +79,10 @@ VexControl vcon;
 /* only used for the switchback transition */
 /* i386:  helper1 = &gst, helper2 = %EFLAGS */
 /* amd64: helper1 = &gst, helper2 = %EFLAGS */
+/* ppc32: helper1 = &gst, helper2 = %CR, helper3 = %XER */
 HWord sb_helper1 = 0;
 HWord sb_helper2 = 0;
+HWord sb_helper3 = 0;
 
 /* translation cache */
 #define N_TRANS_CACHE 1000000
@@ -187,7 +197,7 @@ static void invalidate_icache(void *ptr, int nbytes)
    unsigned long startaddr = (unsigned long) ptr;
    unsigned long endaddr = startaddr + nbytes;
    unsigned long addr;
-   unsigned long cls = 16; //VG_(cache_line_size);
+   unsigned long cls = CacheLineSize;
 
    startaddr &= ~(cls - 1);
    for (addr = startaddr; addr < endaddr; addr += cls)
@@ -206,23 +216,23 @@ asm(
 "   lwz  %r31,sb_helper1@l(%r31)\n" // load word of guest_state_ptr to r31
 
 // LR
-"   lwz  %r3,388(%r31)\n"           // guest_LR
+"   lwz  %r3,900(%r31)\n"           // guest_LR
 "   mtlr %r3\n"                     // move to LR
 
 // CR
 "   lis  %r3,sb_helper2@ha\n"       // get hi-wd of flags addr
 "   lwz  %r3,sb_helper2@l(%r3)\n"   // load flags word to r3
 "   mtcr %r3\n"                     // move r3 to CR
-"   lwz  %r3,408(%r31)\n"           // guest_CR0to6
-"   mtcrf 0x3F,%r3\n"               // set remaining fields of CR
 
 // CTR
-"   lwz %r3,392(%r31)\n"       // guest_CTR
+"   lwz %r3,904(%r31)\n"       // guest_CTR
 "   mtctr %r3\n"               // move r3 to CTR
 
 // XER
-"   lwz %r3,416(%r31)\n"       // guest_XER
-"   mtxer %r3\n"               // move r3 to XER
+"   lis  %r3,sb_helper3@ha\n"       // get hi-wd of xer addr
+"   lwz  %r3,sb_helper3@l(%r3)\n"   // load xer word to r3
+"   mtxer %r3\n"                     // move r3 to XER
+
 
 // GPR's
 "   lwz %r0,    0(%r31)\n"
@@ -284,7 +294,7 @@ void switchback ( void )
       printf("nbytes = %d, nopstart = %d\n", nbytes, off_nopstart);
 
    /* copy it into mallocville */
-   UChar* copy = malloc(nbytes);
+   UChar* copy = mymalloc(nbytes);
    assert(copy);
    for (i = 0; i < nbytes; i++)
       copy[i] = sa_start[i];
@@ -295,6 +305,12 @@ void switchback ( void )
    Addr32 where_to_go = gst.guest_CIA;
    Int    diff = ((Int)where_to_go) - ((Int)addr_of_nop);
 
+#if 0
+   printf("addr of first nop = 0x%x\n", addr_of_nop);
+   printf("where to go       = 0x%x\n", where_to_go);
+   printf("diff = 0x%x\n", diff);
+#endif
+
    if (diff < -0x2000000 || diff >= 0x2000000) {
      // we're hosed.  Give up
      printf("hosed -- offset too large\n");
@@ -302,16 +318,12 @@ void switchback ( void )
    }
 
    sb_helper1 = (HWord)&gst;
-   sb_helper2 = LibVEX_GuestPPC32_get_flags(&gst);
+   sb_helper2 = LibVEX_GuestPPC32_get_CR(&gst);
+   sb_helper3 = LibVEX_GuestPPC32_get_XER(&gst);
 
    /* stay sane ... */
    assert(p[0] == 24<<26); /* nop */
 
-#if 0
-   printf("addr of first nop = 0x%x\n", addr_of_nop);
-   printf("where to go       = 0x%x\n", where_to_go);
-   printf("diff = %d\n", diff);
-#endif
    /* branch to diff */
    p[0] = ((18<<26) | (((diff >> 2) & 0xFFFFFF) << 2) | (0<<1) | (0<<0));
 
@@ -481,7 +493,7 @@ asm(
 */
 Bool run_translation ( HWord translation )
 {
-   if (DEBUG_TRACE_FLAGS) {
+   if (0 && DEBUG_TRACE_FLAGS) {
       printf(" run translation %p\n", (void*)translation );
       printf(" simulated bb: %llu\n", n_bbs_done);
    }
@@ -529,6 +541,7 @@ static UChar transbuf[N_TRANSBUF];
 void make_translation ( Addr64 guest_addr, Bool verbose )
 {
    VexTranslateResult tres;
+   VexArchInfo vai;
    Int trans_used, i, ws_needed;
 
    if (trans_table_used >= N_TRANS_TABLE
@@ -542,10 +555,15 @@ void make_translation ( Addr64 guest_addr, Bool verbose )
    assert(trans_table_used < N_TRANS_TABLE);
    if (0)
       printf("make translation %p\n", ULong_to_Ptr(guest_addr));
+
+   LibVEX_default_VexArchInfo(&vai);
+   vai.subarch = VexSubArch;
+   vai.ppc32_cache_line_szB = CacheLineSize;
+
    tres
       = LibVEX_Translate ( 
-           VexArch, VexSubArch,
-           VexArch, VexSubArch,
+           VexArch, &vai,
+           VexArch, &vai,
            ULong_to_Ptr(guest_addr), guest_addr,
            chase_into_not_ok,
            &trans_table[trans_table_used],
@@ -553,6 +571,7 @@ void make_translation ( Addr64 guest_addr, Bool verbose )
            NULL,          /* instrument1 */
            NULL,          /* instrument2 */
            False,         /* cleanup after instrument */
+           False,         /* self-checking translation? */
            NULL, /* access checker */
            verbose ? TEST_FLAGS : DEBUG_TRACE_FLAGS
         );
@@ -629,6 +648,7 @@ static
 void log_bytes ( HChar* bytes, Int nbytes )
 {
    fwrite ( bytes, 1, nbytes, stdout );
+   fflush ( stdout );
 }
 
 
@@ -760,7 +780,7 @@ int main ( Int argc, HChar** argv )
    LibVEX_default_VexControl(&vcon);
    vcon.guest_max_insns=50;
    vcon.guest_chase_thresh=0;
-//   vcon.iropt_level=2;
+   vcon.iropt_level=2;
 
    LibVEX_Init( failure_exit, log_bytes, 1, False, &vcon );
    LibVEX_Guest_initialise(&gst);

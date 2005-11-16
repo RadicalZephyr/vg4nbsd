@@ -421,16 +421,16 @@ extern void MAC_(do_detect_memory_leaks) (
           Bool (*is_valid_aligned_word)     ( Addr )
        );
 
-extern VGA_REGPARM(1) void MAC_(new_mem_stack_4)  ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(die_mem_stack_4)  ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(new_mem_stack_8)  ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(die_mem_stack_8)  ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(new_mem_stack_12) ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(die_mem_stack_12) ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(new_mem_stack_16) ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(die_mem_stack_16) ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(new_mem_stack_32) ( Addr old_ESP );
-extern VGA_REGPARM(1) void MAC_(die_mem_stack_32) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(new_mem_stack_4)  ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(die_mem_stack_4)  ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(new_mem_stack_8)  ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(die_mem_stack_8)  ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(new_mem_stack_12) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(die_mem_stack_12) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(new_mem_stack_16) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(die_mem_stack_16) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(new_mem_stack_32) ( Addr old_ESP );
+extern VG_REGPARM(1) void MAC_(die_mem_stack_32) ( Addr old_ESP );
 extern               void MAC_(die_mem_stack) ( Addr a, SizeT len);
 extern               void MAC_(new_mem_stack) ( Addr a, SizeT len);
 
@@ -460,7 +460,7 @@ extern void* MAC_(realloc)              ( ThreadId tid, void* p, SizeT new_size 
                            ALIGNED8_NEW,  ALIGNED8_DIE,           \
                            UNALIGNED_NEW, UNALIGNED_DIE)          \
                                                                   \
-void VGA_REGPARM(1) MAC_(new_mem_stack_4)(Addr new_SP)             \
+void VG_REGPARM(1) MAC_(new_mem_stack_4)(Addr new_SP)             \
 {                                                                 \
    PROF_EVENT(110, "new_mem_stack_4");                            \
    if (VG_IS_4_ALIGNED(new_SP)) {                                 \
@@ -470,7 +470,7 @@ void VGA_REGPARM(1) MAC_(new_mem_stack_4)(Addr new_SP)             \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(die_mem_stack_4)(Addr new_SP)             \
+void VG_REGPARM(1) MAC_(die_mem_stack_4)(Addr new_SP)             \
 {                                                                 \
    PROF_EVENT(120, "die_mem_stack_4");                            \
    if (VG_IS_4_ALIGNED(new_SP)) {                                 \
@@ -480,7 +480,7 @@ void VGA_REGPARM(1) MAC_(die_mem_stack_4)(Addr new_SP)             \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(new_mem_stack_8)(Addr new_SP)             \
+void VG_REGPARM(1) MAC_(new_mem_stack_8)(Addr new_SP)             \
 {                                                                 \
    PROF_EVENT(111, "new_mem_stack_8");                            \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -493,7 +493,7 @@ void VGA_REGPARM(1) MAC_(new_mem_stack_8)(Addr new_SP)             \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(die_mem_stack_8)(Addr new_SP)             \
+void VG_REGPARM(1) MAC_(die_mem_stack_8)(Addr new_SP)             \
 {                                                                 \
    PROF_EVENT(121, "die_mem_stack_8");                            \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -506,7 +506,7 @@ void VGA_REGPARM(1) MAC_(die_mem_stack_8)(Addr new_SP)             \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(new_mem_stack_12)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(new_mem_stack_12)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(112, "new_mem_stack_12");                           \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -520,7 +520,7 @@ void VGA_REGPARM(1) MAC_(new_mem_stack_12)(Addr new_SP)            \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(die_mem_stack_12)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(die_mem_stack_12)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(122, "die_mem_stack_12");                           \
    /* Note the -12 in the test */                                 \
@@ -535,7 +535,7 @@ void VGA_REGPARM(1) MAC_(die_mem_stack_12)(Addr new_SP)            \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(new_mem_stack_16)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(new_mem_stack_16)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(113, "new_mem_stack_16");                           \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -550,7 +550,7 @@ void VGA_REGPARM(1) MAC_(new_mem_stack_16)(Addr new_SP)            \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(die_mem_stack_16)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(die_mem_stack_16)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(123, "die_mem_stack_16");                           \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -565,7 +565,7 @@ void VGA_REGPARM(1) MAC_(die_mem_stack_16)(Addr new_SP)            \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(new_mem_stack_32)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(new_mem_stack_32)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(114, "new_mem_stack_32");                           \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \
@@ -584,7 +584,7 @@ void VGA_REGPARM(1) MAC_(new_mem_stack_32)(Addr new_SP)            \
    }                                                              \
 }                                                                 \
                                                                   \
-void VGA_REGPARM(1) MAC_(die_mem_stack_32)(Addr new_SP)            \
+void VG_REGPARM(1) MAC_(die_mem_stack_32)(Addr new_SP)            \
 {                                                                 \
    PROF_EVENT(124, "die_mem_stack_32");                           \
    if (VG_IS_8_ALIGNED(new_SP)) {                                 \

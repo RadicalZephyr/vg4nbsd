@@ -1472,98 +1472,9 @@ static Bool mc_recognised_suppression ( Char* name, Supp* su )
 
 /* ------------------------ Size = 8 ------------------------ */
 
-VGA_REGPARM(1)
-ULong MC_(helperc_LOADV8) ( Addr aA )
-{
-   PROF_EVENT(200, "helperc_LOADV8");
-
-#  if VG_DEBUG_MEMORY >= 2
-   return mc_LOADVn_slow( aA, 8, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(201, "helperc_LOADV8-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 8, False/*littleendian*/ );
-   }
-
-   UWord sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-
-   if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      return ((ULong*)(sm->vbyte))[ v_off >> 3 ];
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(202, "helperc_LOADV8-slow2");
-      return mc_LOADVn_slow( a, 8, False/*littleendian*/ );
-   }
-
-#  endif
-}
-
-VGA_REGPARM(1)
-void MC_(helperc_STOREV8) ( Addr aA, ULong vbytes )
-{
-   PROF_EVENT(210, "helperc_STOREV8");
-
-#  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(211, "helperc_STOREV8-slow1");
-      mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-      return;
-   }
-
-   UWord sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-
-   if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 
-                      && abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      ((ULong*)(sm->vbyte))[ v_off >> 3 ] = vbytes;
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(212, "helperc_STOREV8-slow2");
-      mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-   }
-#  endif
-}
-
 #define MAKE_LOADV8(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VGA_REGPARM(1)							\
+   VG_REGPARM(1)							\
    ULong nAME ( Addr aA )	                                        \
    {									\
       PROF_EVENT(200, #nAME);				                \
@@ -1610,7 +1521,7 @@ MAKE_LOADV8( MC_(helperc_LOADV8le), False/*littleendian*/ );
 
 #define MAKE_STOREV8(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VGA_REGPARM(1)							\
+   VG_REGPARM(1)							\
    void nAME ( Addr aA, ULong vbytes )		                        \
    {									\
       PROF_EVENT(210, #nAME);				                \
@@ -1661,7 +1572,7 @@ MAKE_STOREV8( MC_(helperc_STOREV8le), False/*littleendian*/ );
 
 #define MAKE_LOADV4(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VGA_REGPARM(1)							\
+   VG_REGPARM(1)							\
    UWord nAME ( Addr aA )						\
    {									\
       PROF_EVENT(220, #nAME);						\
@@ -1716,7 +1627,7 @@ MAKE_LOADV4( MC_(helperc_LOADV4le), False/*littleendian*/ );
 
 #define MAKE_STOREV4(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VGA_REGPARM(2)							\
+   VG_REGPARM(2)							\
    void nAME ( Addr aA, UWord vbytes )					\
    {									\
       PROF_EVENT(230, #nAME);						\
@@ -1768,7 +1679,7 @@ MAKE_STOREV4( MC_(helperc_STOREV4le), False/*littleendian*/ );
 
 #define MAKE_LOADV2(nAME,iS_BIGENDIAN)                                  \
                                                                         \
-   VGA_REGPARM(1)							\
+   VG_REGPARM(1)							\
    UWord nAME ( Addr aA )						\
    {									\
       PROF_EVENT(240, #nAME);						\
@@ -1819,7 +1730,7 @@ MAKE_LOADV2( MC_(helperc_LOADV2le), False/*littleendian*/ );
 
 #define MAKE_STOREV2(nAME,iS_BIGENDIAN)                                 \
                                                                         \
-   VGA_REGPARM(2)							\
+   VG_REGPARM(2)							\
    void nAME ( Addr aA, UWord vbytes )					\
    {									\
       PROF_EVENT(250, #nAME);						\
@@ -1868,7 +1779,7 @@ MAKE_STOREV2( MC_(helperc_STOREV2le), False/*littleendian*/ );
 /* ------------------------ Size = 1 ------------------------ */
 /* Note: endianness is irrelevant for size == 1 */
 
-VGA_REGPARM(1)
+VG_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr aA )
 {
    PROF_EVENT(260, "helperc_LOADV1");
@@ -1916,7 +1827,7 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
 }
 
 
-VGA_REGPARM(2)
+VG_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
 {
    PROF_EVENT(270, "helperc_STOREV1");
@@ -1985,7 +1896,7 @@ void MC_(helperc_value_check8_fail) ( void )
    mc_record_value_error ( VG_(get_running_tid)(), 8 );
 }
 
-VGA_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
+VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 {
    mc_record_value_error ( VG_(get_running_tid)(), (Int)sz );
 }

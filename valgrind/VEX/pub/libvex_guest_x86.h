@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (libvex_guest_x86.h) is                       ---*/
-/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
+/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,27 +10,38 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004 OpenWorks, LLP.
+   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; Version 2 dated June 1991 of the
-   license.
+   This library is made available under a dual licensing scheme.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
-   for damages.  See the GNU General Public License for more details.
+   If you link LibVEX against other code all of which is itself
+   licensed under the GNU General Public License, version 2 dated June
+   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
+   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
+   is missing, you can obtain a copy of the GPL v2 from the Free
+   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
+   02110-1301, USA.
+
+   For any other uses of LibVEX, you must first obtain a commercial
+   license from OpenWorks LLP.  Please contact info@open-works.co.uk
+   for information about commercial licensing.
+
+   This software is provided by OpenWorks LLP "as is" and any express
+   or implied warranties, including, but not limited to, the implied
+   warranties of merchantability and fitness for a particular purpose
+   are disclaimed.  In no event shall OpenWorks LLP be liable for any
+   direct, indirect, incidental, special, exemplary, or consequential
+   damages (including, but not limited to, procurement of substitute
+   goods or services; loss of use, data, or profits; or business
+   interruption) however caused and on any theory of liability,
+   whether in contract, strict liability, or tort (including
+   negligence or otherwise) arising in any way out of the use of this
+   software, even if advised of the possibility of such damage.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-   USA.
 */
 
 #ifndef __LIBVEX_PUB_GUEST_X86_H
@@ -149,6 +160,7 @@ typedef
       UInt  guest_EBP;
       UInt  guest_ESI;
       UInt  guest_EDI;         /* 28 */
+
       /* 4-word thunk used to calculate O S Z A C P flags. */
       UInt  guest_CC_OP;       /* 32 */
       UInt  guest_CC_DEP1;
@@ -158,17 +170,22 @@ typedef
       UInt  guest_DFLAG;       /* 48 */
       /* Bit 21 (ID) of eflags stored here, as either 0 or 1. */
       UInt  guest_IDFLAG;      /* 52 */
+      /* Bit 18 (AC) of eflags stored here, as either 0 or 1. */
+      UInt  guest_ACFLAG;      /* 56 */
+
       /* EIP */
-      UInt  guest_EIP;         /* 56 */
+      UInt  guest_EIP;         /* 60 */
+
       /* FPU */
-      UInt  guest_FTOP;        /* 60 */
       ULong guest_FPREG[8];    /* 64 */
       UChar guest_FPTAG[8];   /* 128 */
       UInt  guest_FPROUND;    /* 136 */
       UInt  guest_FC3210;     /* 140 */
+      UInt  guest_FTOP;       /* 144 */
+
       /* SSE */
-      UInt  guest_SSEROUND;   /* 144 */
-      U128  guest_XMM0;       /* 148 */
+      UInt  guest_SSEROUND;   /* 148 */
+      U128  guest_XMM0;       /* 152 */
       U128  guest_XMM1;
       U128  guest_XMM2;
       U128  guest_XMM3;
@@ -176,6 +193,7 @@ typedef
       U128  guest_XMM5;
       U128  guest_XMM6;
       U128  guest_XMM7;
+
       /* Segment registers. */
       UShort guest_CS;
       UShort guest_DS;
@@ -201,7 +219,7 @@ typedef
       UInt guest_TILEN;
 
       /* Padding to make it have an 8-aligned size */
-      UInt   padding;
+      /* UInt   padding; */
    }
    VexGuestX86State;
 

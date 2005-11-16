@@ -40,7 +40,7 @@ extern UWord VG_(register_stack)   ( Addr start, Addr end );
 extern void  VG_(deregister_stack) ( UWord id );
 extern void  VG_(change_stack)     ( UWord id, Addr start, Addr end );
 
-extern VGA_REGPARM(2)
+extern VG_REGPARM(2)
        void  VG_(unknown_SP_update) ( Addr old_SP, Addr new_SP );
 
 #endif   // __PUB_CORE_STACKS_H

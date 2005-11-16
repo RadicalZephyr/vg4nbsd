@@ -2,7 +2,7 @@
 /*--------------------------------------------------------------------*/
 /*---                                                              ---*/
 /*--- This file (guest-arm/toIR.c) is                              ---*/
-/*--- Copyright (c) OpenWorks LLP.  All rights reserved.           ---*/
+/*--- Copyright (C) OpenWorks LLP.  All rights reserved.           ---*/
 /*---                                                              ---*/
 /*--------------------------------------------------------------------*/
 
@@ -10,27 +10,38 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.
+   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; Version 2 dated June 1991 of the
-   license.
+   This library is made available under a dual licensing scheme.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
-   for damages.  See the GNU General Public License for more details.
+   If you link LibVEX against other code all of which is itself
+   licensed under the GNU General Public License, version 2 dated June
+   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
+   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
+   is missing, you can obtain a copy of the GPL v2 from the Free
+   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
+   02110-1301, USA.
+
+   For any other uses of LibVEX, you must first obtain a commercial
+   license from OpenWorks LLP.  Please contact info@open-works.co.uk
+   for information about commercial licensing.
+
+   This software is provided by OpenWorks LLP "as is" and any express
+   or implied warranties, including, but not limited to, the implied
+   warranties of merchantability and fitness for a particular purpose
+   are disclaimed.  In no event shall OpenWorks LLP be liable for any
+   direct, indirect, incidental, special, exemplary, or consequential
+   damages (including, but not limited to, procurement of substitute
+   goods or services; loss of use, data, or profits; or business
+   interruption) however caused and on any theory of liability,
+   whether in contract, strict liability, or tort (including
+   negligence or otherwise) arising in any way out of the use of this
+   software, even if advised of the possibility of such damage.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-   USA.
 */
 
 /* Translates ARM(v4) code to IR. */
@@ -167,7 +178,7 @@ IRBB* bbToIR_ARM ( UChar*           armCode,
                    Bool             (*byte_accessible)(Addr64),
                    Bool             (*chase_into_ok)(Addr64),
                    Bool             host_bigendian,
-                   VexSubArch       subarch_guest )
+                   VexArchInfo*     archinfo_guest )
 {
    Long       delta;
    Int        i, n_instrs, size, first_stmt_idx;
@@ -183,7 +194,7 @@ IRBB* bbToIR_ARM ( UChar*           armCode,
    vassert(vex_control.guest_chase_thresh >= 0);
    vassert(vex_control.guest_chase_thresh < vex_control.guest_max_insns);
 
-   vassert(subarch_guest == VexSubArchARM_v4);
+   vassert(archinfo_guest->subarch == VexSubArchARM_v4);
 
    /* Start a new, empty extent. */
    vge->n_used  = 1;
@@ -241,7 +252,7 @@ IRBB* bbToIR_ARM ( UChar*           armCode,
       }
 
       delta += size;
-      vge->len[vge->n_used-1] += size;
+      vge->len[vge->n_used-1] = toUShort(vge->len[vge->n_used-1] + size);
       n_instrs++;
       DIP("\n");
 
@@ -484,7 +495,7 @@ static void assign ( IRTemp dst, IRExpr* e )
 
 static void storeLE ( IRExpr* addr, IRExpr* data )
 {
-   stmt( IRStmt_STle(addr,data) );
+   stmt( IRStmt_Store(Iend_LE,addr,data) );
 }
 
 static IRExpr* unop ( IROp op, IRExpr* a )
@@ -534,7 +545,7 @@ static IRExpr* mkU ( IRType ty, UInt i )
 
 static IRExpr* loadLE ( IRType ty, IRExpr* data )
 {
-   return IRExpr_LDle(ty,data);
+   return IRExpr_Load(Iend_LE,ty,data);
 }
 
 #if 0

@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (test_main.c) is                              ---*/
-/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
+/*--- Copyright (C) 2005 OpenWorks LLP.  All rights reserved. ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -39,7 +39,7 @@ void log_bytes ( HChar* bytes, Int nbytes )
 #define N_LINEBUF 10000
 static HChar linebuf[N_LINEBUF];
 
-#define N_ORIGBUF 1000
+#define N_ORIGBUF 10000
 #define N_TRANSBUF 5000
 
 static UChar origbuf[N_ORIGBUF];
@@ -66,6 +66,7 @@ int main ( int argc, char** argv )
    VexTranslateResult tres;
    VexControl vcon;
    VexGuestExtents vge;
+   VexArchInfo vai_x86, vai_amd64, vai_ppc32;
 
    if (argc != 2) {
       fprintf(stderr, "usage: vex file.org\n");
@@ -122,26 +123,31 @@ int main ( int argc, char** argv )
          origbuf[i] = (UChar)u;
       }
 
+      LibVEX_default_VexArchInfo(&vai_x86);
+      vai_x86.subarch = VexSubArchX86_sse1;
+
+      LibVEX_default_VexArchInfo(&vai_amd64);
+      vai_amd64.subarch = VexSubArch_NONE;
+
+      LibVEX_default_VexArchInfo(&vai_ppc32);
+      vai_ppc32.subarch = VexSubArchPPC32_AV;
+      vai_ppc32.ppc32_cache_line_szB = 128;
+
       for (i = 0; i < TEST_N_ITERS; i++)
          tres
             = LibVEX_Translate ( 
-#if 0 /* ppc32 -> ppc32 */
-                 VexArchPPC32, VexSubArchPPC32_noAV,
-                 VexArchPPC32, VexSubArchPPC32_noAV,
-#endif
-#if 0 /* ppc32 -> x86 */
-                 VexArchPPC32, VexSubArchPPC32_noAV,
-                 VexArchX86, VexSubArchX86_sse2,
+#if 1 /* ppc32 -> ppc32 */
+                 VexArchPPC32, &vai_ppc32,
+                 VexArchPPC32, &vai_ppc32,
 #endif
 #if 0 /* amd64 -> amd64 */
-                 VexArchAMD64, VexSubArch_NONE, 
-                 VexArchAMD64, VexSubArch_NONE, 
+                 VexArchAMD64, &vai_amd64, 
+                 VexArchAMD64, &vai_amd64, 
 #endif
-#if 1 /* x86 -> x86 */
-                 VexArchX86, VexSubArchX86_sse1, 
-                 VexArchX86, VexSubArchX86_sse1, 
+#if 0 /* x86 -> x86 */
+                 VexArchX86, &vai_x86, 
+                 VexArchX86, &vai_x86, 
 #endif
-
                  origbuf, (Addr64)orig_addr, chase_into_not_ok,
                  &vge,
                  transbuf, N_TRANSBUF, &trans_used,
@@ -160,6 +166,7 @@ int main ( int argc, char** argv )
                  NULL,          /* instrument2 */
 		 True,          /* cleanup after instrument */
 #endif
+                 False, /* do_self_check ? */
                  NULL, /* access checker */
                  TEST_FLAGS 
               );

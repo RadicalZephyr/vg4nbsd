@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (guest-ppc32/gdefs.h) is                      ---*/
-/*--- Copyright (c) 2004 OpenWorks LLP.  All rights reserved. ---*/
+/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,27 +10,38 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004 OpenWorks, LLP.
+   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; Version 2 dated June 1991 of the
-   license.
+   This library is made available under a dual licensing scheme.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
-   for damages.  See the GNU General Public License for more details.
+   If you link LibVEX against other code all of which is itself
+   licensed under the GNU General Public License, version 2 dated June
+   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
+   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
+   is missing, you can obtain a copy of the GPL v2 from the Free
+   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
+   02110-1301, USA.
+
+   For any other uses of LibVEX, you must first obtain a commercial
+   license from OpenWorks LLP.  Please contact info@open-works.co.uk
+   for information about commercial licensing.
+
+   This software is provided by OpenWorks LLP "as is" and any express
+   or implied warranties, including, but not limited to, the implied
+   warranties of merchantability and fitness for a particular purpose
+   are disclaimed.  In no event shall OpenWorks LLP be liable for any
+   direct, indirect, incidental, special, exemplary, or consequential
+   damages (including, but not limited to, procurement of substitute
+   goods or services; loss of use, data, or profits; or business
+   interruption) however caused and on any theory of liability,
+   whether in contract, strict liability, or tort (including
+   negligence or otherwise) arising in any way out of the use of this
+   software, even if advised of the possibility of such damage.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-   USA.
 */
 
 /* Only to be used within the guest-ppc32 directory. */
@@ -41,17 +52,20 @@
 
 
 /*---------------------------------------------------------*/
-/*--- ppc32 to IR conversion                              ---*/
+/*--- ppc32 to IR conversion                            ---*/
 /*---------------------------------------------------------*/
 
+/* Convert one ppc32 insn to IR.  See the type DisOneInstrFn in
+   bb_to_IR.h. */
 extern
-IRBB* bbToIR_PPC32 ( UChar*           ppc32code, 
-                     Addr64           eip, 
-                     VexGuestExtents* vge,
-                     Bool             (*byte_accessible)(Addr64),
-                     Bool             (*resteerOkFn)(Addr64),
-                     Bool             host_bigendian,
-                     VexSubArch       subarch_guest );
+DisResult disInstr_PPC32 ( IRBB*        irbb,
+                           Bool         put_IP,
+                           Bool         (*resteerOkFn) ( Addr64 ),
+                           UChar*       guest_code,
+                           Long         delta,
+                           Addr64       guest_IP,
+                           VexArchInfo* archinfo,
+                           Bool         host_bigendian );
 
 /* Used by the optimiser to specialise calls to helpers. */
 extern
@@ -68,67 +82,58 @@ extern
 VexGuestLayout ppc32Guest_layout;
 
 
+/* FP Rounding mode - different encoding to IR */
+typedef
+   enum {
+      PPC32rm_NEAREST = 0,
+      PPC32rm_NegINF  = 1,
+      PPC32rm_PosINF  = 2,
+      PPC32rm_ZERO    = 3
+   } PPC32RoundingMode;
+
+/* Floating point comparison values - different encoding to IR */
+typedef
+   enum {
+      PPC32cr_LT = 0x8,
+      PPC32cr_GT = 0x4,
+      PPC32cr_EQ = 0x2,
+      PPC32cr_UN = 0x1
+   }
+   PPC32CmpF64Result;
+
+
 /*---------------------------------------------------------*/
 /*--- ppc32 guest helpers                                 ---*/
 /*---------------------------------------------------------*/
 
 /* --- CLEAN HELPERS --- */
 
-// Calculate CR7 flags
-extern UInt ppc32g_calculate_cr7_all ( UInt op, UInt val, UInt xer_so );
-
 // Calculate XER flags
-extern UInt ppc32g_calculate_xer_ov  ( UInt op, UInt res, UInt argL, UInt argR );
-extern UInt ppc32g_calculate_xer_ca  ( UInt op, UInt res, UInt argL, UInt argR, UInt ca );
+extern 
+UInt ppc32g_calculate_xer_ov  ( UInt op, 
+                                UInt res, UInt argL, UInt argR );
 
-
-
-/* %CR7 thunk descriptors.  A three-word thunk is used to record
-   details of the most recent flag-setting operation, so the flags can
-   be computed later if needed.
-
-   The three words are:
-
-      CC_OP, which describes whether to return the DEP1 value as the flags,
-         or to calculate the flags based on that value.
-
-      CC_DEP1: This holds either an immediate value to be returned as the flags,
-         or a value with which to calculate the flags.
-
-      CC_DEP2: In the case where the flags are being calulated, this holds
-         the 'summary overflow' flag, which is OR'd with the other flags.
-         In the case where the flags are given by the DEP1 value, DEP2 is
-         undefined.
-
-
-   A summary of the field usages is:
-
-   Operation          DEP1               DEP2
-   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   0                  flags value        unused
-
-   1                  result             xer_so
-   
-*/
-
+extern 
+UInt ppc32g_calculate_xer_ca  ( UInt op, 
+                                UInt res, UInt argL, UInt argR, 
+                                UInt old_ca );
 
 /*
   Enumeration for xer_ca/ov calculation helper functions
 */
 enum {
-   PPC32G_FLAG_OP_ADD=0,   // addc[o], addic
-   PPC32G_FLAG_OP_ADDE,    // adde[o], addme[o], addze[o]
-   PPC32G_FLAG_OP_DIVW,    // divwo
-   PPC32G_FLAG_OP_DIVWU,   // divwuo
-   PPC32G_FLAG_OP_MULLW,   // mullwo
-   PPC32G_FLAG_OP_NEG,     // nego
-   PPC32G_FLAG_OP_SUBF,    // subfo
-   PPC32G_FLAG_OP_SUBFC,   // subfc[o]
-   PPC32G_FLAG_OP_SUBFE,   // subfe[o], subfme[o], subfze[o]
-   PPC32G_FLAG_OP_SUBFI,   // subfic
-   PPC32G_FLAG_OP_SRAW,    // sraw
-   PPC32G_FLAG_OP_SRAWI,   // srawi
-   
+   /* 0  */ PPC32G_FLAG_OP_ADD=0,   // addc[o], addic
+   /* 1  */ PPC32G_FLAG_OP_ADDE,    // adde[o], addme[o], addze[o]
+   /* 2  */ PPC32G_FLAG_OP_DIVW,    // divwo
+   /* 3  */ PPC32G_FLAG_OP_DIVWU,   // divwuo
+   /* 4  */ PPC32G_FLAG_OP_MULLW,   // mullwo
+   /* 5  */ PPC32G_FLAG_OP_NEG,     // nego
+   /* 6  */ PPC32G_FLAG_OP_SUBF,    // subfo
+   /* 7  */ PPC32G_FLAG_OP_SUBFC,   // subfc[o]
+   /* 8  */ PPC32G_FLAG_OP_SUBFE,   // subfe[o], subfme[o], subfze[o]
+   /* 9  */ PPC32G_FLAG_OP_SUBFI,   // subfic
+   /* 10 */ PPC32G_FLAG_OP_SRAW,    // sraw
+   /* 11 */ PPC32G_FLAG_OP_SRAWI,   // srawi
    PPC32G_FLAG_OP_NUMBER
 };
 

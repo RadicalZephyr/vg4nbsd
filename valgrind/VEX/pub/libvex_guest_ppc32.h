@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (libvex_guest_ppc32.h) is                     ---*/
-/*--- Copyright (c) 2005 OpenWorks LLP.  All rights reserved. ---*/
+/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,27 +10,38 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2005 OpenWorks, LLP.
+   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; Version 2 dated June 1991 of the
-   license.
+   This library is made available under a dual licensing scheme.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
-   for damages.  See the GNU General Public License for more details.
+   If you link LibVEX against other code all of which is itself
+   licensed under the GNU General Public License, version 2 dated June
+   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
+   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
+   is missing, you can obtain a copy of the GPL v2 from the Free
+   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
+   02110-1301, USA.
+
+   For any other uses of LibVEX, you must first obtain a commercial
+   license from OpenWorks LLP.  Please contact info@open-works.co.uk
+   for information about commercial licensing.
+
+   This software is provided by OpenWorks LLP "as is" and any express
+   or implied warranties, including, but not limited to, the implied
+   warranties of merchantability and fitness for a particular purpose
+   are disclaimed.  In no event shall OpenWorks LLP be liable for any
+   direct, indirect, incidental, special, exemplary, or consequential
+   damages (including, but not limited to, procurement of substitute
+   goods or services; loss of use, data, or profits; or business
+   interruption) however caused and on any theory of liability,
+   whether in contract, strict liability, or tort (including
+   negligence or otherwise) arising in any way out of the use of this
+   software, even if advised of the possibility of such damage.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-   USA.
 */
 
 #ifndef __LIBVEX_PUB_GUEST_PPC32_H
@@ -114,28 +125,87 @@ typedef
       /* 368 */ ULong guest_FPR30;
       /* 376 */ ULong guest_FPR31;
 
-      /* 384 */ UInt guest_CIA;    // IP (no arch visible register)
-      /* 388 */ UInt guest_LR;     // Link Register
-      /* 392 */ UInt guest_CTR;    // Count Register
+      // Vector Registers
+      /* 384 */ U128 guest_VR0;
+      /* 400 */ U128 guest_VR1;
+      /* 416 */ U128 guest_VR2;
+      /* 432 */ U128 guest_VR3;
+      /* 448 */ U128 guest_VR4;
+      /* 464 */ U128 guest_VR5;
+      /* 480 */ U128 guest_VR6;
+      /* 496 */ U128 guest_VR7;
+      /* 512 */ U128 guest_VR8;
+      /* 528 */ U128 guest_VR9;
+      /* 544 */ U128 guest_VR10;
+      /* 560 */ U128 guest_VR11;
+      /* 576 */ U128 guest_VR12;
+      /* 592 */ U128 guest_VR13;
+      /* 608 */ U128 guest_VR14;
+      /* 624 */ U128 guest_VR15;
+      /* 640 */ U128 guest_VR16;
+      /* 656 */ U128 guest_VR17;
+      /* 672 */ U128 guest_VR18;
+      /* 688 */ U128 guest_VR19;
+      /* 704 */ U128 guest_VR20;
+      /* 720 */ U128 guest_VR21;
+      /* 736 */ U128 guest_VR22;
+      /* 752 */ U128 guest_VR23;
+      /* 768 */ U128 guest_VR24;
+      /* 784 */ U128 guest_VR25;
+      /* 800 */ U128 guest_VR26;
+      /* 816 */ U128 guest_VR27;
+      /* 832 */ U128 guest_VR28;
+      /* 848 */ U128 guest_VR29;
+      /* 864 */ U128 guest_VR30;
+      /* 880 */ U128 guest_VR31;
 
-      /* CR[7]: thunk used to calculate these flags. */
-      /* 396 */ UInt guest_CC_OP;
-      /* 400 */ UInt guest_CC_DEP1;
-      /* 404 */ UInt guest_CC_DEP2;
+      /* 896 */ UInt guest_CIA;    // IP (no arch visible register)
+      /* 900 */ UInt guest_LR;     // Link Register
+      /* 904 */ UInt guest_CTR;    // Count Register
 
-      // CR[0:6]: Used for 'compare' ops
-      /* 408 */ UInt guest_CR0to6;
+      /* XER pieces */
+      /* 908 */ UChar guest_XER_SO; /* in lsb */
+      /* 909 */ UChar guest_XER_OV; /* in lsb */
+      /* 910 */ UChar guest_XER_CA; /* in lsb */
+      /* 911 */ UChar guest_XER_BC; /* all bits */
 
-      /* 412 */ UInt guest_FPSCR;  // FP Status & Control Reg
+      /* CR pieces */
+      /* 912 */ UChar guest_CR0_321; /* in [3:1] */
+      /* 913 */ UChar guest_CR0_0;   /* in lsb */
+      /* 914 */ UChar guest_CR1_321; /* in [3:1] */
+      /* 915 */ UChar guest_CR1_0;   /* in lsb */
+      /* 916 */ UChar guest_CR2_321; /* in [3:1] */
+      /* 917 */ UChar guest_CR2_0;   /* in lsb */
+      /* 918 */ UChar guest_CR3_321; /* in [3:1] */
+      /* 919 */ UChar guest_CR3_0;   /* in lsb */
+      /* 920 */ UChar guest_CR4_321; /* in [3:1] */
+      /* 921 */ UChar guest_CR4_0;   /* in lsb */
+      /* 922 */ UChar guest_CR5_321; /* in [3:1] */
+      /* 923 */ UChar guest_CR5_0;   /* in lsb */
+      /* 924 */ UChar guest_CR6_321; /* in [3:1] */
+      /* 925 */ UChar guest_CR6_0;   /* in lsb */
+      /* 926 */ UChar guest_CR7_321; /* in [3:1] */
+      /* 927 */ UChar guest_CR7_0;   /* in lsb */
 
-      /* 416 */ UInt guest_XER;    // XER Register
+      /* FP Status & Control Register fields */
+      /* 928 */ UInt guest_FPROUND; // FP Rounding Mode
+
+      /* Vector Save/Restore Register */
+      /* 932 */ UInt guest_VRSAVE;
+
+      /* Vector Status and Control Register */
+      /* 936 */ UInt guest_VSCR;
 
       /* Emulation warnings */
-      /* 420 */ UInt guest_EMWARN;
+      /* 940 */ UInt guest_EMWARN;
 
       /* For icbi: record start and length of area to invalidate */
-      /* 424 */ UInt guest_TISTART;
-      /* 428 */ UInt guest_TILEN;
+      /* 944 */ UInt guest_TISTART;
+      /* 948 */ UInt guest_TILEN;
+
+      /* For lwarx/stwcx.: 0 == no reservation exists, non-0 == a
+         reservation exists. */
+      /* 952 */ UInt guest_RESVN;
 
       /* Padding to make it have an 8-aligned size */
       /* UInt  padding; */
@@ -154,11 +224,29 @@ typedef
 extern
 void LibVEX_GuestPPC32_initialise ( /*OUT*/VexGuestPPC32State* vex_state );
 
-/* Calculate the PPC32 flag state from the saved data. */
 
+/* Write the given native %CR value to the supplied VexGuestPPC32State
+   structure. */
 extern
-UInt LibVEX_GuestPPC32_get_flags ( /*IN*/VexGuestPPC32State* vex_state );
+void LibVEX_GuestPPC32_put_CR ( UInt cr_native,
+                                /*OUT*/VexGuestPPC32State* vex_state );
 
+/* Extract from the supplied VexGuestPPC32State structure the
+   corresponding native %CR value. */
+extern
+UInt LibVEX_GuestPPC32_get_CR ( /*IN*/VexGuestPPC32State* vex_state );
+
+
+/* Write the given native %XER value to the supplied VexGuestPPC32State
+   structure. */
+extern
+void LibVEX_GuestPPC32_put_XER ( UInt xer_native,
+                                 /*OUT*/VexGuestPPC32State* vex_state );
+
+/* Extract from the supplied VexGuestPPC32State structure the
+   corresponding native %XER value. */
+extern
+UInt LibVEX_GuestPPC32_get_XER ( /*IN*/VexGuestPPC32State* vex_state );
 
 #endif /* ndef __LIBVEX_PUB_GUEST_PPC32_H */
 

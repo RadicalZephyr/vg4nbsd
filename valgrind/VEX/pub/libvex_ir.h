@@ -2,7 +2,7 @@
 /*---------------------------------------------------------------*/
 /*---                                                         ---*/
 /*--- This file (libvex_ir.h) is                              ---*/
-/*--- Copyright (c) OpenWorks LLP.  All rights reserved.      ---*/
+/*--- Copyright (C) OpenWorks LLP.  All rights reserved.      ---*/
 /*---                                                         ---*/
 /*---------------------------------------------------------------*/
 
@@ -10,27 +10,38 @@
    This file is part of LibVEX, a library for dynamic binary
    instrumentation and translation.
 
-   Copyright (C) 2004-2005 OpenWorks LLP.
+   Copyright (C) 2004-2005 OpenWorks LLP.  All rights reserved.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; Version 2 dated June 1991 of the
-   license.
+   This library is made available under a dual licensing scheme.
 
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE, or liability
-   for damages.  See the GNU General Public License for more details.
+   If you link LibVEX against other code all of which is itself
+   licensed under the GNU General Public License, version 2 dated June
+   1991 ("GPL v2"), then you may use LibVEX under the terms of the GPL
+   v2, as appearing in the file LICENSE.GPL.  If the file LICENSE.GPL
+   is missing, you can obtain a copy of the GPL v2 from the Free
+   Software Foundation Inc., 51 Franklin St, Fifth Floor, Boston, MA
+   02110-1301, USA.
+
+   For any other uses of LibVEX, you must first obtain a commercial
+   license from OpenWorks LLP.  Please contact info@open-works.co.uk
+   for information about commercial licensing.
+
+   This software is provided by OpenWorks LLP "as is" and any express
+   or implied warranties, including, but not limited to, the implied
+   warranties of merchantability and fitness for a particular purpose
+   are disclaimed.  In no event shall OpenWorks LLP be liable for any
+   direct, indirect, incidental, special, exemplary, or consequential
+   damages (including, but not limited to, procurement of substitute
+   goods or services; loss of use, data, or profits; or business
+   interruption) however caused and on any theory of liability,
+   whether in contract, strict liability, or tort (including
+   negligence or otherwise) arising in any way out of the use of this
+   software, even if advised of the possibility of such damage.
 
    Neither the names of the U.S. Department of Energy nor the
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-   USA.
 */
 
 #ifndef __LIBVEX_IR_H
@@ -85,6 +96,16 @@ typedef
 
 extern void ppIRType ( IRType );
 extern Int  sizeofIRType ( IRType );
+
+
+/* ------------------ Endianness ------------------ */
+
+typedef
+   enum { 
+      Iend_LE=22, /* little endian */
+      Iend_BE=33 /* big endian */
+   }
+   IREndness;
 
 
 /* ------------------ Constants ------------------ */
@@ -234,6 +255,7 @@ typedef
          zero.  You must ensure they are never given a zero argument.
       */
 
+      /* Standard integer comparisons */
       Iop_CmpLT32S, Iop_CmpLT64S,
       Iop_CmpLE32S, Iop_CmpLE64S,
       Iop_CmpLT32U, Iop_CmpLT64U,
@@ -241,6 +263,14 @@ typedef
 
       /* As a sop to Valgrind-Memcheck, the following are useful. */
       Iop_CmpNEZ8, Iop_CmpNEZ16,  Iop_CmpNEZ32,  Iop_CmpNEZ64,
+
+      /* PowerPC-style 3-way integer comparisons.  Without them it is difficult
+         to simulate PPC efficiently.
+         op(x,y) | x < y  = 0x8 else 
+                 | x > y  = 0x4 else
+                 | x == y = 0x2
+      */
+      Iop_CmpORD32U, Iop_CmpORD32S,
 
       /* Division */
       /* TODO: clarify semantics wrt rounding, negative values, whatever */
@@ -655,7 +685,7 @@ typedef
       Iex_Tmp,     /* value of temporary */
       Iex_Binop,   /* binary operation */
       Iex_Unop,    /* unary operation */
-      Iex_LDle,    /* little-endian read from memory */ 
+      Iex_Load,    /* read from memory */ 
       Iex_Const,   /* constant-valued expression */
       Iex_Mux0X,   /* ternary if-then-else operator (STRICT) */
       Iex_CCall    /* call to pure (side-effect-free) helper fn */
@@ -691,9 +721,10 @@ typedef
             struct _IRExpr* arg;
          } Unop;
          struct {
+            IREndness end;
             IRType ty;
             struct _IRExpr* addr;
-         } LDle;
+         } Load;
          struct {
             IRConst* con;
          } Const;
@@ -717,7 +748,7 @@ extern IRExpr* IRExpr_GetI   ( IRArray* descr, IRExpr* ix, Int bias );
 extern IRExpr* IRExpr_Tmp    ( IRTemp tmp );
 extern IRExpr* IRExpr_Binop  ( IROp op, IRExpr* arg1, IRExpr* arg2 );
 extern IRExpr* IRExpr_Unop   ( IROp op, IRExpr* arg );
-extern IRExpr* IRExpr_LDle   ( IRType ty, IRExpr* addr );
+extern IRExpr* IRExpr_Load   ( IREndness end, IRType ty, IRExpr* addr );
 extern IRExpr* IRExpr_Const  ( IRConst* con );
 extern IRExpr* IRExpr_CCall  ( IRCallee* cee, IRType retty, IRExpr** args );
 extern IRExpr* IRExpr_Mux0X  ( IRExpr* cond, IRExpr* expr0, IRExpr* exprX );
@@ -767,12 +798,12 @@ extern Bool eqIRAtom ( IRExpr*, IRExpr* );
 /* This describes hints which can be passed to the dispatcher at guest
    control-flow transfer points.
 
-   Re Ijk_Invalidate: typically the guest state will have two
-   pseudo-registers, guest_TISTART and guest_TILEN, which
-   specify the start and length of the region to be invalidated.
-   It is the responsibility of the relevant toIR.c to ensure that
-   these are filled in with suitable values before issuing a jump
-   of kind Ijk_TInval.
+   Re Ijk_Invalidate: the guest state _must_ have two
+   pseudo-registers, guest_TISTART and guest_TILEN, which specify the
+   start and length of the region to be invalidated.  These are both
+   the size of a guest word. It is the responsibility of the relevant
+   toIR.c to ensure that these are filled in with suitable values
+   before issuing a jump of kind Ijk_TInval.  
 */
 typedef
    enum { 
@@ -785,7 +816,9 @@ typedef
       Ijk_EmWarn,         /* report emulation warning before continuing */
       Ijk_NoDecode,       /* next instruction cannot be decoded */
       Ijk_MapFail,        /* Vex-provided address translation failed */
-      Ijk_TInval          /* Invalidate translations before continuing. */
+      Ijk_TInval,         /* Invalidate translations before continuing. */
+      Ijk_SysenterX86     /* X86 sysenter.  guest_EIP becomes invalid
+                             at the point this happens. */
    }
    IRJumpKind;
 
@@ -918,7 +951,7 @@ typedef
       Ist_Put,     /* write guest state, fixed offset */
       Ist_PutI,    /* write guest state, run-time offset */
       Ist_Tmp,     /* assign value to temporary */
-      Ist_STle,    /* little-endian write to memory */
+      Ist_Store,   /* write to memory */
       Ist_Dirty,   /* call complex ("dirty") helper function */
       Ist_MFence,  /* memory fence */
       Ist_Exit     /* conditional exit from BB */
@@ -955,9 +988,10 @@ typedef
             IRExpr* data;
          } Tmp;
          struct {
-            IRExpr* addr;
-            IRExpr* data;
-         } STle;
+            IREndness end;
+            IRExpr*   addr;
+            IRExpr*   data;
+         } Store;
          struct {
             IRDirty* details;
          } Dirty;
@@ -979,7 +1013,7 @@ extern IRStmt* IRStmt_Put     ( Int off, IRExpr* data );
 extern IRStmt* IRStmt_PutI    ( IRArray* descr, IRExpr* ix, Int bias, 
                                 IRExpr* data );
 extern IRStmt* IRStmt_Tmp     ( IRTemp tmp, IRExpr* data );
-extern IRStmt* IRStmt_STle    ( IRExpr* addr, IRExpr* data );
+extern IRStmt* IRStmt_Store   ( IREndness end, IRExpr* addr, IRExpr* data );
 extern IRStmt* IRStmt_Dirty   ( IRDirty* details );
 extern IRStmt* IRStmt_MFence  ( void );
 extern IRStmt* IRStmt_Exit    ( IRExpr* guard, IRJumpKind jk, IRConst* dst );

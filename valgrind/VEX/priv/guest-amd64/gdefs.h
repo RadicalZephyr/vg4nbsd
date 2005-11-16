@@ -139,19 +139,21 @@ extern ULong amd64g_calculate_sse_pmovmskb ( ULong w64hi, ULong w64lo );
 
 /* --- DIRTY HELPERS --- */
 
-extern ULong amd64g_loadF80le  ( ULong/*addr*/ );
+extern ULong amd64g_dirtyhelper_loadF80le  ( ULong/*addr*/ );
 
-extern void  amd64g_storeF80le ( ULong/*addr*/, ULong/*data*/ );
+extern void  amd64g_dirtyhelper_storeF80le ( ULong/*addr*/, ULong/*data*/ );
 
-extern void amd64g_dirtyhelper_CPUID ( VexGuestAMD64State* st );
+extern void  amd64g_dirtyhelper_CPUID ( VexGuestAMD64State* st );
+
+extern void  amd64g_dirtyhelper_FINIT ( VexGuestAMD64State* );
+
+extern ULong amd64g_dirtyhelper_RDTSC ( void );
 
 //extern void  amd64g_dirtyhelper_CPUID_sse0 ( VexGuestAMD64State* );
 //extern void  amd64g_dirtyhelper_CPUID_sse1 ( VexGuestAMD64State* );
 //extern void  amd64g_dirtyhelper_CPUID_sse2 ( VexGuestAMD64State* );
 
 //extern void  amd64g_dirtyhelper_FSAVE ( VexGuestAMD64State*, HWord );
-
-//extern void  amd64g_dirtyhelper_FINIT ( VexGuestAMD64State* );
 
 //extern VexEmWarn
 //            amd64g_dirtyhelper_FRSTOR ( VexGuestAMD64State*, HWord );

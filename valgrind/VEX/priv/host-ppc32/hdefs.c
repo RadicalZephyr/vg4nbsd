@@ -435,7 +435,7 @@ void ppPPC32RH ( PPC32RH* op ) {
       if (op->Prh.Imm.syned)
          vex_printf("%d", (Int)(Short)op->Prh.Imm.imm16);
       else
-         vex_printf("%d", (UInt)(UShort)op->Prh.Imm.imm16);
+         vex_printf("%u", (UInt)(UShort)op->Prh.Imm.imm16);
       return;
    case Prh_Reg: 
       ppHRegPPC32(op->Prh.Reg.reg);
@@ -529,6 +529,64 @@ static void mapRegs_PPC32RI ( HRegRemap* m, PPC32RI* dst ) {
 }
 
 
+/* --------- Operand, which can be a vector reg or a simm5. --------- */
+
+PPC32VI5s* PPC32VI5s_Imm ( Char simm5 ) {
+   PPC32VI5s* op = LibVEX_Alloc(sizeof(PPC32VI5s));
+   op->tag       = Pvi_Imm;
+   op->Pvi.Imm5s = simm5;
+   vassert(simm5 >= -16 && simm5 <= 15);
+   return op;
+}
+PPC32VI5s* PPC32VI5s_Reg ( HReg reg ) {
+   PPC32VI5s* op = LibVEX_Alloc(sizeof(PPC32VI5s));
+   op->tag       = Pvi_Reg;
+   op->Pvi.Reg   = reg;
+   vassert(hregClass(reg) == HRcVec128);
+   return op;
+}
+
+void ppPPC32VI5s ( PPC32VI5s* src ) {
+   switch (src->tag) {
+      case Pvi_Imm: 
+         vex_printf("%d", (Int)src->Pvi.Imm5s);
+         break;
+      case Pvi_Reg: 
+         ppHRegPPC32(src->Pvi.Reg);
+         break;
+      default: 
+         vpanic("ppPPC32VI5s");
+   }
+}
+
+/* An PPC32VI5s can only be used in a "read" context (what would it
+   mean to write or modify a literal?) and so we enumerate its
+   registers accordingly. */
+static void addRegUsage_PPC32VI5s ( HRegUsage* u, PPC32VI5s* dst ) {
+   switch (dst->tag) {
+      case Pvi_Imm: 
+         return;
+      case Pvi_Reg: 
+         addHRegUse(u, HRmRead, dst->Pvi.Reg);
+         return;
+      default: 
+         vpanic("addRegUsage_PPC32VI5s");
+   }
+}
+
+static void mapRegs_PPC32VI5s ( HRegRemap* m, PPC32VI5s* dst ) {
+   switch (dst->tag) {
+      case Pvi_Imm: 
+         return;
+      case Pvi_Reg: 
+         dst->Pvi.Reg = lookupHRegRemap(m, dst->Pvi.Reg);
+         return;
+      default: 
+         vpanic("mapRegs_PPC32VI5s");
+   }
+}
+
+
 /* --------- Instructions. --------- */
 
 HChar* showPPC32UnaryOp ( PPC32UnaryOp op ) {
@@ -587,13 +645,13 @@ HChar* showPPC32AvOp ( PPC32AvOp op ) {
    case Pav_UNPCKLPIX: return "vupklpx";
 
    /* Integer binary */
-   case Pav_ADDUM:     return "vaddu_m";  // b,h,w
-   case Pav_ADDUS:     return "vaddu_s";  // b,h,w
-   case Pav_ADDSS:     return "vadds_s";  // b,h,w
+   case Pav_ADDU:      return "vaddu_m";  // b,h,w
+   case Pav_QADDU:     return "vaddu_s";  // b,h,w
+   case Pav_QADDS:     return "vadds_s";  // b,h,w
      
-   case Pav_SUBUM:     return "vsubu_m";  // b,h,w
-   case Pav_SUBUS:     return "vsubu_s";  // b,h,w
-   case Pav_SUBSS:     return "vsubs_s";  // b,h,w
+   case Pav_SUBU:      return "vsubu_m";  // b,h,w
+   case Pav_QSUBU:     return "vsubu_s";  // b,h,w
+   case Pav_QSUBS:     return "vsubs_s";  // b,h,w
      
    case Pav_OMULU:     return "vmulou";   // b,h
    case Pav_OMULS:     return "vmulos";   // b,h
@@ -621,28 +679,45 @@ HChar* showPPC32AvOp ( PPC32AvOp op ) {
    case Pav_ROTL:      return "vrl";      // b,h,w
 
    /* Pack */
-   case Pav_PACKUUM:   return "vpku_um";  // h,w
-   case Pav_PACKUUS:   return "vpku_us";  // h,w
-   case Pav_PACKSUS:   return "vpks_us";  // h,w
-   case Pav_PACKSSS:   return "vpks_ss";  // h,w
+   case Pav_PACKUU:    return "vpku_um";  // h,w
+   case Pav_QPACKUU:   return "vpku_us";  // h,w
+   case Pav_QPACKSU:   return "vpks_us";  // h,w
+   case Pav_QPACKSS:   return "vpks_ss";  // h,w
    case Pav_PACKPXL:   return "vpkpx";
 
    /* Merge */
    case Pav_MRGHI:     return "vmrgh";    // b,h,w
    case Pav_MRGLO:     return "vmrgl";    // b,h,w
 
-
-   /* Floating Point Binary */
-   case Pav_ADDF:      return "vaddfp";
-   case Pav_SUBF:      return "vsubfp";
-   case Pav_MULF:      return "vmaddfp";
-   case Pav_MAXF:      return "vmaxfp";
-   case Pav_MINF:      return "vminfp";
-   case Pav_CMPEQF:    return "vcmpeqfp";
-   case Pav_CMPGTF:    return "vcmpgtfp";
-   case Pav_CMPGEF:    return "vcmpgefp";
-     
    default: vpanic("showPPC32AvOp");
+   }
+}
+
+HChar* showPPC32AvFpOp ( PPC32AvFpOp op ) {
+   switch (op) {
+   /* Floating Point Binary */
+   case Pavfp_ADDF:      return "vaddfp";
+   case Pavfp_SUBF:      return "vsubfp";
+   case Pavfp_MULF:      return "vmaddfp";
+   case Pavfp_MAXF:      return "vmaxfp";
+   case Pavfp_MINF:      return "vminfp";
+   case Pavfp_CMPEQF:    return "vcmpeqfp";
+   case Pavfp_CMPGTF:    return "vcmpgtfp";
+   case Pavfp_CMPGEF:    return "vcmpgefp";
+     
+   /* Floating Point Unary */
+   case Pavfp_RCPF:      return "vrefp";
+   case Pavfp_RSQRTF:    return "vrsqrtefp";
+   case Pavfp_CVTU2F:    return "vcfux";
+   case Pavfp_CVTS2F:    return "vcfsx";
+   case Pavfp_QCVTF2U:   return "vctuxs";
+   case Pavfp_QCVTF2S:   return "vctsxs";
+   case Pavfp_ROUNDM:    return "vrfim";
+   case Pavfp_ROUNDP:    return "vrfip";
+   case Pavfp_ROUNDN:    return "vrfin";
+   case Pavfp_ROUNDZ:    return "vrfiz";
+
+   default: vpanic("showPPC32AvFpOp");
    }
 }
 
@@ -662,6 +737,17 @@ PPC32Instr* PPC32Instr_Alu32 ( PPC32AluOp op, HReg dst,
    i->Pin.Alu32.dst  = dst;
    i->Pin.Alu32.srcL = srcL;
    i->Pin.Alu32.srcR = srcR;
+   return i;
+}
+PPC32Instr* PPC32Instr_AddSubC32 ( Bool isAdd, Bool setC,
+                                   HReg dst, HReg srcL, HReg srcR ) {
+   PPC32Instr* i          = LibVEX_Alloc(sizeof(PPC32Instr));
+   i->tag                 = Pin_AddSubC32;
+   i->Pin.AddSubC32.isAdd = isAdd;
+   i->Pin.AddSubC32.setC  = setC;
+   i->Pin.AddSubC32.dst   = dst;
+   i->Pin.AddSubC32.srcL  = srcL;
+   i->Pin.AddSubC32.srcR  = srcR;
    return i;
 }
 PPC32Instr* PPC32Instr_Cmp32 ( Bool syned, UInt crfD, 
@@ -706,13 +792,16 @@ PPC32Instr* PPC32Instr_Div ( Bool syned, HReg dst, HReg srcL, HReg srcR ) {
    return i;
 }
 PPC32Instr* PPC32Instr_Call ( PPC32CondCode cond, 
-                              Addr32 target, Int regparms ) {
+                              Addr32 target, UInt argiregs ) {
+   UInt mask;
    PPC32Instr* i        = LibVEX_Alloc(sizeof(PPC32Instr));
    i->tag               = Pin_Call;
    i->Pin.Call.cond     = cond;
    i->Pin.Call.target   = target;
-   i->Pin.Call.regparms = regparms;
-   vassert(regparms >= 0 && regparms < PPC32_N_REGPARMS);
+   i->Pin.Call.argiregs = argiregs;
+   /* Only r3 .. r10 inclusive may be used as arg regs. Hence: */
+   mask = (1<<3)|(1<<4)|(1<<5)|(1<<6)|(1<<7)|(1<<8)|(1<<9)|(1<<10);
+   vassert(0 == (argiregs & ~mask));
    return i;
 }
 PPC32Instr* PPC32Instr_Goto ( IRJumpKind jk, 
@@ -860,8 +949,8 @@ PPC32Instr* PPC32Instr_AvLdSt ( Bool isLoad, UChar sz, HReg reg, PPC32AMode* add
    return i;
 }
 PPC32Instr* PPC32Instr_AvUnary ( PPC32AvOp op, HReg dst, HReg src ) {
-   PPC32Instr* i       = LibVEX_Alloc(sizeof(PPC32Instr));
-   i->tag              = Pin_AvUnary;
+   PPC32Instr* i      = LibVEX_Alloc(sizeof(PPC32Instr));
+   i->tag             = Pin_AvUnary;
    i->Pin.AvUnary.op  = op;
    i->Pin.AvUnary.dst = dst;
    i->Pin.AvUnary.src = src;
@@ -912,13 +1001,21 @@ PPC32Instr* PPC32Instr_AvBin32Fx4 ( PPC32AvOp op, HReg dst, HReg srcL, HReg srcR
    i->Pin.AvBin32Fx4.srcR = srcR;
    return i;
 }
-PPC32Instr* PPC32Instr_AvPerm ( HReg ctl, HReg dst, HReg srcL, HReg srcR ) {
+PPC32Instr* PPC32Instr_AvUn32Fx4 ( PPC32AvOp op, HReg dst, HReg src ) {
+   PPC32Instr* i        = LibVEX_Alloc(sizeof(PPC32Instr));
+   i->tag               = Pin_AvUn32Fx4;
+   i->Pin.AvUn32Fx4.op  = op;
+   i->Pin.AvUn32Fx4.dst = dst;
+   i->Pin.AvUn32Fx4.src = src;
+   return i;
+}
+PPC32Instr* PPC32Instr_AvPerm ( HReg dst, HReg srcL, HReg srcR, HReg ctl ) {
    PPC32Instr* i      = LibVEX_Alloc(sizeof(PPC32Instr));
    i->tag             = Pin_AvPerm;
-   i->Pin.AvPerm.ctl  = ctl;
    i->Pin.AvPerm.dst  = dst;
    i->Pin.AvPerm.srcL = srcL;
    i->Pin.AvPerm.srcR = srcR;
+   i->Pin.AvPerm.ctl  = ctl;
    return i;
 }
 PPC32Instr* PPC32Instr_AvSel ( HReg ctl, HReg dst, HReg srcL, HReg srcR ) {
@@ -939,7 +1036,7 @@ PPC32Instr* PPC32Instr_AvShlDbl ( UChar shift, HReg dst, HReg srcL, HReg srcR ) 
    i->Pin.AvShlDbl.srcR  = srcR;
    return i;
 }
-PPC32Instr* PPC32Instr_AvSplat ( UChar sz, HReg dst, PPC32RI* src ) {
+PPC32Instr* PPC32Instr_AvSplat ( UChar sz, HReg dst, PPC32VI5s* src ) {
    PPC32Instr* i      = LibVEX_Alloc(sizeof(PPC32Instr));
    i->tag             = Pin_AvSplat;
    i->Pin.AvSplat.sz  = sz;
@@ -1012,13 +1109,23 @@ void ppPPC32Instr ( PPC32Instr* i )
          /* generic */
          vex_printf("%s ", 
                     showPPC32AluOp(i->Pin.Alu32.op,
-                                   i->Pin.Alu32.srcR->tag == Prh_Imm));
+                                   toBool(i->Pin.Alu32.srcR->tag == Prh_Imm)));
          ppHRegPPC32(i->Pin.Alu32.dst);
          vex_printf(",");
          ppHRegPPC32(i->Pin.Alu32.srcL);
          vex_printf(",");
          ppPPC32RH(i->Pin.Alu32.srcR);
       }
+      return;
+   case Pin_AddSubC32:
+      vex_printf("%s%s ",
+                 i->Pin.AddSubC32.isAdd ? "add" : "sub",
+                 i->Pin.AddSubC32.setC ? "c" : "e");
+      ppHRegPPC32(i->Pin.AddSubC32.dst);
+      vex_printf(",");
+      ppHRegPPC32(i->Pin.AddSubC32.srcL);
+      vex_printf(",");
+      ppHRegPPC32(i->Pin.AddSubC32.srcR);
       return;
    case Pin_Cmp32:
       vex_printf("%s%s %%cr%u,",
@@ -1054,15 +1161,25 @@ void ppPPC32Instr ( PPC32Instr* i )
       vex_printf(",");
       ppHRegPPC32(i->Pin.Div.srcR);
       return;
-   case Pin_Call:
+   case Pin_Call: {
+      Int n;
       vex_printf("call: ");
       if (i->Pin.Call.cond.test != Pct_ALWAYS) {
          vex_printf("if (%s) ", showPPC32CondCode(i->Pin.Call.cond));
       }
       vex_printf("{ ");
       ppLoadImm(hregPPC32_GPR12(), i->Pin.Call.target);
-      vex_printf(" ; mtctr r12 ; bctrl [regparms=%d] }",i->Pin.Call.regparms);
+      vex_printf(" ; mtctr r12 ; bctrl [");
+      for (n = 0; n < 32; n++) {
+         if (i->Pin.Call.argiregs & (1<<n)) {
+            vex_printf("r%d", n);
+            if ((i->Pin.Call.argiregs >> n) > 1)
+               vex_printf(",");
+         }
+      }
+      vex_printf("] }");
       break;
+   }
    case Pin_Goto:
       vex_printf("goto: ");
       if (i->Pin.Goto.cond.test != Pct_ALWAYS) {
@@ -1243,15 +1360,17 @@ void ppPPC32Instr ( PPC32Instr* i )
       return;
 
    case Pin_AvLdSt: {
-      UChar sz = i->Pin.AvLdSt.sz;
+      UChar  sz = i->Pin.AvLdSt.sz;
+      HChar* str_size;
       if (i->Pin.AvLdSt.addr->tag == Pam_IR) {
          ppLoadImm(hregPPC32_GPR30(), i->Pin.AvLdSt.addr->Pam.RR.index);
          vex_printf(" ; ");
       }
+      str_size = sz==1 ? "eb" : sz==2 ? "eh" : sz==4 ? "ew" : "";
       if (i->Pin.AvLdSt.isLoad)
-         vex_printf("lv%sx ", sz==8 ? "eb" : sz==16 ? "eh" : sz==32 ? "ew" : "");
+         vex_printf("lv%sx ", str_size);
       else
-         vex_printf("stv%sx ", sz==8 ? "eb" : sz==16 ? "eh" : sz==32 ? "ew" : "");
+         vex_printf("stv%sx ", str_size);
       ppHRegPPC32(i->Pin.AvLdSt.reg);
       vex_printf(",");
       if (i->Pin.AvLdSt.addr->tag == Pam_IR)
@@ -1301,12 +1420,18 @@ void ppPPC32Instr ( PPC32Instr* i )
       ppHRegPPC32(i->Pin.AvBin32x4.srcR);
       return;
    case Pin_AvBin32Fx4:
-      vex_printf("%s ", showPPC32AvOp(i->Pin.AvBin32Fx4.op));
+      vex_printf("%s ", showPPC32AvFpOp(i->Pin.AvBin32Fx4.op));
       ppHRegPPC32(i->Pin.AvBin32Fx4.dst);
       vex_printf(",");
       ppHRegPPC32(i->Pin.AvBin32Fx4.srcL);
       vex_printf(",");
       ppHRegPPC32(i->Pin.AvBin32Fx4.srcR);
+      return;
+   case Pin_AvUn32Fx4:
+      vex_printf("%s ", showPPC32AvFpOp(i->Pin.AvUn32Fx4.op));
+      ppHRegPPC32(i->Pin.AvUn32Fx4.dst);
+      vex_printf(",");
+      ppHRegPPC32(i->Pin.AvUn32Fx4.src);
       return;
    case Pin_AvPerm:
       vex_printf("vperm ");
@@ -1341,20 +1466,15 @@ void ppPPC32Instr ( PPC32Instr* i )
       return;
 
    case Pin_AvSplat: {
-      UChar ch_sz = toUChar(
-                       (i->Pin.AvSplat.sz == 8) ? 'b' :
-                       (i->Pin.AvSplat.sz == 16) ? 'h' : 'w'
-                    );
+      UChar sz = i->Pin.AvSplat.sz;
+      UChar ch_sz = toUChar( (sz == 8) ? 'b' : (sz == 16) ? 'h' : 'w' );
       vex_printf("vsplt%s%c ",
-                 i->Pin.AvSplat.src->tag == Pri_Imm ? "is" : "", ch_sz);
+                 i->Pin.AvSplat.src->tag == Pvi_Imm ? "is" : "", ch_sz);
       ppHRegPPC32(i->Pin.AvSplat.dst);
       vex_printf(",");
-      if (i->Pin.AvSplat.src->tag == Pri_Imm) {
-         vex_printf("%d", (Char)(i->Pin.AvSplat.src->Pri.Imm));
-      } else {
-         ppHRegPPC32(i->Pin.AvSplat.src->Pri.Reg);
-         vex_printf(", 0");
-      }
+      ppPPC32VI5s(i->Pin.AvSplat.src);
+      if (i->Pin.AvSplat.src->tag == Pvi_Reg)
+         vex_printf(", %d", (128/sz)-1);   /* louis lane */
       return;
    }
 
@@ -1402,6 +1522,11 @@ void getRegUsage_PPC32Instr ( HRegUsage* u, PPC32Instr* i )
       addRegUsage_PPC32RH(u, i->Pin.Alu32.srcR);
       addHRegUse(u, HRmWrite, i->Pin.Alu32.dst);
       return;
+   case Pin_AddSubC32:
+      addHRegUse(u, HRmWrite, i->Pin.AddSubC32.dst);
+      addHRegUse(u, HRmRead, i->Pin.AddSubC32.srcL);
+      addHRegUse(u, HRmRead, i->Pin.AddSubC32.srcR);
+      return;
    case Pin_Cmp32:
       addHRegUse(u, HRmRead, i->Pin.Cmp32.srcL);
       addRegUsage_PPC32RH(u, i->Pin.Cmp32.srcR);
@@ -1438,19 +1563,20 @@ void getRegUsage_PPC32Instr ( HRegUsage* u, PPC32Instr* i )
       addHRegUse(u, HRmWrite, hregPPC32_GPR12());
       
       /* Now we have to state any parameter-carrying registers
-         which might be read.  This depends on the regparmness. */
-      switch (i->Pin.Call.regparms) {
-      case  8: addHRegUse(u, HRmRead, hregPPC32_GPR10()); /*fallthru*/
-      case  7: addHRegUse(u, HRmRead, hregPPC32_GPR9() ); /*fallthru*/
-      case  6: addHRegUse(u, HRmRead, hregPPC32_GPR8() ); /*fallthru*/
-      case  5: addHRegUse(u, HRmRead, hregPPC32_GPR7() ); /*fallthru*/
-      case  4: addHRegUse(u, HRmRead, hregPPC32_GPR6() ); /*fallthru*/
-      case  3: addHRegUse(u, HRmRead, hregPPC32_GPR5() ); /*fallthru*/
-      case  2: addHRegUse(u, HRmRead, hregPPC32_GPR4() ); /*fallthru*/
-      case  1: addHRegUse(u, HRmRead, hregPPC32_GPR3() ); /*fallthru*/
-      case  0: break;
-      default: vpanic("getRegUsage_PPC32Instr:Call:regparms");
-      }
+         which might be read.  This depends on the argiregs field. */
+      if (i->Pin.Call.argiregs & (1<<10)) addHRegUse(u, HRmRead, hregPPC32_GPR10());
+      if (i->Pin.Call.argiregs & (1<<9)) addHRegUse(u, HRmRead, hregPPC32_GPR9());
+      if (i->Pin.Call.argiregs & (1<<8)) addHRegUse(u, HRmRead, hregPPC32_GPR8());
+      if (i->Pin.Call.argiregs & (1<<7)) addHRegUse(u, HRmRead, hregPPC32_GPR7());
+      if (i->Pin.Call.argiregs & (1<<6)) addHRegUse(u, HRmRead, hregPPC32_GPR6());
+      if (i->Pin.Call.argiregs & (1<<5)) addHRegUse(u, HRmRead, hregPPC32_GPR5());
+      if (i->Pin.Call.argiregs & (1<<4)) addHRegUse(u, HRmRead, hregPPC32_GPR4());
+      if (i->Pin.Call.argiregs & (1<<3)) addHRegUse(u, HRmRead, hregPPC32_GPR3());
+
+      vassert(0 == (i->Pin.Call.argiregs
+                    & ~((1<<3)|(1<<4)|(1<<5)|(1<<6)
+                        |(1<<7)|(1<<8)|(1<<9)|(1<<10))));
+
       /* Finally, there is the issue that the insn trashes a
          register because the literal target address has to be
          loaded into a register.  %r12 seems a suitable victim.
@@ -1540,9 +1666,17 @@ void getRegUsage_PPC32Instr ( HRegUsage* u, PPC32Instr* i )
       addHRegUse(u, HRmRead,  i->Pin.AvUnary.src);
       return;
    case Pin_AvBinary:
-      addHRegUse(u, HRmWrite, i->Pin.AvBinary.dst);
-      addHRegUse(u, HRmRead,  i->Pin.AvBinary.srcL);
-      addHRegUse(u, HRmRead,  i->Pin.AvBinary.srcR);
+      if (i->Pin.AvBinary.op == Pav_XOR
+          && i->Pin.AvBinary.dst == i->Pin.AvBinary.srcL
+          && i->Pin.AvBinary.dst == i->Pin.AvBinary.srcR) {
+         /* reg-alloc needs to understand 'xor r,r,r' as a write of r */
+         /* (as opposed to a rite of passage :-) */
+         addHRegUse(u, HRmWrite, i->Pin.AvBinary.dst);
+      } else {
+         addHRegUse(u, HRmWrite, i->Pin.AvBinary.dst);
+         addHRegUse(u, HRmRead,  i->Pin.AvBinary.srcL);
+         addHRegUse(u, HRmRead,  i->Pin.AvBinary.srcR);
+      }
       return;
    case Pin_AvBin8x16:
       addHRegUse(u, HRmWrite, i->Pin.AvBin8x16.dst);
@@ -1558,19 +1692,23 @@ void getRegUsage_PPC32Instr ( HRegUsage* u, PPC32Instr* i )
       addHRegUse(u, HRmWrite, i->Pin.AvBin32x4.dst);
       addHRegUse(u, HRmRead,  i->Pin.AvBin32x4.srcL);
       addHRegUse(u, HRmRead,  i->Pin.AvBin32x4.srcR);
-      if (i->Pin.AvBin32x4.op == Pav_MULF)
-         addHRegUse(u, HRmWrite, hregPPC32_GPR29());
       return;
    case Pin_AvBin32Fx4:
       addHRegUse(u, HRmWrite, i->Pin.AvBin32Fx4.dst);
       addHRegUse(u, HRmRead,  i->Pin.AvBin32Fx4.srcL);
       addHRegUse(u, HRmRead,  i->Pin.AvBin32Fx4.srcR);
+      if (i->Pin.AvBin32Fx4.op == Pavfp_MULF)
+         addHRegUse(u, HRmWrite, hregPPC32_GPR29());
+      return;
+   case Pin_AvUn32Fx4:
+      addHRegUse(u, HRmWrite, i->Pin.AvUn32Fx4.dst);
+      addHRegUse(u, HRmRead,  i->Pin.AvUn32Fx4.src);
       return;
    case Pin_AvPerm:
       addHRegUse(u, HRmWrite, i->Pin.AvPerm.dst);
-      addHRegUse(u, HRmRead,  i->Pin.AvPerm.ctl);
       addHRegUse(u, HRmRead,  i->Pin.AvPerm.srcL);
       addHRegUse(u, HRmRead,  i->Pin.AvPerm.srcR);
+      addHRegUse(u, HRmRead,  i->Pin.AvPerm.ctl);
       return;
    case Pin_AvSel:
       addHRegUse(u, HRmWrite, i->Pin.AvSel.dst);
@@ -1584,8 +1722,8 @@ void getRegUsage_PPC32Instr ( HRegUsage* u, PPC32Instr* i )
       addHRegUse(u, HRmRead,  i->Pin.AvShlDbl.srcR);
       return;
    case Pin_AvSplat:
-      addHRegUse(u, HRmWrite, i->Pin.AvSplat.dst);
-      addRegUsage_PPC32RI(u, i->Pin.AvSplat.src);
+      addHRegUse(u, HRmWrite,  i->Pin.AvSplat.dst);
+      addRegUsage_PPC32VI5s(u, i->Pin.AvSplat.src);
       return;
    case Pin_AvCMov:
       addHRegUse(u, HRmModify, i->Pin.AvCMov.dst);
@@ -1617,6 +1755,11 @@ void mapRegs_PPC32Instr (HRegRemap* m, PPC32Instr* i)
       mapReg(m, &i->Pin.Alu32.dst);
       mapReg(m, &i->Pin.Alu32.srcL);
       mapRegs_PPC32RH(m, i->Pin.Alu32.srcR);
+      return;
+   case Pin_AddSubC32:
+      mapReg(m, &i->Pin.AddSubC32.dst);
+      mapReg(m, &i->Pin.AddSubC32.srcL);
+      mapReg(m, &i->Pin.AddSubC32.srcR);
       return;
    case Pin_Cmp32:
       mapReg(m, &i->Pin.Cmp32.srcL);
@@ -1730,6 +1873,10 @@ void mapRegs_PPC32Instr (HRegRemap* m, PPC32Instr* i)
       mapReg(m, &i->Pin.AvBin32Fx4.srcL);
       mapReg(m, &i->Pin.AvBin32Fx4.srcR);
       return;
+   case Pin_AvUn32Fx4:
+      mapReg(m, &i->Pin.AvUn32Fx4.dst);
+      mapReg(m, &i->Pin.AvUn32Fx4.src);
+      return;
    case Pin_AvPerm:
       mapReg(m, &i->Pin.AvPerm.dst);
       mapReg(m, &i->Pin.AvPerm.srcL);
@@ -1749,7 +1896,7 @@ void mapRegs_PPC32Instr (HRegRemap* m, PPC32Instr* i)
       return;
    case Pin_AvSplat:
       mapReg(m, &i->Pin.AvSplat.dst);
-      mapRegs_PPC32RI(m, i->Pin.AvSplat.src);
+      mapRegs_PPC32VI5s(m, i->Pin.AvSplat.src);
       return;
    case Pin_AvCMov:
      mapReg(m, &i->Pin.AvCMov.dst);
@@ -2105,8 +2252,8 @@ static UChar* mkFormVX ( UChar* p, UInt opc1, UInt r1, UInt r2,
    return emit32(p, theInstr);
 }
 
-static UChar* mkFormVXR ( UChar* p, UInt opc1, UInt r1, UInt r2, UInt Rc,
-                          UInt r3, UInt opc2 )
+static UChar* mkFormVXR ( UChar* p, UInt opc1, UInt r1, UInt r2,
+                          UInt r3, UInt Rc, UInt opc2 )
 {
    UInt theInstr;
    vassert(opc1 < 0x40);
@@ -2155,7 +2302,7 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
 
    case Pin_Alu32: {
       PPC32RH* srcR   = i->Pin.Alu32.srcR;
-      Bool     immR   = srcR->tag == Prh_Imm;
+      Bool     immR   = toBool(srcR->tag == Prh_Imm);
       UInt     r_dst  = iregNo(i->Pin.Alu32.dst);
       UInt     r_srcL = iregNo(i->Pin.Alu32.srcL);
       UInt     r_srcR = immR ? (-1)/*bogus*/ : iregNo(srcR->Prh.Reg.reg);
@@ -2266,6 +2413,28 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
 
       default:
          goto bad;
+      }
+      goto done;
+   }
+
+   case Pin_AddSubC32: {
+      Bool isAdd    = i->Pin.AddSubC32.isAdd;
+      Bool setC = i->Pin.AddSubC32.setC;
+      UInt r_srcL   = iregNo(i->Pin.AddSubC32.srcL);
+      UInt r_srcR   = iregNo(i->Pin.AddSubC32.srcR);
+      UInt r_dst    = iregNo(i->Pin.AddSubC32.dst);
+      
+      if (isAdd) {
+         if (setC) /* addc (PPC32 p348) */
+            p = mkFormXO(p, 31, r_dst, r_srcL, r_srcR, 0, 10, 0);
+         else          /* adde (PPC32 p349) */
+            p = mkFormXO(p, 31, r_dst, r_srcL, r_srcR, 0, 138, 0);
+      } else {
+         /* subfX, with args the "wrong" way round */
+         if (setC) /* subfc (PPC32 p538) */
+            p = mkFormXO(p, 31, r_dst, r_srcR, r_srcL, 0, 8, 0);
+         else          /* subfe (PPC32 p539) */
+            p = mkFormXO(p, 31, r_dst, r_srcR, r_srcL, 0, 136, 0);
       }
       goto done;
    }
@@ -2415,13 +2584,13 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       
       /* If a non-boring, set GuestStatePtr appropriately. */
       switch (i->Pin.Goto.jk) {
-         case Ijk_ClientReq: trc = VEX_TRC_JMP_CLIENTREQ; break;
-         case Ijk_Syscall:   trc = VEX_TRC_JMP_SYSCALL;   break;
-         case Ijk_Yield:     trc = VEX_TRC_JMP_YIELD;     break;
-         case Ijk_EmWarn:    trc = VEX_TRC_JMP_EMWARN;    break;
-         case Ijk_MapFail:   trc = VEX_TRC_JMP_MAPFAIL;   break;
-         case Ijk_NoDecode:  trc = VEX_TRC_JMP_NODECODE;  break;
-         case Ijk_TInval:    trc = VEX_TRC_JMP_TINVAL;    break;
+         case Ijk_ClientReq:   trc = VEX_TRC_JMP_CLIENTREQ;   break;
+         case Ijk_Sys_syscall: trc = VEX_TRC_JMP_SYS_SYSCALL; break;
+         case Ijk_Yield:       trc = VEX_TRC_JMP_YIELD;       break;
+         case Ijk_EmWarn:      trc = VEX_TRC_JMP_EMWARN;      break;
+         case Ijk_MapFail:     trc = VEX_TRC_JMP_MAPFAIL;     break;
+         case Ijk_NoDecode:    trc = VEX_TRC_JMP_NODECODE;    break;
+         case Ijk_TInval:      trc = VEX_TRC_JMP_TINVAL;      break;
          case Ijk_Ret:
          case Ijk_Call:
          case Ijk_Boring:
@@ -2741,7 +2910,7 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt opc2, v_reg, r_idx, r_base;
       UChar sz   = i->Pin.AvLdSt.sz;
       Bool  idxd = toBool(i->Pin.AvLdSt.addr->tag == Pam_RR);
-      vassert(sz == 8 || sz == 16 || sz == 32 || sz == 128);
+      vassert(sz == 1 || sz == 2 || sz == 4 || sz == 16);
 
       v_reg  = vregNo(i->Pin.AvLdSt.reg);
       r_base = iregNo(i->Pin.AvLdSt.addr->Pam.RR.base);
@@ -2754,11 +2923,11 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
          r_idx  = iregNo(i->Pin.AvLdSt.addr->Pam.RR.index);
       }
 
-      if (i->Pin.FpLdSt.isLoad) {  // Load from memory (8,16,32,128)
-         opc2 = (sz == 8) ? 7 : (sz == 16) ? 39 : (sz == 32) ? 71 : 103;
+      if (i->Pin.FpLdSt.isLoad) {  // Load from memory (1,2,4,16)
+         opc2 = (sz == 1) ? 7 : (sz == 2) ? 39 : (sz == 4) ? 71 : 103;
          p = mkFormX(p, 31, v_reg, r_idx, r_base, opc2, 0);
-      } else {                      // Store to memory (8,16,32,128)
-         opc2 = (sz == 8) ? 135 : (sz == 16) ? 167 : (sz == 32) ? 199 : 231;
+      } else {                      // Store to memory (1,2,4,16)
+         opc2 = (sz == 1) ? 135 : (sz == 2) ? 167 : (sz == 4) ? 199 : 231;
          p = mkFormX(p, 31, v_reg, r_idx, r_base, opc2, 0);
       }
       goto done;
@@ -2786,8 +2955,8 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
          p = mkFormVX( p, 4, v_dst, v_src, v_src, opc2 );
          break;
       default:
-	p = mkFormVX( p, 4, v_dst, 0, v_src, opc2 );
-	break;
+         p = mkFormVX( p, 4, v_dst, 0, v_src, opc2 );
+         break;
       }
       goto done;
    }
@@ -2797,16 +2966,21 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt v_srcL = vregNo(i->Pin.AvBinary.srcL);
       UInt v_srcR = vregNo(i->Pin.AvBinary.srcR);
       UInt opc2;
+      if (i->Pin.AvBinary.op == Pav_SHL) {
+         p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 1036 ); // vslo
+         p = mkFormVX( p, 4, v_dst, v_dst,  v_srcR, 452 );  // vsl
+         goto done;
+      }
+      if (i->Pin.AvBinary.op == Pav_SHR) {
+         p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 1100 ); // vsro
+         p = mkFormVX( p, 4, v_dst, v_dst,  v_srcR, 708 );  // vsr
+         goto done;
+      }
       switch (i->Pin.AvBinary.op) {
       /* Bitwise */
-      case Pav_AND:       opc2 = 1026; break; // vand
+      case Pav_AND:       opc2 = 1028; break; // vand
       case Pav_OR:        opc2 = 1156; break; // vor
-      case Pav_XOR:       opc2 = 1120; break; // vxor
-
-      /* Shift */
-      case Pav_SHL:       opc2 =  452; break; // vsl
-      case Pav_SHR:       opc2 =  708; break; // vsr
-
+      case Pav_XOR:       opc2 = 1220; break; // vxor
       default:
          goto bad;
       }
@@ -2821,18 +2995,18 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt opc2;
       switch (i->Pin.AvBin8x16.op) {
 
-      case Pav_ADDUM:    opc2 =    0; break; // vaddubm
-      case Pav_ADDUS:    opc2 =  512; break; // vaddubs
-      case Pav_ADDSS:    opc2 =  768; break; // vaddsbs
+      case Pav_ADDU:     opc2 =    0; break; // vaddubm
+      case Pav_QADDU:    opc2 =  512; break; // vaddubs
+      case Pav_QADDS:    opc2 =  768; break; // vaddsbs
 
-      case Pav_SUBUM:    opc2 = 1024; break; // vsububm
-      case Pav_SUBUS:    opc2 = 1536; break; // vsububs
-      case Pav_SUBSS:    opc2 = 1792; break; // vsubsbs
+      case Pav_SUBU:     opc2 = 1024; break; // vsububm
+      case Pav_QSUBU:    opc2 = 1536; break; // vsububs
+      case Pav_QSUBS:    opc2 = 1792; break; // vsubsbs
 
-      case Pav_OMULU:    opc2 =    8; break; // vmuloub
-      case Pav_OMULS:    opc2 =  264; break; // vmulosb
-      case Pav_EMULU:    opc2 =  520; break; // vmuleub
-      case Pav_EMULS:    opc2 =  776; break; // vmulesb
+      case Pav_OMULU:   opc2 =    8; break; // vmuloub
+      case Pav_OMULS:   opc2 =  264; break; // vmulosb
+      case Pav_EMULU:   opc2 =  520; break; // vmuleub
+      case Pav_EMULS:   opc2 =  776; break; // vmulesb
 
       case Pav_AVGU:     opc2 = 1026; break; // vavgub
       case Pav_AVGS:     opc2 = 1282; break; // vavgsb
@@ -2867,13 +3041,13 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt opc2;
       switch (i->Pin.AvBin16x8.op) {
 
-      case Pav_ADDUM:   opc2 =   64; break; // vadduhm
-      case Pav_ADDUS:   opc2 =  576; break; // vadduhs
-      case Pav_ADDSS:   opc2 =  832; break; // vaddshs
+      case Pav_ADDU:    opc2 =   64; break; // vadduhm
+      case Pav_QADDU:   opc2 =  576; break; // vadduhs
+      case Pav_QADDS:   opc2 =  832; break; // vaddshs
 
-      case Pav_SUBUM:   opc2 = 1088; break; // vsubuhm
-      case Pav_SUBUS:   opc2 = 1600; break; // vsubuhs
-      case Pav_SUBSS:   opc2 = 1856; break; // vsubshs
+      case Pav_SUBU:    opc2 = 1088; break; // vsubuhm
+      case Pav_QSUBU:   opc2 = 1600; break; // vsubuhs
+      case Pav_QSUBS:   opc2 = 1856; break; // vsubshs
 
       case Pav_OMULU:   opc2 =   72; break; // vmulouh
       case Pav_OMULS:   opc2 =  328; break; // vmulosh
@@ -2896,11 +3070,11 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       case Pav_SAR:     opc2 =  836; break; // vsrah
       case Pav_ROTL:    opc2 =   68; break; // vrlh
 
-      case Pav_PACKUUM: opc2 =   14; break; // vpkuhum
-      case Pav_PACKUUS: opc2 =  142; break; // vpkuhus
-      case Pav_PACKSUS: opc2 =  270; break; // vpkshus
-      case Pav_PACKSSS: opc2 =  398; break; // vpkshss
-      case Pav_PACKPXL:   opc2 =  782; break; // vpkpx
+      case Pav_PACKUU:  opc2 =   14; break; // vpkuhum
+      case Pav_QPACKUU: opc2 =  142; break; // vpkuhus
+      case Pav_QPACKSU: opc2 =  270; break; // vpkshus
+      case Pav_QPACKSS: opc2 =  398; break; // vpkshss
+      case Pav_PACKPXL: opc2 =  782; break; // vpkpx
 
       case Pav_MRGHI:   opc2 =   76; break; // vmrghh
       case Pav_MRGLO:   opc2 =  332; break; // vmrglh
@@ -2919,13 +3093,13 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt opc2;
       switch (i->Pin.AvBin32x4.op) {
 
-      case Pav_ADDUM:   opc2 =  128; break; // vadduwm
-      case Pav_ADDUS:   opc2 =  640; break; // vadduws
-      case Pav_ADDSS:   opc2 =  896; break; // vaddsws
+      case Pav_ADDU:    opc2 =  128; break; // vadduwm
+      case Pav_QADDU:   opc2 =  640; break; // vadduws
+      case Pav_QADDS:   opc2 =  896; break; // vaddsws
 
-      case Pav_SUBUM:   opc2 = 1152; break; // vsubuwm
-      case Pav_SUBUS:   opc2 = 1664; break; // vsubuws
-      case Pav_SUBSS:   opc2 = 1920; break; // vsubsws
+      case Pav_SUBU:    opc2 = 1152; break; // vsubuwm
+      case Pav_QSUBU:   opc2 = 1664; break; // vsubuws
+      case Pav_QSUBS:   opc2 = 1920; break; // vsubsws
 
       case Pav_AVGU:    opc2 = 1154; break; // vavguw
       case Pav_AVGS:    opc2 = 1410; break; // vavgsw
@@ -2945,10 +3119,10 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       case Pav_SAR:     opc2 =  900; break; // vsraw
       case Pav_ROTL:    opc2 =  132; break; // vrlw
 
-      case Pav_PACKUUM: opc2 =   78; break; // vpkuwum
-      case Pav_PACKUUS: opc2 =  206; break; // vpkuwus
-      case Pav_PACKSUS: opc2 =  334; break; // vpkswus
-      case Pav_PACKSSS: opc2 =  462; break; // vpkswss
+      case Pav_PACKUU:  opc2 =   78; break; // vpkuwum
+      case Pav_QPACKUU: opc2 =  206; break; // vpkuwus
+      case Pav_QPACKSU: opc2 =  334; break; // vpkswus
+      case Pav_QPACKSS: opc2 =  462; break; // vpkswss
 
       case Pav_MRGHI:   opc2 =  140; break; // vmrghw
       case Pav_MRGLO:   opc2 =  396; break; // vmrglw
@@ -2966,47 +3140,47 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       UInt v_srcR = vregNo(i->Pin.AvBin32Fx4.srcR);
       switch (i->Pin.AvBin32Fx4.op) {
 
-      case Pav_ADDF:
+      case Pavfp_ADDF:
          p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 10 );   // vaddfp
          break;
-      case Pav_SUBF:
+      case Pavfp_SUBF:
          p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 74 );   // vsubfp
          break;
-      case Pav_MAXF:
+      case Pavfp_MAXF:
          p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 1034 ); // vmaxfp
          break;
-      case Pav_MINF:
+      case Pavfp_MINF:
          p = mkFormVX( p, 4, v_dst, v_srcL, v_srcR, 1098 ); // vminfp
          break;
 
-      case Pav_MULF: {
+      case Pavfp_MULF: {
          /* Make a vmulfp from a vmaddfp:
             load -0.0 (0x8000_0000) to each 32-bit word of vB
             this makes the add a noop.
          */
          UInt vB = 29;                    // XXX: Using r29 for temp
-         UInt zero_simm = 0x80000000;
+         UInt konst = 0x1F;
 
-         // Better way to load zero_imm?
+         // Better way to load -0.0 (0x80000000) ?
          // vspltisw vB,0x1F   (0x1F => each word of vB)
-         p = mkFormVX( p, 4, vB, zero_simm, 0, 908 );
+         p = mkFormVX( p, 4, vB, konst, 0, 908 );
 
          // vslw vB,vB,vB  (each word of vB = (0x1F << 0x1F) = 0x80000000
          p = mkFormVX( p, 4, vB, vB, vB, 388 );
 
          // Finally, do the multiply:
          p = mkFormVA( p, 4, v_dst, v_srcL, vB, v_srcR, 46 );
-	 break;
+         break;
       }
-      case Pav_CMPEQF:
+      case Pavfp_CMPEQF:
          p = mkFormVXR( p, 4, v_dst, v_srcL, v_srcR, 0, 198 ); // vcmpeqfp
-	 break;
-      case Pav_CMPGTF:
-         p = mkFormVXR( p, 4, v_dst, v_srcL, v_srcR, 1, 710 ); // vcmpgtfp
-	 break;
-      case Pav_CMPGEF:
-         p = mkFormVXR( p, 4, v_dst, v_srcL, v_srcR, 1, 454 ); // vcmpgefp
-	 break;
+         break;
+      case Pavfp_CMPGTF:
+         p = mkFormVXR( p, 4, v_dst, v_srcL, v_srcR, 0, 710 ); // vcmpgtfp
+         break;
+      case Pavfp_CMPGEF:
+         p = mkFormVXR( p, 4, v_dst, v_srcL, v_srcR, 0, 454 ); // vcmpgefp
+         break;
 
       default:
          goto bad;
@@ -3014,11 +3188,33 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
       goto done;
    }
 
+   case Pin_AvUn32Fx4: {
+      UInt v_dst = vregNo(i->Pin.AvUn32Fx4.dst);
+      UInt v_src = vregNo(i->Pin.AvUn32Fx4.src);
+      UInt opc2;
+      switch (i->Pin.AvUn32Fx4.op) {
+      case Pavfp_RCPF:    opc2 =  266; break; // vrefp
+      case Pavfp_RSQRTF:  opc2 =  330; break; // vrsqrtefp
+      case Pavfp_CVTU2F:  opc2 =  778; break; // vcfux
+      case Pavfp_CVTS2F:  opc2 =  842; break; // vcfsx
+      case Pavfp_QCVTF2U: opc2 =  906; break; // vctuxs
+      case Pavfp_QCVTF2S: opc2 =  970; break; // vctsxs
+      case Pavfp_ROUNDM:  opc2 =  714; break; // vrfim
+      case Pavfp_ROUNDP:  opc2 =  650; break; // vrfip
+      case Pavfp_ROUNDN:  opc2 =  522; break; // vrfin
+      case Pavfp_ROUNDZ:  opc2 =  586; break; // vrfiz
+      default:
+         goto bad;
+      }
+      p = mkFormVX( p, 4, v_dst, 0, v_src, opc2 );
+      goto done;
+   }
+
    case Pin_AvPerm: {  // vperm
-      UInt v_ctl  = vregNo(i->Pin.AvPerm.ctl);
       UInt v_dst  = vregNo(i->Pin.AvPerm.dst);
       UInt v_srcL = vregNo(i->Pin.AvPerm.srcL);
       UInt v_srcR = vregNo(i->Pin.AvPerm.srcR);
+      UInt v_ctl  = vregNo(i->Pin.AvPerm.ctl);
       p = mkFormVA( p, 4, v_dst, v_srcL, v_srcR, v_ctl, 43 );
       goto done;
    }
@@ -3045,17 +3241,25 @@ Int emit_PPC32Instr ( UChar* buf, Int nbuf, PPC32Instr* i )
    case Pin_AvSplat: { // vsplt(is)(b,h,w)
       UInt v_dst = vregNo(i->Pin.AvShlDbl.dst);
       UChar sz   = i->Pin.AvSplat.sz;
-      UInt v_src, simm_src, opc2;
+      UInt v_src, opc2;
       vassert(sz == 8 || sz == 16 || sz == 32);
 
-      if (i->Pin.AvSplat.src->tag == Pri_Imm) {
+      if (i->Pin.AvSplat.src->tag == Pvi_Imm) {
+         Char simm5;
          opc2 = (sz == 8) ? 780 : (sz == 16) ? 844 : 908;   // 8,16,32
-         simm_src = i->Pin.AvSplat.src->Pri.Imm;
-         p = mkFormVX( p, 4, v_dst, simm_src, 0, opc2 );
-      } else {  // Pri_Reg
+         /* expects 5-bit-signed-imm */
+         simm5 = i->Pin.AvSplat.src->Pvi.Imm5s;
+         vassert(simm5 >= -16 && simm5 <= 15);
+         simm5 = simm5 & 0x1F;
+         p = mkFormVX( p, 4, v_dst, (UInt)simm5, 0, opc2 );
+      }
+      else {  // Pri_Reg
+         UInt lowest_lane;
          opc2 = (sz == 8) ? 524 : (sz == 16) ? 588 : 652;  // 8,16,32
-         v_src = iregNo(i->Pin.AvSplat.src->Pri.Reg);
-         p = mkFormVX( p, 4, v_dst, 0, v_src, opc2 );
+         vassert(hregClass(i->Pin.AvSplat.src->Pvi.Reg) == HRcVec128);
+         v_src = vregNo(i->Pin.AvSplat.src->Pvi.Reg);
+         lowest_lane = (128/sz)-1;
+         p = mkFormVX( p, 4, v_dst, lowest_lane, v_src, opc2 );
       }
       goto done;
    }

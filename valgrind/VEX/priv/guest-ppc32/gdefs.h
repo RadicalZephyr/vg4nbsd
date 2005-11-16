@@ -101,23 +101,6 @@ typedef
    }
    PPC32CmpF64Result;
 
-
-/*---------------------------------------------------------*/
-/*--- ppc32 guest helpers                                 ---*/
-/*---------------------------------------------------------*/
-
-/* --- CLEAN HELPERS --- */
-
-// Calculate XER flags
-extern 
-UInt ppc32g_calculate_xer_ov  ( UInt op, 
-                                UInt res, UInt argL, UInt argR );
-
-extern 
-UInt ppc32g_calculate_xer_ca  ( UInt op, 
-                                UInt res, UInt argL, UInt argR, 
-                                UInt old_ca );
-
 /*
   Enumeration for xer_ca/ov calculation helper functions
 */
@@ -137,6 +120,22 @@ enum {
    PPC32G_FLAG_OP_NUMBER
 };
 
+
+/*---------------------------------------------------------*/
+/*--- ppc32 guest helpers                               ---*/
+/*---------------------------------------------------------*/
+
+/* --- CLEAN HELPERS --- */
+
+/* none, right now */
+
+/* --- DIRTY HELPERS --- */
+
+extern ULong ppc32g_dirtyhelper_MFTB ( void );
+
+extern void ppc32g_dirtyhelper_LVS ( VexGuestPPC32State* gst,
+                                     UInt vD_idx, UInt sh,
+                                     UInt shift_right );
 
 #endif /* ndef __LIBVEX_GUEST_PPC32_DEFS_H */
 

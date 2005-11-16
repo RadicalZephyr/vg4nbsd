@@ -1228,7 +1228,7 @@ UInt x86g_calculate_FXAM ( UInt tag, ULong dbl )
 
 /* CALLED FROM GENERATED CODE */
 /* DIRTY HELPER (reads guest memory) */
-ULong x86g_loadF80le ( UInt addrU )
+ULong x86g_dirtyhelper_loadF80le ( UInt addrU )
 {
    ULong f64;
    convert_f80le_to_f64le ( (UChar*)ULong_to_Ptr(addrU), (UChar*)&f64 );
@@ -1237,9 +1237,93 @@ ULong x86g_loadF80le ( UInt addrU )
 
 /* CALLED FROM GENERATED CODE */
 /* DIRTY HELPER (writes guest memory) */
-void x86g_storeF80le ( UInt addrU, ULong f64 )
+void x86g_dirtyhelper_storeF80le ( UInt addrU, ULong f64 )
 {
    convert_f64le_to_f80le( (UChar*)&f64, (UChar*)ULong_to_Ptr(addrU) );
+}
+
+
+/* CALLED FROM GENERATED CODE: CLEAN HELPER */
+/* Extract the signed significand or exponent component as per
+   fxtract.  Arg and result are doubles travelling under the guise of
+   ULongs.  Returns significand when getExp is zero and exponent
+   otherwise. */
+ULong x86g_calculate_FXTRACT ( ULong arg, UInt getExp )
+{
+   ULong  uSig;
+   Long   sSig;
+   Double dSig, dExp;
+   Int    sExp, i;
+   UInt   sign;
+
+   /*
+    S  7FF    0------0   infinity
+    S  7FF    0X-----X   snan
+    S  7FF    1X-----X   qnan
+   */
+   const ULong posInf  = 0x7FF0000000000000ULL;
+   const ULong negInf  = 0xFFF0000000000000ULL;
+   const ULong nanMask = 0x7FF0000000000000ULL;
+   const ULong qNan    = 0x7FF8000000000000ULL;
+   const ULong posZero = 0x0000000000000000ULL;
+   const ULong negZero = 0x8000000000000000ULL;
+   const ULong bit51   = 1ULL << 51;
+   const ULong bit52   = 1ULL << 52;
+
+   /* Mimic PIII behaviour for special cases. */
+   if (arg == posInf)
+      return getExp ? posInf : posInf;
+   if (arg == negInf)
+      return getExp ? posInf : negInf;
+   if ((arg & nanMask) == nanMask)
+      return qNan;
+   if (arg == posZero)
+      return getExp ? negInf : posZero;
+   if (arg == negZero)
+      return getExp ? negInf : negZero;
+
+   /* Split into sign, exponent and significand. */
+   sign = ((UInt)(arg >> 63)) & 1;
+
+   /* Mask off exponent & sign. uSig is in range 0 .. 2^52-1. */
+   uSig = arg & (bit52 - 1);
+
+   /* Get the exponent. */
+   sExp = ((Int)(arg >> 52)) & 0x7FF;
+
+   /* Deal with denormals: if the exponent is zero, then the
+      significand cannot possibly be zero (negZero/posZero are handled
+      above).  Shift the significand left until bit 51 of it becomes
+      1, and decrease the exponent accordingly.
+   */
+   if (sExp == 0) {
+      for (i = 0; i < 52; i++) {
+         if (uSig & bit51)
+            break;
+         uSig <<= 1;
+         sExp--;
+      }
+      uSig <<= 1;
+   } else {
+      /* Add the implied leading-1 in the significand. */
+      uSig |= bit52;
+   }
+
+   /* Roll in the sign. */
+   sSig = uSig;
+   if (sign) sSig =- sSig;
+
+   /* Convert sig into a double.  This should be an exact conversion.
+      Then divide by 2^52, which should give a value in the range 1.0
+      to 2.0-epsilon, at least for normalised args. */
+   dSig = (Double)sSig;
+   dSig /= 67108864.0; /* 2^26 */
+   dSig /= 67108864.0; /* 2^26 */
+
+   /* Convert exp into a double.  Also an exact conversion. */
+   dExp = (Double)(sExp - 1023);
+
+   return *(ULong*)(getExp ? &dExp : &dSig);
 }
 
 
@@ -1638,6 +1722,76 @@ ULong x86g_calculate_RCR ( UInt arg, UInt rot_amt, UInt eflags_in, UInt sz )
 }
 
 
+/* CALLED FROM GENERATED CODE: CLEAN HELPER */
+/* Calculate both flags and value result for rotate left
+   through the carry bit.  Result in low 32 bits, 
+   new flags (OSZACP) in high 32 bits.
+*/
+ULong x86g_calculate_RCL ( UInt arg, UInt rot_amt, UInt eflags_in, UInt sz )
+{
+   UInt tempCOUNT = rot_amt & 0x1F, cf=0, of=0, tempcf;
+
+   switch (sz) {
+      case 4:
+         cf = (eflags_in >> X86G_CC_SHIFT_C) & 1;
+         while (tempCOUNT > 0) {
+            tempcf = (arg >> 31) & 1;
+            arg    = (arg << 1) | (cf & 1);
+            cf     = tempcf;
+            tempCOUNT--;
+         }
+         of = ((arg >> 31) ^ cf) & 1;
+         break;
+      case 2:
+         while (tempCOUNT >= 17) tempCOUNT -= 17;
+         cf = (eflags_in >> X86G_CC_SHIFT_C) & 1;
+         while (tempCOUNT > 0) {
+            tempcf = (arg >> 15) & 1;
+            arg    = 0xFFFF & ((arg << 1) | (cf & 1));
+            cf     = tempcf;
+            tempCOUNT--;
+         }
+         of = ((arg >> 15) ^ cf) & 1;
+         break;
+      case 1:
+         while (tempCOUNT >= 9) tempCOUNT -= 9;
+         cf = (eflags_in >> X86G_CC_SHIFT_C) & 1;
+         while (tempCOUNT > 0) {
+            tempcf = (arg >> 7) & 1;
+            arg    = 0xFF & ((arg << 1) | (cf & 1));
+            cf     = tempcf;
+            tempCOUNT--;
+         }
+         of = ((arg >> 7) ^ cf) & 1;
+         break;
+      default: 
+         vpanic("calculate_RCL: invalid size");
+   }
+
+   cf &= 1;
+   of &= 1;
+   eflags_in &= ~(X86G_CC_MASK_C | X86G_CC_MASK_O);
+   eflags_in |= (cf << X86G_CC_SHIFT_C) | (of << X86G_CC_SHIFT_O);
+
+   return (((ULong)eflags_in) << 32) | ((ULong)arg);
+}
+
+
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (non-referentially-transparent) */
+/* Horrible hack.  On non-x86 platforms, return 1. */
+ULong x86g_dirtyhelper_RDTSC ( void )
+{
+#  if defined(__i386__)
+   ULong res;
+   __asm__ __volatile__("rdtsc" : "=A" (res));
+   return res;
+#  else
+   return 1ULL;
+#  endif
+}
+
+
 /* CALLED FROM GENERATED CODE */
 /* DIRTY HELPER (modifies guest state) */
 /* Claim to be a P55C (Intel Pentium/MMX) */
@@ -1725,6 +1879,66 @@ void x86g_dirtyhelper_CPUID_sse2 ( VexGuestX86State* st )
          st->guest_EDX = 0x007b7040;
          break;
    }
+}
+
+
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (non-referentially-transparent) */
+/* Horrible hack.  On non-x86 platforms, return 0. */
+UInt x86g_dirtyhelper_IN ( UInt portno, UInt sz/*1,2 or 4*/ )
+{
+#  if defined(__i386__)
+   UInt r = 0;
+   portno &= 0xFFFF;
+   switch (sz) {
+      case 4: 
+         __asm__ __volatile__("movl $0,%%eax; inl %w1,%0" 
+                              : "=a" (r) : "Nd" (portno));
+	 break;
+      case 2: 
+         __asm__ __volatile__("movl $0,%%eax; inw %w1,%w0" 
+                              : "=a" (r) : "Nd" (portno));
+	 break;
+      case 1: 
+         __asm__ __volatile__("movl $0,%%eax; inb %w1,%b0" 
+                              : "=a" (r) : "Nd" (portno));
+	 break;
+      default:
+         break;
+   }
+   return r;
+#  else
+   return 0;
+#  endif
+}
+
+
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (non-referentially-transparent) */
+/* Horrible hack.  On non-x86 platforms, do nothing. */
+void x86g_dirtyhelper_OUT ( UInt portno, UInt data, UInt sz/*1,2 or 4*/ )
+{
+#  if defined(__i386__)
+   portno &= 0xFFFF;
+   switch (sz) {
+      case 4: 
+         __asm__ __volatile__("outl %0, %w1" 
+                              : : "a" (data), "Nd" (portno));
+	 break;
+      case 2: 
+         __asm__ __volatile__("outw %w0, %w1" 
+                              : : "a" (data), "Nd" (portno));
+	 break;
+      case 1: 
+         __asm__ __volatile__("outb %b0, %w1" 
+                              : : "a" (data), "Nd" (portno));
+	 break;
+      default:
+         break;
+   }
+#  else
+   /* do nothing */
+#  endif
 }
 
 
@@ -2008,8 +2222,7 @@ void LibVEX_GuestX86_initialise ( /*OUT*/VexGuestX86State* vex_state )
 
    vex_state->guest_EMWARN = EmWarn_NONE;
 
-   /* These should not ever be either read or written, but we
-      initialise them anyway. */
+   /* SSE2 has a 'clflush' cache-line-invalidator which uses these. */
    vex_state->guest_TISTART = 0;
    vex_state->guest_TILEN   = 0;
 }

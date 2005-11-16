@@ -2147,9 +2147,9 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Ijk_ClientReq: 
             *p++ = 0xBD;
             p = emit32(p, VEX_TRC_JMP_CLIENTREQ); break;
-         case Ijk_Syscall: 
+         case Ijk_Sys_int128:
             *p++ = 0xBD;
-            p = emit32(p, VEX_TRC_JMP_SYSCALL); break;
+            p = emit32(p, VEX_TRC_JMP_SYS_INT128); break;
          case Ijk_Yield: 
             *p++ = 0xBD;
             p = emit32(p, VEX_TRC_JMP_YIELD); break;
@@ -2165,9 +2165,9 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Ijk_TInval:
             *p++ = 0xBD;
             p = emit32(p, VEX_TRC_JMP_TINVAL); break;
-         case Ijk_SysenterX86:
+         case Ijk_Sys_sysenter:
             *p++ = 0xBD;
-            p = emit32(p, VEX_TRC_JMP_SYSENTER_X86); break;
+            p = emit32(p, VEX_TRC_JMP_SYS_SYSENTER); break;
          case Ijk_Ret:
 	 case Ijk_Call:
          case Ijk_Boring:
@@ -2221,7 +2221,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
 
       /* Alternative version which works on any x86 variant. */
       /* jmp fwds if !condition */
-      *p++ = 0x70 + (i->Xin.CMov32.cond ^ 1);
+      *p++ = toUChar(0x70 + (i->Xin.CMov32.cond ^ 1));
       *p++ = 0; /* # of bytes in the next bit, which we don't know yet */
       ptmp = p;
 
@@ -2245,7 +2245,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
             goto bad;
       }
       /* Fill in the jump offset. */
-      *(ptmp-1) = p - ptmp;
+      *(ptmp-1) = toUChar(p - ptmp);
       goto done;
 
       break;
@@ -2315,7 +2315,6 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
       if (0) vex_printf("EMIT FENCE\n");
       switch (i->Xin.MFence.subarch) {
          case VexSubArchX86_sse0:
-            vassert(0); /* awaiting test case */
             /* lock addl $0,0(%esp) */
             *p++ = 0xF0; *p++ = 0x83; *p++ = 0x44; 
             *p++ = 0x24; *p++ = 0x00; *p++ = 0x00;
@@ -2635,6 +2634,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Xsse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Xsse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Xsse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Xsse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, fake(vregNo(i->Xin.Sse32Fx4.dst)),
@@ -2660,6 +2660,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Xsse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Xsse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Xsse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Xsse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, fake(vregNo(i->Xin.Sse64Fx2.dst)),
@@ -2685,6 +2686,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Xsse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Xsse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Xsse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Xsse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, fake(vregNo(i->Xin.Sse32FLo.dst)),
@@ -2710,6 +2712,7 @@ Int emit_X86Instr ( UChar* buf, Int nbuf, X86Instr* i )
          case Xsse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Xsse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Xsse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Xsse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, fake(vregNo(i->Xin.Sse64FLo.dst)),

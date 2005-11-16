@@ -130,7 +130,7 @@ int main ( int argc, char** argv )
       vai_amd64.subarch = VexSubArch_NONE;
 
       LibVEX_default_VexArchInfo(&vai_ppc32);
-      vai_ppc32.subarch = VexSubArchPPC32_AV;
+      vai_ppc32.subarch = VexSubArchPPC32_VFI;
       vai_ppc32.ppc32_cache_line_szB = 128;
 
       for (i = 0; i < TEST_N_ITERS; i++)
@@ -148,7 +148,8 @@ int main ( int argc, char** argv )
                  VexArchX86, &vai_x86, 
                  VexArchX86, &vai_x86, 
 #endif
-                 origbuf, (Addr64)orig_addr, chase_into_not_ok,
+                 origbuf, (Addr64)orig_addr, (Addr64)orig_addr,
+                 chase_into_not_ok,
                  &vge,
                  transbuf, N_TRANSBUF, &trans_used,
 #if 1 /* no instrumentation */

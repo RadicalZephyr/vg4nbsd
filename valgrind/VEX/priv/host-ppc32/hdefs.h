@@ -54,7 +54,7 @@
 /* --------- Registers. --------- */
 
 /* The usual HReg abstraction.  There are 32 real int regs,
-   32 real float regs, and 0 real vector regs. 
+   32 real float regs, and 32 real vector regs. 
 */
 
 extern void ppHRegPPC32 ( HReg );
@@ -293,6 +293,32 @@ extern PPC32RI* PPC32RI_Reg ( HReg );
 extern void ppPPC32RI ( PPC32RI* );
 
 
+/* --------- Operand, which can be a vector reg or a s6. --------- */
+/* ("VI" == "Vector Register or Immediate") */
+typedef
+   enum {
+      Pvi_Imm=5,
+      Pvi_Reg=6
+   } 
+   PPC32VI5sTag;
+
+typedef
+   struct {
+      PPC32VI5sTag tag;
+      union {
+         Char Imm5s;
+         HReg Reg;
+      }
+      Pvi;
+   }
+   PPC32VI5s;
+
+extern PPC32VI5s* PPC32VI5s_Imm ( Char );
+extern PPC32VI5s* PPC32VI5s_Reg ( HReg );
+
+extern void ppPPC32VI5s ( PPC32VI5s* );
+
+
 /* --------- Instructions. --------- */
 
 /* --------- */
@@ -350,14 +376,10 @@ typedef
       Pav_UNPCKHPIX, Pav_UNPCKLPIX,
 
       /* Integer Binary */
-      Pav_AND, Pav_OR, Pav_XOR,   /* Bitwise */
-
-      Pav_ADDUM, Pav_ADDUS,Pav_ADDSS,
-
-      Pav_SUBUM, Pav_SUBUS, Pav_SUBSS,
-
+      Pav_AND, Pav_OR, Pav_XOR,            /* Bitwise */
+      Pav_ADDU, Pav_QADDU, Pav_QADDS,
+      Pav_SUBU, Pav_QSUBU, Pav_QSUBS,
       Pav_OMULU, Pav_OMULS, Pav_EMULU, Pav_EMULS,
-
       Pav_AVGU, Pav_AVGS,
       Pav_MAXU, Pav_MAXS,
       Pav_MINU, Pav_MINS,
@@ -369,19 +391,11 @@ typedef
       Pav_SHL, Pav_SHR, Pav_SAR, Pav_ROTL,
 
       /* Pack */
-      Pav_PACKUUM, Pav_PACKUUS, Pav_PACKSUS, Pav_PACKSSS,
+      Pav_PACKUU, Pav_QPACKUU, Pav_QPACKSU, Pav_QPACKSS,
       Pav_PACKPXL,
 
       /* Merge */
       Pav_MRGHI, Pav_MRGLO,
-
-      /* Floating point binary */
-      Pav_ADDF, Pav_SUBF, Pav_MULF,
-      Pav_MAXF, Pav_MINF,
-      Pav_CMPEQF, Pav_CMPGTF, Pav_CMPGEF,
-
-//..       /* Floating point unary */
-//..       Xsse_RCPF, Xsse_RSQRTF, Xsse_SQRTF,
    }
    PPC32AvOp;
 
@@ -391,8 +405,29 @@ extern HChar* showPPC32AvOp ( PPC32AvOp );
 /* --------- */
 typedef
    enum {
+      Pavfp_INVALID,
+
+      /* Floating point binary */
+      Pavfp_ADDF, Pavfp_SUBF, Pavfp_MULF,
+      Pavfp_MAXF, Pavfp_MINF,
+      Pavfp_CMPEQF, Pavfp_CMPGTF, Pavfp_CMPGEF,
+
+      /* Floating point unary */
+      Pavfp_RCPF, Pavfp_RSQRTF,
+      Pavfp_CVTU2F, Pavfp_CVTS2F, Pavfp_QCVTF2U, Pavfp_QCVTF2S,
+      Pavfp_ROUNDM, Pavfp_ROUNDP, Pavfp_ROUNDN, Pavfp_ROUNDZ,
+   }
+   PPC32AvFpOp;
+
+extern HChar* showPPC32AvFpOp ( PPC32AvFpOp );
+
+
+/* --------- */
+typedef
+   enum {
       Pin_LI32,       /* load 32-bit immediate (fake insn) */
       Pin_Alu32,      /* 32-bit add/sub/and/or/xor/shl/shr/sar */
+      Pin_AddSubC32,  /* 32-bit add/sub with read/write carry */
       Pin_Cmp32,      /* 32-bit compare */
       Pin_Unary32,    /* 32-bit not, neg, clz */
       Pin_MulL,       /* widening multiply */
@@ -426,6 +461,7 @@ typedef
       Pin_AvBin32x4,  /* AV binary, 32x4 */
 
       Pin_AvBin32Fx4, /* AV FP binary, 32Fx4 */
+      Pin_AvUn32Fx4,  /* AV FP unary,  32Fx4 */
 
       Pin_AvPerm,     /* AV permute (shuffle) */
       Pin_AvSel,      /* AV select */
@@ -465,6 +501,14 @@ typedef
             HReg       srcL;
             PPC32RH*   srcR;
          } Alu32;
+         /*  */
+         struct {
+            Bool isAdd;  /* else sub */
+            Bool setC;   /* else read carry */
+            HReg dst;
+            HReg srcL;
+            HReg srcR;
+         } AddSubC32;
          /* If signed, the immediate, if it exists, is a signed 16,
             else it is an unsigned 16. */
          struct {
@@ -494,11 +538,14 @@ typedef
             HReg srcR;
          } Div;
          /* Pseudo-insn.  Call target (an absolute address), on given
-            condition (which could be Pct_ALWAYS). */
+            condition (which could be Pct_ALWAYS).  argiregs indicates
+            which of r3 .. r10 carries argument values for this call,
+            using a bit mask (1<<N is set if rN holds an arg, for N in
+            3 .. 10 inclusive). */
          struct {
             PPC32CondCode cond;
             Addr32        target;
-            Int           regparms; /* 0 .. 9 */
+            UInt          argiregs;
          } Call;
          /* Pseudo-insn.  Goto dst, on given condition (which could be
             Pct_ALWAYS). */
@@ -634,23 +681,28 @@ typedef
             HReg      srcR;
          } AvBin32x4;
          struct {
-            PPC32AvOp op;
+            PPC32AvFpOp op;
             HReg      dst;
             HReg      srcL;
             HReg      srcR;
          } AvBin32Fx4;
+         struct {
+            PPC32AvFpOp op;
+            HReg      dst;
+            HReg      src;
+         } AvUn32Fx4;
          /* Perm,Sel,SlDbl,Splat are all weird AV permutations */
          struct {
-            HReg ctl;
             HReg dst;
             HReg srcL;
             HReg srcR;
+            HReg ctl;
          } AvPerm;
          struct {
-            HReg ctl;
             HReg dst;
             HReg srcL;
             HReg srcR;
+            HReg ctl;
          } AvSel;
          struct {
             UChar shift;
@@ -661,7 +713,7 @@ typedef
          struct {
             UChar    sz;   /* 8,16,32 */
             HReg     dst;
-            PPC32RI* src;
+            PPC32VI5s* src; 
          } AvSplat;
          /* Mov src to dst on the given condition, which may not
             be the bogus Xcc_ALWAYS. */
@@ -681,11 +733,12 @@ typedef
 
 extern PPC32Instr* PPC32Instr_LI32       ( HReg, UInt );
 extern PPC32Instr* PPC32Instr_Alu32      ( PPC32AluOp, HReg, HReg, PPC32RH* );
+extern PPC32Instr* PPC32Instr_AddSubC32  ( Bool, Bool, HReg, HReg, HReg );
 extern PPC32Instr* PPC32Instr_Cmp32      ( Bool,       UInt, HReg, PPC32RH* );
 extern PPC32Instr* PPC32Instr_Unary32    ( PPC32UnaryOp op, HReg dst, HReg src );
 extern PPC32Instr* PPC32Instr_MulL       ( Bool syned, Bool hi32, HReg, HReg, HReg );
 extern PPC32Instr* PPC32Instr_Div        ( Bool syned, HReg dst, HReg srcL, HReg srcR );
-extern PPC32Instr* PPC32Instr_Call       ( PPC32CondCode, Addr32, Int );
+extern PPC32Instr* PPC32Instr_Call       ( PPC32CondCode, Addr32, UInt );
 extern PPC32Instr* PPC32Instr_Goto       ( IRJumpKind, PPC32CondCode cond, PPC32RI* dst );
 extern PPC32Instr* PPC32Instr_CMov32     ( PPC32CondCode, HReg dst, PPC32RI* src );
 extern PPC32Instr* PPC32Instr_Load       ( UChar sz, Bool syned,
@@ -713,10 +766,11 @@ extern PPC32Instr* PPC32Instr_AvBin8x16  ( PPC32AvOp op, HReg dst, HReg srcL, HR
 extern PPC32Instr* PPC32Instr_AvBin16x8  ( PPC32AvOp op, HReg dst, HReg srcL, HReg srcR );
 extern PPC32Instr* PPC32Instr_AvBin32x4  ( PPC32AvOp op, HReg dst, HReg srcL, HReg srcR );
 extern PPC32Instr* PPC32Instr_AvBin32Fx4 ( PPC32AvOp op, HReg dst, HReg srcL, HReg srcR );
-extern PPC32Instr* PPC32Instr_AvPerm     ( HReg ctl, HReg dst, HReg srcL, HReg srcR );
+extern PPC32Instr* PPC32Instr_AvUn32Fx4  ( PPC32AvOp op, HReg dst, HReg src );
+extern PPC32Instr* PPC32Instr_AvPerm     ( HReg dst, HReg srcL, HReg srcR, HReg ctl );
 extern PPC32Instr* PPC32Instr_AvSel      ( HReg ctl, HReg dst, HReg srcL, HReg srcR );
 extern PPC32Instr* PPC32Instr_AvShlDbl   ( UChar shift, HReg dst, HReg srcL, HReg srcR );
-extern PPC32Instr* PPC32Instr_AvSplat    ( UChar sz, HReg dst, PPC32RI* src );
+extern PPC32Instr* PPC32Instr_AvSplat    ( UChar sz, HReg dst, PPC32VI5s* src );
 extern PPC32Instr* PPC32Instr_AvCMov     ( PPC32CondCode, HReg dst, HReg src );
 extern PPC32Instr* PPC32Instr_AvLdVSCR   ( HReg src );
 

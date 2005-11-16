@@ -2585,9 +2585,12 @@ Int emit_AMD64Instr ( UChar* buf, Int nbuf, AMD64Instr* i )
          case Ijk_ClientReq: 
             *p++ = 0xBD;
             p = emit32(p, VEX_TRC_JMP_CLIENTREQ); break;
-         case Ijk_Syscall: 
+         case Ijk_Sys_syscall: 
             *p++ = 0xBD;
-            p = emit32(p, VEX_TRC_JMP_SYSCALL); break;
+            p = emit32(p, VEX_TRC_JMP_SYS_SYSCALL); break;
+         case Ijk_Sys_int32: 
+            *p++ = 0xBD;
+            p = emit32(p, VEX_TRC_JMP_SYS_INT32); break;
          case Ijk_Yield: 
             *p++ = 0xBD;
             p = emit32(p, VEX_TRC_JMP_YIELD); break;
@@ -3132,6 +3135,7 @@ Int emit_AMD64Instr ( UChar* buf, Int nbuf, AMD64Instr* i )
          case Asse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Asse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Asse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Asse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, vreg2ireg(i->Ain.Sse32Fx4.dst),
@@ -3160,6 +3164,7 @@ Int emit_AMD64Instr ( UChar* buf, Int nbuf, AMD64Instr* i )
          case Asse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Asse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Asse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Asse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, vreg2ireg(i->Ain.Sse64Fx2.dst),
@@ -3188,6 +3193,7 @@ Int emit_AMD64Instr ( UChar* buf, Int nbuf, AMD64Instr* i )
          case Asse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Asse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Asse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Asse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, vreg2ireg(i->Ain.Sse32FLo.dst),
@@ -3216,6 +3222,7 @@ Int emit_AMD64Instr ( UChar* buf, Int nbuf, AMD64Instr* i )
          case Asse_CMPEQF: *p++ = 0xC2; xtra = 0x100; break;
          case Asse_CMPLTF: *p++ = 0xC2; xtra = 0x101; break;
          case Asse_CMPLEF: *p++ = 0xC2; xtra = 0x102; break;
+         case Asse_CMPUNF: *p++ = 0xC2; xtra = 0x103; break;
          default: goto bad;
       }
       p = doAMode_R(p, vreg2ireg(i->Ain.Sse64FLo.dst),

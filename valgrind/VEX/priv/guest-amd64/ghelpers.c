@@ -897,6 +897,22 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
                            mkU64(0)));
       }
 
+      /*---------------- SUBQ ----------------*/
+
+      if (isU64(cc_op, AMD64G_CC_OP_SUBQ) && isU64(cond, AMD64CondL)) {
+         /* long long sub/cmp, then L (signed less than) 
+            --> test dst <s src */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpLT64S, cc_dep1, cc_dep2));
+      }
+
+      if (isU64(cc_op, AMD64G_CC_OP_SUBQ) && isU64(cond, AMD64CondB)) {
+         /* long long sub/cmp, then B (unsigned less than)
+            --> test dst <u src */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpLT64U, cc_dep1, cc_dep2));
+      }
+
       /*---------------- SUBL ----------------*/
 
       if (isU64(cc_op, AMD64G_CC_OP_SUBL) && isU64(cond, AMD64CondZ)) {
@@ -997,6 +1013,27 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
 //.. 			   binop(Iop_And32,cc_dep1,mkU32(0xFF))));
 //..       }
 
+      /*---------------- LOGICQ ----------------*/
+
+      if (isU64(cc_op, AMD64G_CC_OP_LOGICQ) && isU64(cond, AMD64CondZ)) {
+         /* long long and/or/xor, then Z --> test dst==0 */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpEQ64, cc_dep1, mkU64(0)));
+      }
+
+      if (isU64(cc_op, AMD64G_CC_OP_LOGICQ) && isU64(cond, AMD64CondL)) {
+         /* long long and/or/xor, then L
+            LOGIC sets SF and ZF according to the
+            result and makes OF be zero.  L computes SF ^ OF, but
+            OF is zero, so this reduces to SF -- which will be 1 iff
+            the result is < signed 0.  Hence ...
+         */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpLT64S, 
+                           cc_dep1, 
+                           mkU64(0)));
+      }
+
       /*---------------- LOGICL ----------------*/
 
       if (isU64(cc_op, AMD64G_CC_OP_LOGICL) && isU64(cond, AMD64CondZ)) {
@@ -1023,8 +1060,8 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
       if (isU64(cc_op, AMD64G_CC_OP_LOGICL) && isU64(cond, AMD64CondLE)) {
          /* long and/or/xor, then LE
             This is pretty subtle.  LOGIC sets SF and ZF according to the
-            result and makes OF be zero.  LE computes (SZ ^ OF) | ZF, but
-            OF is zero, so this reduces to SZ | ZF -- which will be 1 iff
+            result and makes OF be zero.  LE computes (SF ^ OF) | ZF, but
+            OF is zero, so this reduces to SF | ZF -- which will be 1 iff
             the result is <=signed 0.  Hence ...
          */
          return unop(Iop_1Uto64,
@@ -1050,16 +1087,15 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
 //..                      binop(Iop_CmpEQ32, binop(Iop_And32,cc_dep1,mkU32(0xFFFF)), 
 //..                                         mkU32(0)));
 //..       }
-//.. 
-//..       /*---------------- LOGICB ----------------*/
-//.. 
-//..       if (isU32(cc_op, AMD64G_CC_OP_LOGICB) && isU32(cond, X86CondZ)) {
-//..          /* byte and/or/xor, then Z --> test dst==0 */
-//..          return unop(Iop_1Uto32,
-//..                      binop(Iop_CmpEQ32, binop(Iop_And32,cc_dep1,mkU32(255)), 
-//..                                         mkU32(0)));
-//..       }
-//.. 
+
+      /*---------------- LOGICB ----------------*/
+
+      if (isU64(cc_op, AMD64G_CC_OP_LOGICB) && isU64(cond, AMD64CondZ)) {
+         /* byte and/or/xor, then Z --> test dst==0 */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpEQ64, binop(Iop_And64,cc_dep1,mkU64(255)), 
+                                        mkU64(0)));
+      }
 
       /*---------------- INCB ----------------*/
 
@@ -1068,6 +1104,16 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
          return unop(Iop_1Uto64,
                      binop(Iop_CmpLE64S, 
                            binop(Iop_Shl64,cc_dep1,mkU8(56)),
+                           mkU64(0)));
+      }
+
+      /*---------------- DECL ----------------*/
+
+      if (isU64(cc_op, AMD64G_CC_OP_DECL) && isU64(cond, AMD64CondZ)) {
+         /* dec L, then Z --> test dst == 0 */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpEQ64,
+                           binop(Iop_Shl64,cc_dep1,mkU8(32)),
                            mkU64(0)));
       }
 
@@ -1161,6 +1207,13 @@ IRExpr* guest_amd64_spechelper ( HChar* function_name,
       cc_dep2 = args[2];
       cc_ndep = args[3];
 
+      if (isU64(cc_op, AMD64G_CC_OP_SUBQ)) {
+         /* C after sub denotes unsigned less than */
+         return unop(Iop_1Uto64,
+                     binop(Iop_CmpLT64U, 
+                           cc_dep1,
+                           cc_dep2));
+      }
       if (isU64(cc_op, AMD64G_CC_OP_SUBL)) {
          /* C after sub denotes unsigned less than */
          return unop(Iop_1Uto64,
@@ -1321,10 +1374,8 @@ ULong amd64g_calculate_FXAM ( ULong tag, ULong dbl )
 }
 
 
-// MAYBE NOT TRUE: /* CALLED FROM GENERATED CODE */
-// MAYBE NOT TRUE: /* DIRTY HELPER (writes guest state) */
+/* DIRTY HELPER (writes guest state) */
 /* Initialise the x87 FPU state as per 'finit'. */
-static
 void amd64g_dirtyhelper_FINIT ( VexGuestAMD64State* gst )
 {
    Int i;
@@ -1340,7 +1391,7 @@ void amd64g_dirtyhelper_FINIT ( VexGuestAMD64State* gst )
 
 /* CALLED FROM GENERATED CODE */
 /* DIRTY HELPER (reads guest memory) */
-ULong amd64g_loadF80le ( ULong addrU )
+ULong amd64g_dirtyhelper_loadF80le ( ULong addrU )
 {
    ULong f64;
    convert_f80le_to_f64le ( (UChar*)ULong_to_Ptr(addrU), (UChar*)&f64 );
@@ -1349,7 +1400,7 @@ ULong amd64g_loadF80le ( ULong addrU )
 
 /* CALLED FROM GENERATED CODE */
 /* DIRTY HELPER (writes guest memory) */
-void amd64g_storeF80le ( ULong addrU, ULong f64 )
+void amd64g_dirtyhelper_storeF80le ( ULong addrU, ULong f64 )
 {
    convert_f64le_to_f80le( (UChar*)&f64, (UChar*)ULong_to_Ptr(addrU) );
 }
@@ -1673,6 +1724,21 @@ ULong amd64g_calculate_RCR ( ULong arg,
    /* caller can ask to have back either the resulting flags or
       resulting value, but not both */
    return wantRflags ? rflags_in : arg;
+}
+
+
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (non-referentially-transparent) */
+/* Horrible hack.  On non-amd64 platforms, return 1. */
+ULong amd64g_dirtyhelper_RDTSC ( void )
+{
+#  if defined(__x86_64__)
+   UInt  eax, edx;
+   __asm__ __volatile__("rdtsc" : "=a" (eax), "=d" (edx));
+   return (((ULong)edx) << 32) | ((ULong)eax);
+#  else
+   return 1ULL;
+#  endif
 }
 
 

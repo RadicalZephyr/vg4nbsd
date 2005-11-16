@@ -68,88 +68,68 @@
 */
 
 
-#define INT32_MIN               (-2147483647-1)
+/*---------------------------------------------------------------*/
+/*--- Misc integer helpers.                                   ---*/
+/*---------------------------------------------------------------*/
 
-// Calculate XER_OV
-UInt ppc32g_calculate_xer_ov ( UInt op, UInt res, UInt argL, UInt argR )
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (non-referentially-transparent) */
+/* Horrible hack.  On non-ppc32 platforms, return 1. */
+/* Reads a complete, consistent 64-bit TB value. */
+ULong ppc32g_dirtyhelper_MFTB ( void )
 {
-   switch (op) {
-   case PPC32G_FLAG_OP_ADD:     // addo, addc
-   case PPC32G_FLAG_OP_ADDE:    // addeo, addmeo, addzeo
-      return ((argL^argR^-1) & (argL^res) & (1<<31)) ? 1:0;
-      // i.e. ((both_same_sign) & (sign_changed) & (sign_mask))
-      
-   case PPC32G_FLAG_OP_DIVW:    // divwo
-      return ((argL == INT32_MIN && argR == -1) || argR == 0) ? 1:0;
-      
-   case PPC32G_FLAG_OP_DIVWU:   // divwuo
-      return (argR == 0) ? 1:0;
-      
-   case PPC32G_FLAG_OP_MULLW: { // mullwo
-      /* OV true if result can't be represented in 32 bits
-         i.e sHi != sign extension of sLo */
-      Long l_res = ((Long)((Int)argL)) * ((Long)((Int)argR));
-      Int sHi = (Int)toUInt(l_res >> 32);
-      Int sLo = (Int)l_res;
-      return (sHi != (sLo >> /*s*/ 31)) ? 1:0;
+#  if defined(__powerpc__)
+   ULong res;
+   UInt  lo, hi1, hi2;
+   while (1) {
+      __asm__ __volatile__ ("\n"
+         "\tmftbu %0\n"
+         "\tmftb %1\n"
+         "\tmftbu %2\n"
+         : "=r" (hi1), "=r" (lo), "=r" (hi2)
+      );
+      if (hi1 == hi2) break;
    }
-
-   case PPC32G_FLAG_OP_NEG:     // nego
-      return (argL == 0x80000000) ? 1:0;
-      
-   case PPC32G_FLAG_OP_SUBF:    // subfo
-   case PPC32G_FLAG_OP_SUBFC:   // subfco
-   case PPC32G_FLAG_OP_SUBFE:   // subfeo, subfmeo, subfzeo
-      return (((~argL)^argR^(-1)) & ((~argL)^res) & (1<<31)) ? 1:0;
-
-   default:
-      break;
-   }
-
-   vpanic("ppc32g_calculate_xer_ov(ppc32)");
-   return 0; // notreached
+   res = ((ULong)hi1) << 32;
+   res |= (ULong)lo;
+   return res;
+#  else
+   return 1ULL;
+#  endif
 }
 
-// Calculate XER_CA
-UInt ppc32g_calculate_xer_ca ( UInt op, UInt res,
-                               UInt argL, UInt argR, UInt old_ca )
+
+/* CALLED FROM GENERATED CODE */
+/* DIRTY HELPER (reads guest state, writes guest mem) */
+void ppc32g_dirtyhelper_LVS ( VexGuestPPC32State* gst,
+                              UInt vD_off, UInt sh, UInt shift_right )
 {
-  switch (op) {
-   case PPC32G_FLAG_OP_ADD:     // addc[o], addic
-      return (res < argL) ? 1:0;
+  static
+  UChar ref[32] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                    0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F };
+  U128* pU128_src;
+  U128* pU128_dst;
 
-   case PPC32G_FLAG_OP_ADDE:    // adde[o], addze[o], addme[o]
-      return (res < argL || (old_ca==1 && res==argL)) ? 1:0;
+  vassert( vD_off       <= sizeof(VexGuestPPC32State)-8 );
+  vassert( sh           <= 15 );
+  vassert( shift_right  <=  1 );
+  if (shift_right)
+     sh = 16-sh;
+  /* else shift left  */
 
-   case PPC32G_FLAG_OP_SUBFC:   // subfc[o]
-   case PPC32G_FLAG_OP_SUBFI:   // subfic
-      return (res <= argR) ? 1:0;
+  pU128_src = (U128*)&ref[sh];
+  pU128_dst = (U128*)( ((UChar*)gst) + vD_off );
 
-   case PPC32G_FLAG_OP_SUBFE:   // subfe[o], subfze[o], subfme[o]
-      return ((res < argR) || (old_ca == 1 && res == argR)) ? 1:0;
-
-   case PPC32G_FLAG_OP_SRAW:    // sraw
-      if ((argR & 0x20) == 0) {  // shift <= 31
-         // xer_ca = sign && (bits_shifted_out != 0)
-         return (((argL & 0x80000000) &&
-                  ((argL & (0xFFFFFFFF >> (32-argR))) != 0)) != 0) ? 1:0;
-      }
-      // shift > 31
-      // xer_ca = sign && src != 0
-      return (((argL & 0x80000000) && (argR != 0)) != 0) ? 1:0;
-
-   case PPC32G_FLAG_OP_SRAWI:   // srawi
-      // xer_ca = sign && (bits_shifted_out != 0)
-      return (((argL & 0x80000000) &&
-               ((argL & (0xFFFFFFFF >> (32-argR))) != 0)) != 0) ? 1:0;
-
-   default:
-      break;
-   }
-   vpanic("ppc32g_calculate_xer_ov(ppc32)");
-   return 0; // notreached
+  (*pU128_dst)[0] = (*pU128_src)[0];
+  (*pU128_dst)[1] = (*pU128_src)[1];
+  (*pU128_dst)[2] = (*pU128_src)[2];
+  (*pU128_dst)[3] = (*pU128_src)[3];
 }
 
+
+/* Helper-function specialiser. */
 
 IRExpr* guest_ppc32_spechelper ( HChar* function_name,
                                  IRExpr** args )
@@ -191,8 +171,8 @@ void LibVEX_GuestPPC32_put_CR ( UInt cr_native,
 #  define FIELD(_n)                                           \
       do {                                                    \
          t = cr_native >> (4*(7-(_n)));                       \
-         vex_state->guest_CR##_n##_0 = (UChar)(t & 1);        \
-         vex_state->guest_CR##_n##_321 = (UChar)(t & (7<<1)); \
+         vex_state->guest_CR##_n##_0 = toUChar(t & 1);        \
+         vex_state->guest_CR##_n##_321 = toUChar(t & (7<<1)); \
       } while (0)
 
    FIELD(0);
@@ -224,10 +204,10 @@ UInt LibVEX_GuestPPC32_get_XER ( /*IN*/VexGuestPPC32State* vex_state )
 void LibVEX_GuestPPC32_put_XER ( UInt xer_native,
                                  /*OUT*/VexGuestPPC32State* vex_state )
 {
-   vex_state->guest_XER_BC = (UChar)(xer_native & 0xFF);
-   vex_state->guest_XER_SO = (UChar)((xer_native >> 31) & 0x1);
-   vex_state->guest_XER_OV = (UChar)((xer_native >> 30) & 0x1);
-   vex_state->guest_XER_CA = (UChar)((xer_native >> 29) & 0x1);
+   vex_state->guest_XER_BC = toUChar(xer_native & 0xFF);
+   vex_state->guest_XER_SO = toUChar((xer_native >> 31) & 0x1);
+   vex_state->guest_XER_OV = toUChar((xer_native >> 30) & 0x1);
+   vex_state->guest_XER_CA = toUChar((xer_native >> 29) & 0x1);
 }
 
 
@@ -368,7 +348,7 @@ void LibVEX_GuestPPC32_initialise ( /*OUT*/VexGuestPPC32State* vex_state )
 
    vex_state->guest_VRSAVE = 0;
 
-   vex_state->guest_VSCR = 0;
+   vex_state->guest_VSCR = 0x00010000;  // Non-Java mode
 
    vex_state->guest_EMWARN = EmWarn_NONE;
 

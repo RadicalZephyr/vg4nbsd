@@ -48,12 +48,14 @@
       DEMANGLE  for the C++ demangler.
       EXECTXT   for storing ExeContexts.
       ERRORS    for storing CoreErrors.
+      TTAUX     for storing TT/TC auxiliary structures (address range
+                equivalence classes).
 
    When adding a new arena, remember also to add it to ensure_mm_init(). 
 */
 typedef Int ArenaId;
 
-#define VG_N_ARENAS        7
+#define VG_N_ARENAS        8
 
 #define VG_AR_CORE         0
 #define VG_AR_TOOL         1
@@ -62,11 +64,27 @@ typedef Int ArenaId;
 #define VG_AR_DEMANGLE     4
 #define VG_AR_EXECTXT      5
 #define VG_AR_ERRORS       6
+#define VG_AR_TTAUX        7
 
 // This is both the minimum payload size of a malloc'd block, and its
 // minimum alignment.  Must be a power of 2 greater than 4, and should be
 // greater than 8.
 #define VG_MIN_MALLOC_SZB        8
+
+/* This struct definition MUST match the system one. */
+/* SVID2/XPG mallinfo structure */
+struct vg_mallinfo {
+   int arena;    /* total space allocated from system */
+   int ordblks;  /* number of non-inuse chunks */
+   int smblks;   /* unused -- always zero */
+   int hblks;    /* number of mmapped regions */
+   int hblkhd;   /* total space in mmapped regions */
+   int usmblks;  /* unused -- always zero */
+   int fsmblks;  /* unused -- always zero */
+   int uordblks; /* total allocated space */
+   int fordblks; /* total non-inuse space */
+   int keepcost; /* top-most, releasable (via malloc_trim) space */
+};
 
 extern void* VG_(arena_malloc)  ( ArenaId arena, SizeT nbytes );
 extern void  VG_(arena_free)    ( ArenaId arena, void* ptr );
@@ -77,11 +95,9 @@ extern void* VG_(arena_memalign)( ArenaId aid, SizeT req_alignB,
                                                SizeT req_pszB );
 extern Char* VG_(arena_strdup)  ( ArenaId aid, const Char* s);
 
-/* Sets the size of the redzones at the start and end of heap blocks.  This
-   must be called before any of VG_(malloc) and friends are called. */
-extern void  VG_(set_client_malloc_redzone_szB) ( SizeT rz_szB );
+extern SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* payload );
 
-extern SizeT VG_(arena_payload_szB) ( ArenaId aid, void* payload );
+extern void  VG_(mallinfo) ( ThreadId tid, struct vg_mallinfo* mi );
 
 extern void  VG_(sanity_check_malloc_all) ( void );
 

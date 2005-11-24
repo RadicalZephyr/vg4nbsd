@@ -57,7 +57,7 @@ VG_(run_innerloop):
 
 	/* Set up the guest state pointer */
 	movl	28(%esp), %ebp
-	
+
 	/* fetch %EIP into %eax */
 	movl	OFFSET_x86_EIP(%ebp), %eax
 
@@ -71,7 +71,7 @@ VG_(run_innerloop):
 	
 	/* set host SSE control word to the default mode expected 
 	   by VEX-generated code. */
-	cmpl	$0, VG_(have_mxcsr_x86)
+	cmpl	$0, VG_(have_mxcsr_x86) /* nebsd jumps */
 	jz	L1
 	pushl	$0x1F80
 	ldmxcsr	(%esp)
@@ -98,8 +98,9 @@ dispatch_boring:
 	andl $VG_TT_FAST_MASK, %ebx
 	movl VG_(tt_fast)(,%ebx,4), %ecx
 	cmpl %eax, (%ecx)
-	jnz  fast_lookup_failed
-	/* increment bb profile counter */
+	jnz  fast_lookup_failed /* netbsd jumps to line 181 here , but
+	not on the 2nd time */ 
+	/* Increment bb profile counter */
 	movl VG_(tt_fastN)(,%ebx,4), %edx
 	incl (%edx)
 
@@ -147,7 +148,7 @@ run_innerloop_exit:
 	popl	%esi
 	jnz	invariant_violation
 L2:	/* otherwise we're OK */
-	jmp	run_innerloop_exit_REALLY
+	jmp	run_innerloop_exit_REALLY /* netbsd gets to here */
 
 invariant_violation:
 	movl	$VG_TRC_INVARIANT_FAILED, %eax
@@ -180,7 +181,7 @@ fast_lookup_failed:
 	/* %EIP is up to date here since dispatch_boring dominates */
 	addl	$1, VG_(dispatch_ctr)
 	movl	$VG_TRC_INNER_FASTMISS, %eax
-	jmp	run_innerloop_exit
+	jmp	run_innerloop_exit 
 
 counter_is_zero:
 	/* %EIP is up to date here since dispatch_boring dominates */

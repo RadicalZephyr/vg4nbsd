@@ -787,6 +787,7 @@ struct vki_ipc_kludge {
 #define VKI_SHMDT		22
 #define VKI_SHMGET		23
 #define VKI_SHMCTL		24
+#define VKI_SHM_RDONLY         010000
 
 
 //----------------------------------------------------------------------

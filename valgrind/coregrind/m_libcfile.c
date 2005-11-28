@@ -32,17 +32,15 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcprint.h"     // For VG_(sprintf)()
+#include "pub_core_libcprint.h"     // VG_(sprintf)
+#include "pub_core_libcproc.h"      // VG_(getpid), VG_(getppid)
+#include "pub_core_clientstate.h"   // VG_(fd_hard_limit)
 #include "pub_core_syscall.h"
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
    File stuff
    ------------------------------------------------------------------ */
-
-/* Application-visible file descriptor limits */
-Int VG_(fd_soft_limit) = -1;
-Int VG_(fd_hard_limit) = -1;
 
 static inline Bool fd_exists(Int fd)
 {
@@ -55,7 +53,7 @@ static inline Bool fd_exists(Int fd)
 Int VG_(safe_fd)(Int oldfd)
 {
    Int newfd;
-  VG_(printf)("fd hard limit %d\n", VG_(fd_hard_limit));
+
    vg_assert(VG_(fd_hard_limit) != -1);
 
    newfd = VG_(fcntl)(oldfd, VKI_F_DUPFD, VG_(fd_hard_limit));
@@ -78,7 +76,7 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
    VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
    VG_(memset)(buf, 0, n_buf);
 
-   if (VG_(readlink)(tmp, buf, VKI_PATH_MAX) > 0 && buf[0] == '/')
+   if (VG_(readlink)(tmp, buf, n_buf) > 0 && buf[0] == '/')
       return True;
    else
       return False;
@@ -106,6 +104,7 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
    return res.isError ? -1 : res.val;
 }
+/* XXX (sjamaan): WTF is this for, again? */
 #if defined (VGP_x86_netbsdelf2) 
 /* Int VG_(do_pipe_inner)(int pipeno ,Int fd[2]) */
 /* { */
@@ -138,7 +137,7 @@ VG_(printf)("fd 2 is %d\n",fd[1]);
 #else
 Int VG_(pipe) ( Int fd[2] )
 {
-   SysRes res = VG_(do_syscall0)(__NR_pipe, (UWord)fd);
+   SysRes res = VG_(do_syscall1)(__NR_pipe, (UWord)fd);
    return res.isError ? -1 : 0;
 }
 #endif 
@@ -172,10 +171,24 @@ Int VG_(fstat) ( Int fd, struct vki_stat* buf )
    return res.isError ? (-1) : 0;
 }
 
-Int VG_(dup2) ( Int oldfd, Int newfd )
+Int VG_(fsize) ( Int fd )
 {
-   SysRes res = VG_(do_syscall2)(__NR_dup2, oldfd, newfd);
-   return res.isError ? (-1) : res.val;
+   struct vki_stat buf;
+   SysRes res = VG_(do_syscall2)(__NR_fstat, fd, (UWord)&buf);
+   return res.isError ? (-1) : buf.st_size;
+}
+
+Bool VG_(is_dir) ( HChar* f )
+{
+   struct vki_stat buf;
+   SysRes res = VG_(do_syscall2)(__NR_stat, (UWord)f, (UWord)&buf);
+   return res.isError ? False
+                      : VKI_S_ISDIR(buf.st_mode) ? True : False;
+}
+
+SysRes VG_(dup) ( Int oldfd )
+{
+   return VG_(do_syscall1)(__NR_dup, oldfd);
 }
 
 /* Returns -1 on error. */
@@ -234,14 +247,115 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
    return res.isError ? 1 : res.val;
 }
 
-SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset )
+/* 
+   Emulate the normal Unix permissions checking algorithm.
+
+   If owner matches, then use the owner permissions, else
+   if group matches, then use the group permissions, else
+   use other permissions.
+
+   Note that we can't deal with SUID/SGID, so we refuse to run them
+   (otherwise the executable may misbehave if it doesn't have the
+   permissions it thinks it does).
+*/
+/* returns: 0 = success, non-0 is failure */
+Int VG_(check_executable)(HChar* f)
+{
+   struct vki_stat st;
+   SysRes res;
+
+   res = VG_(stat)(f, &st);
+   if (res.isError) {
+      return res.val;
+   }
+
+   if (st.st_mode & (VKI_S_ISUID | VKI_S_ISGID)) {
+      //VG_(printf)("Can't execute suid/sgid executable %s\n", exe);
+      return VKI_EACCES;
+   }
+
+   if (VG_(geteuid)() == st.st_uid) {
+      if (!(st.st_mode & VKI_S_IXUSR))
+         return VKI_EACCES;
+   } else {
+      int grpmatch = 0;
+
+      if (VG_(getegid)() == st.st_gid)
+	 grpmatch = 1;
+      else {
+	 UInt groups[32];
+	 Int ngrp = VG_(getgroups)(32, groups);
+	 Int i;
+         /* ngrp will be -1 if VG_(getgroups) failed. */
+         for (i = 0; i < ngrp; i++) {
+	    if (groups[i] == st.st_gid) {
+	       grpmatch = 1;
+	       break;
+	    }
+         }
+      }
+
+      if (grpmatch) {
+	 if (!(st.st_mode & VKI_S_IXGRP)) {
+            return VKI_EACCES;
+         }
+      } else if (!(st.st_mode & VKI_S_IXOTH)) {
+         return VKI_EACCES;
+      }
+   }
+
+   return 0;
+}
+
+SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset )
 {
    OffT off = VG_(lseek)( fd, (OffT)offset, VKI_SEEK_SET);
-   if (off != 0)
-     return (SSizeT)(-1);
-   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
-   return (SSizeT)( res.isError ? -1 : res.val);
+   if (off < 0)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   return VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
 }
+
+/* Create and open (-rw------) a tmp file name incorporating said arg.
+   Returns -1 on failure, else the fd of the file.  If fullname is
+   non-NULL, the file's name is written into it.  The number of bytes
+   written is guaranteed not to exceed 64+strlen(part_of_name). */
+
+Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname )
+{
+   HChar  buf[200];
+   Int    n, tries, fd;
+   UInt   seed;
+   SysRes sres;
+
+   vg_assert(part_of_name);
+   n = VG_(strlen)(part_of_name);
+   vg_assert(n > 0 && n < 100);
+
+   seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
+
+   tries = 0;
+   while (True) {
+      if (tries > 10) 
+         return -1;
+      VG_(sprintf)( buf, "/tmp/valgrind_%s_%08x", 
+                         part_of_name, VG_(random)( &seed ));
+      if (0)
+         VG_(printf)("VG_(mkstemp): trying: %s\n", buf);
+
+      sres = VG_(open)(buf,
+                       VKI_O_CREAT|VKI_O_RDWR|VKI_O_EXCL|VKI_O_TRUNC,
+                       VKI_S_IRUSR|VKI_S_IWUSR);
+      if (sres.isError)
+         continue;
+      /* VG_(safe_fd) doesn't return if it fails. */
+      fd = VG_(safe_fd)( sres.val );
+      if (fullname)
+         VG_(strcpy)( fullname, buf );
+      return fd;
+   }
+   /* NOTREACHED */
+}
+
 
 /* ---------------------------------------------------------------------
    Socket-related stuff.  This is very Linux-kernel specific.
@@ -257,19 +371,46 @@ static
 Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen );
 
-static 
-UInt my_htonl ( UInt x )
+UInt VG_(htonl) ( UInt x )
 {
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
    return
       (((x >> 24) & 0xFF) << 0) | (((x >> 16) & 0xFF) << 8)
       | (((x >> 8) & 0xFF) << 16) | (((x >> 0) & 0xFF) << 24);
+#  endif
 }
 
-static
-UShort my_htons ( UShort x )
+UInt VG_(ntohl) ( UInt x )
 {
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
+   return
+      (((x >> 24) & 0xFF) << 0) | (((x >> 16) & 0xFF) << 8)
+      | (((x >> 8) & 0xFF) << 16) | (((x >> 0) & 0xFF) << 24);
+#  endif
+}
+
+UShort VG_(htons) ( UShort x )
+{
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
    return
       (((x >> 8) & 0xFF) << 0) | (((x >> 0) & 0xFF) << 8);
+#  endif
+}
+
+UShort VG_(ntohs) ( UShort x )
+{
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
+   return
+      (((x >> 8) & 0xFF) << 0) | (((x >> 0) & 0xFF) << 8);
+#  endif
 }
 
 
@@ -300,22 +441,22 @@ Int VG_(connect_via_socket)( UChar* str )
    //               (UInt)port );
 
    servAddr.sin_family = VKI_AF_INET;
-   servAddr.sin_addr.s_addr = my_htonl(ip);
-   servAddr.sin_port = my_htons(port);
+   servAddr.sin_addr.s_addr = VG_(htonl)(ip);
+   servAddr.sin_port = VG_(htons)(port);
 
    /* create socket */
    sd = my_socket(VKI_AF_INET, VKI_SOCK_STREAM, 0 /* IPPROTO_IP ? */);
    if (sd < 0) {
-     /* this shouldn't happen ... nevertheless */
-     return -2;
+      /* this shouldn't happen ... nevertheless */
+      return -2;
    }
-			
+		
    /* connect to server */
    res = my_connect(sd, (struct vki_sockaddr_in *) &servAddr, 
                         sizeof(servAddr));
    if (res < 0) {
-     /* connection failed */
-     return -2;
+      /* connection failed */
+      return -2;
    }
 
    return sd;
@@ -369,7 +510,7 @@ Int parse_inet_addr_and_port ( UChar* str, UInt* ip_addr, UShort* port )
 static
 Int my_socket ( Int domain, Int type, Int protocol )
 {
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[3];
    args[0] = domain;
@@ -379,13 +520,9 @@ Int my_socket ( Int domain, Int type, Int protocol )
    return res.isError ? -1 : res.val;
 
 #elif defined(VGP_amd64_linux)
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
-   I_die_here;
-
-#elif defined(VGP_ppc32_linux)
-   //CAB: TODO
-   I_die_here;
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_socket, domain, type, protocol );
+   return res.isError ? -1 : res.val;
 
 #elif defined(VGP_x86_netbsdelf2)
    // NetBSD: XXX TODO
@@ -400,7 +537,7 @@ static
 Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen )
 {
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[3];
    args[0] = sockfd;
@@ -410,13 +547,9 @@ Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr,
    return res.isError ? -1 : res.val;
 
 #elif defined(VGP_amd64_linux)
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
-   I_die_here;
-
-#elif defined(VGP_ppc32_linux)
-   //CAB: TODO
-   I_die_here;
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_connect, sockfd, (UWord)serv_addr, addrlen);
+   return res.isError ? -1 : res.val;
 
 #elif defined(VGP_x86_netbsdelf2)
    // NetBSD: XXX TODO
@@ -435,7 +568,7 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
       error is still returned. */
    Int flags = VKI_MSG_NOSIGNAL;
 
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[4];
    args[0] = sd;
@@ -446,14 +579,9 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
    return res.isError ? -1 : res.val;
 
 #elif defined(VGP_amd64_linux)
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
-   I_die_here;
-
-#elif defined(VGP_ppc32_linux)
-   //CAB: TODO
-   I_die_here;
-   flags = 0; // stop compiler complaints
+   SysRes res;
+   res = VG_(do_syscall6)(__NR_sendto, sd, (UWord)msg, count, flags, 0,0);
+   return res.isError ? -1 : res.val;
 
 #elif defined(VGP_x86_netbsdelf2)
    // NetBSD: XXX TODO

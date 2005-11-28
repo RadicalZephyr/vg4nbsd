@@ -40,6 +40,11 @@ extern
 Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
                             const Char *syscallname);
 
+/* Handy small function to help stop wrappers from segfaulting when
+   presented with bogus client addresses.  Is not used for generating
+   user-visible errors. */
+extern Bool ML_(safe_to_deref) ( void* start, SizeT size );
+
 // Returns True if the signal is OK for the client to use.
 extern Bool ML_(client_signal_OK)(Int sigNo);
 
@@ -47,8 +52,9 @@ extern Bool ML_(client_signal_OK)(Int sigNo);
 extern
 Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool soft);
 
-extern
-void ML_(record_fd_open_nameless)(ThreadId tid, Int fd);
+extern void ML_(record_fd_open_nameless)       (ThreadId tid, Int fd);
+extern void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd,
+                                                char *pathname);
 
 // Used when killing threads -- we must not kill a thread if it's the thread
 // that would do Valgrind's final cleanup and output.
@@ -56,9 +62,12 @@ extern
 Bool ML_(do_sigkill)(Int pid, Int tgid);
 
 /* So that it can be seen from syswrap-x86-linux.c. */
+/* When a client mmap has been successfully done, both aspacem and the
+   tool need to be notified of the new mapping.  Hence this fn. */
 extern 
-void ML_(mmap_segment) ( Addr a, SizeT len, UInt prot, 
-                         UInt mm_flags, Int fd, ULong offset );
+void 
+ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
+                                       UInt mm_flags, Int fd, ULong offset );
 
 
 DECL_TEMPLATE(generic, sys_ni_syscall);            // * P -- unimplemented
@@ -127,16 +136,6 @@ DECL_TEMPLATE(generic, sys_getpgid);
 DECL_TEMPLATE(generic, sys_fsync);
 DECL_TEMPLATE(generic, sys_wait4);
 DECL_TEMPLATE(generic, sys_mprotect);
-DECL_TEMPLATE(generic, sys_sigprocmask);
-DECL_TEMPLATE(generic, sys_timer_create);    // Linux: varies across archs?
-DECL_TEMPLATE(generic, sys_timer_settime);
-DECL_TEMPLATE(generic, sys_timer_gettime);
-DECL_TEMPLATE(generic, sys_timer_getoverrun);
-DECL_TEMPLATE(generic, sys_timer_delete);
-DECL_TEMPLATE(generic, sys_clock_settime);
-DECL_TEMPLATE(generic, sys_clock_gettime);
-DECL_TEMPLATE(generic, sys_clock_getres);
-DECL_TEMPLATE(generic, sys_clock_nanosleep);
 DECL_TEMPLATE(generic, sys_getcwd);
 DECL_TEMPLATE(generic, sys_symlink);
 DECL_TEMPLATE(generic, sys_getgroups);
@@ -145,8 +144,6 @@ DECL_TEMPLATE(generic, sys_chown);
 DECL_TEMPLATE(generic, sys_setuid);
 DECL_TEMPLATE(generic, sys_gettimeofday);
 DECL_TEMPLATE(generic, sys_madvise);
-DECL_TEMPLATE(generic, sys_sigpending);
-DECL_TEMPLATE(generic, sys_waitid);
 
 // These ones aren't POSIX, but are in some standard and look reasonably
 // generic,  and are the same for all architectures under Linux.
@@ -222,13 +219,10 @@ DECL_TEMPLATE(generic, sys_rt_sigqueueinfo);       // * ?
 DECL_TEMPLATE(generic, sys_rt_sigsuspend);         // () ()
 DECL_TEMPLATE(generic, sys_pread64);               // * (Unix98?)
 DECL_TEMPLATE(generic, sys_pwrite64);              // * (Unix98?)
-DECL_TEMPLATE(generic, sys_capget);                // * L?
-DECL_TEMPLATE(generic, sys_capset);                // * L?
 DECL_TEMPLATE(generic, sys_sigaltstack);           // (x86) (XPG4-UNIX)
 DECL_TEMPLATE(generic, sys_getpmsg);               // (?) (?)
 DECL_TEMPLATE(generic, sys_putpmsg);               // (?) (?)
 DECL_TEMPLATE(generic, sys_getrlimit);             // * (?)
-DECL_TEMPLATE(generic, sys_mmap2);                 // (x86?) P?
 DECL_TEMPLATE(generic, sys_truncate64);            // %% (P?)
 DECL_TEMPLATE(generic, sys_ftruncate64);           // %% (P?)
 DECL_TEMPLATE(generic, sys_lchown);                // * (L?)
@@ -252,12 +246,6 @@ DECL_TEMPLATE(generic, sys_sched_getaffinity);     // * L?
 DECL_TEMPLATE(generic, sys_lookup_dcookie);        // (*/32/64) L
 DECL_TEMPLATE(generic, sys_statfs64);              // * (?)
 DECL_TEMPLATE(generic, sys_fstatfs64);             // * (?)
-DECL_TEMPLATE(generic, sys_mq_open);               // * P?
-DECL_TEMPLATE(generic, sys_mq_unlink);             // * P?
-DECL_TEMPLATE(generic, sys_mq_timedsend);          // * P?
-DECL_TEMPLATE(generic, sys_mq_timedreceive);       // * P?
-DECL_TEMPLATE(generic, sys_mq_notify);             // * P?
-DECL_TEMPLATE(generic, sys_mq_getsetattr);         // * P?
 
 
 /* ---------------------------------------------------------------------
@@ -298,17 +286,14 @@ extern void   ML_(generic_PRE_sys_semop)        ( TId, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_semtimedop)   ( TId, UW, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_semctl)       ( TId, UW, UW, UW, UW );
 extern void   ML_(generic_POST_sys_semctl)      ( TId, UW, UW, UW, UW, UW );
-extern void   ML_(generic_PRE_sys_msgsnd)       ( TId, UW, UW, UW, UW );
-extern void   ML_(generic_PRE_sys_msgrcv)       ( TId, UW, UW, UW, UW, UW );
-extern void   ML_(generic_POST_sys_msgrcv)      ( TId, UW, UW, UW, UW, UW, UW );
-extern void   ML_(generic_PRE_sys_msgctl)       ( TId, UW, UW, UW );
-extern void   ML_(generic_POST_sys_msgctl)      ( TId, UW, UW, UW, UW );
 extern UWord  ML_(generic_PRE_sys_shmat)        ( TId, UW, UW, UW );
 extern void   ML_(generic_POST_sys_shmat)       ( TId, UW, UW, UW, UW );
 extern Bool   ML_(generic_PRE_sys_shmdt)        ( TId, UW );
 extern void   ML_(generic_POST_sys_shmdt)       ( TId, UW, UW );
 extern void   ML_(generic_PRE_sys_shmctl)       ( TId, UW, UW, UW );
 extern void   ML_(generic_POST_sys_shmctl)      ( TId, UW, UW, UW, UW );
+
+extern SysRes ML_(generic_PRE_sys_mmap)         ( TId, UW, UW, UW, UW, UW, Off64T );
 
 #undef TId
 #undef UW

@@ -28,124 +28,36 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#define _FILE_OFFSET_BITS 64
-
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
+#include "pub_core_clientstate.h"
 #include "pub_core_aspacemgr.h"
+#include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_execontext.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
 #include "pub_core_syscall.h"       // VG_(strerror)
 #include "pub_core_machine.h"
-#include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
+#include "pub_core_debuginfo.h"
 #include "pub_core_redir.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
 #include "pub_core_stacks.h"        // For VG_(register_stack)
 #include "pub_core_syswrap.h"
-#include "pub_core_translate.h"     // For VG_(get_BB_profile)
+#include "pub_core_translate.h"     // For VG_(translate)
 #include "pub_core_tooliface.h"
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
 #include "pub_core_ume.h"
-
-#include "memcheck/memcheck.h"
-
-#ifndef AT_DCACHEBSIZE
-#define AT_DCACHEBSIZE		19
-#endif /* AT_DCACHEBSIZE */
-
-#ifndef AT_ICACHEBSIZE
-#define AT_ICACHEBSIZE		20
-#endif /* AT_ICACHEBSIZE */
-
-#ifndef AT_UCACHEBSIZE
-#define AT_UCACHEBSIZE		21
-#endif /* AT_UCACHEBSIZE */
-
-#ifndef AT_SYSINFO
-#define AT_SYSINFO		32
-#endif /* AT_SYSINFO */
-
-#ifndef AT_SYSINFO_EHDR
-#define AT_SYSINFO_EHDR		33
-#endif /* AT_SYSINFO_EHDR */
-
-#ifndef AT_SECURE
-#define AT_SECURE 23   /* secure mode boolean */
-#endif	/* AT_SECURE */
-
-/* redzone gap between client address space and shadow */
-#define REDZONE_SIZE		(1 * 1024*1024)
-
-/* size multiple for client address space */
-#define CLIENT_SIZE_MULTIPLE	(1 * 1024*1024)
-
-/* Proportion of client space for its heap (rest is for mmaps + stack) */
-#define CLIENT_HEAP_PROPORTION   0.333
-
-/* Number of file descriptors that Valgrind tries to reserve for
-   it's own use - just a small constant. */
-#define N_RESERVED_FDS (10)
-
-#ifdef VGO_netbsdelf2
-#define PTRACE_SETREGS PT_SETREGS
-#define PTRACE_TRACEME PT_TRACE_ME
-#define PTRACE_DETACH PT_DETACH
-#endif
-
-
-/*====================================================================*/
-/*=== Ultra-basic startup stuff                                    ===*/
-/*====================================================================*/
-
-// HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
-// temporary bootstrapping allocator, for use until such time as we
-// can get rid of the circularites in allocator dependencies at
-// startup.  There is also a copy of this in m_ume.c.
-#define N_HACK_BYTES 10000
-static Int   hack_bytes_used = 0;
-static HChar hack_bytes[N_HACK_BYTES];
-
-static void* hack_malloc ( Int n )
-{
-   VG_(debugLog)(1, "main", "  FIXME: hack_malloc(m_main)(%d)\n", n);
-   while (n % 16) n++;
-   if (hack_bytes_used + n > N_HACK_BYTES) {
-     VG_(printf)("valgrind: N_HACK_BYTES(m_main) too low.  Sorry.\n");
-     VG_(exit)(0);
-   }
-   hack_bytes_used += n;
-   return (void*) &hack_bytes[hack_bytes_used - n];
-}
-
-
-/*====================================================================*/
-/*=== Global entities not referenced from generated code           ===*/
-/*====================================================================*/
-
-/* ---------------------------------------------------------------------
-   Startup stuff                            
-   ------------------------------------------------------------------ */
-
-/* stage1 (main) executable */
-static Int vgexecfd = -1;
-
-/* our argc/argv */
-static Int  vg_argc;
-static Char **vg_argv;
 
 
 /*====================================================================*/
@@ -172,7 +84,7 @@ static void print_all_stats ( void )
 
 
 /*====================================================================*/
-/*=== Check we were launched by stage 1                            ===*/
+/*=== Setting up the client's environment                          ===*/
 /*====================================================================*/
 
 /* Look for our AUXV table */
@@ -587,43 +499,76 @@ static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
    If this needs to handle any more variables it should be hacked
    into something table driven.
  */
-static HChar **fix_environment(HChar **origenv, const HChar *preload)
+
+/*====================================================================*/
+/*=== Setting up the client's environment                          ===*/
+/*====================================================================*/
+
+/* Prepare the client's environment.  This is basically a copy of our
+   environment, except:
+
+     LD_PRELOAD=$VALGRIND_LIB/vgpreload_core.so:
+                ($VALGRIND_LIB/vgpreload_TOOL.so:)?
+                $LD_PRELOAD
+
+   If this is missing, then it is added.
+
+   Also, remove any binding for VALGRIND_LAUNCHER=.  The client should
+   not be able to see this.
+
+   If this needs to handle any more variables it should be hacked
+   into something table driven.  The copy is VG_(malloc)'d space.
+*/
+static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
 {
-   static const HChar preload_core_so[]    = "vg_preload_core.so";
-   static const HChar ld_preload[]         = "LD_PRELOAD=";
-   static const HChar valgrind_clo[]       = VALGRINDCLO "=";
-   static const int  ld_preload_len       = sizeof(ld_preload)-1;
-   static const int  valgrind_clo_len     = sizeof(valgrind_clo)-1;
-   int ld_preload_done       = 0;
-   HChar *preload_core_path;
-   int   preload_core_path_len;
-   int vgliblen = VG_(strlen)(VG_(libdir));
-   HChar **cpp;
-   HChar **ret;
-   int envc;
-   const int preloadlen = (preload == NULL) ? 0 : VG_(strlen)(preload);
+   HChar* preload_core    = "vgpreload_core";
+   HChar* ld_preload      = "LD_PRELOAD=";
+   HChar* v_launcher      = VALGRIND_LAUNCHER "=";
+   Int    ld_preload_len  = VG_(strlen)( ld_preload );
+   Int    v_launcher_len  = VG_(strlen)( v_launcher );
+   Bool   ld_preload_done = False;
+   Int    vglib_len       = VG_(strlen)(VG_(libdir));
 
-   /* Find the vg_preload_core.so; also make room for the tool preload
-      library */
-   preload_core_path_len = sizeof(preload_core_so) + vgliblen + preloadlen + 16;
-   /* FIXME */
-   preload_core_path = /*VG_(malloc)*/ hack_malloc(preload_core_path_len);
-   vg_assert(preload_core_path);
+   HChar** cpp;
+   HChar** ret;
+   HChar*  preload_tool_path;
+   Int     envc, i;
 
-   if (preload)
-      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s:%s", 
-                    VG_(libdir), preload_core_so, preload);
-   else
-      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s", 
-                    VG_(libdir), preload_core_so);
-   
+   /* Alloc space for the vgpreload_core.so path and vgpreload_<tool>.so
+      paths.  We might not need the space for vgpreload_<tool>.so, but it
+      doesn't hurt to over-allocate briefly.  The 16s are just cautious
+      slop. */
+   Int preload_core_path_len = vglib_len + sizeof(preload_core) + sizeof(VG_PLATFORM) + 16;
+   Int preload_tool_path_len = vglib_len + VG_(strlen)(toolname) + sizeof(VG_PLATFORM) + 16;
+   Int preload_string_len    = preload_core_path_len + preload_tool_path_len;
+   HChar* preload_string     = VG_(malloc)(preload_string_len);
+   vg_assert(preload_string);
+
+   /* Determine if there's a vgpreload_<tool>.so file, and setup
+      preload_string. */
+   preload_tool_path = VG_(malloc)(preload_tool_path_len);
+   vg_assert(preload_tool_path);
+   VG_(snprintf)(preload_tool_path, preload_tool_path_len,
+                 "%s/%s/vgpreload_%s.so", VG_(libdir), VG_PLATFORM, toolname);
+   if (VG_(access)(preload_tool_path, True/*r*/, False/*w*/, False/*x*/) == 0) {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so:%s", 
+                    VG_(libdir), VG_PLATFORM, preload_core, preload_tool_path);
+   } else {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so", 
+                    VG_(libdir), VG_PLATFORM, preload_core);
+   }
+   VG_(free)(preload_tool_path);
+
+   VG_(debugLog)(2, "main", "preload_string:\n");
+   VG_(debugLog)(2, "main", "  \"%s\"\n", preload_string);
+
    /* Count the original size of the env */
-   envc = 0;			/* trailing NULL */
+   envc = 0;
    for (cpp = origenv; cpp && *cpp; cpp++)
       envc++;
 
    /* Allocate a new space */
-   ret = /* FIXME VG_(malloc)*/ hack_malloc (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
+   ret = VG_(malloc) (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
    vg_assert(ret);
 
    /* copy it over */
@@ -636,37 +581,48 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    /* Walk over the new environment, mashing as we go */
    for (cpp = ret; cpp && *cpp; cpp++) {
       if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
-	 int len = VG_(strlen)(*cpp) + preload_core_path_len;
-	 HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc(len);
+         Int len = VG_(strlen)(*cpp) + preload_string_len;
+         HChar *cp = VG_(malloc)(len);
          vg_assert(cp);
 
-	 VG_(snprintf)(cp, len, "%s%s:%s",
-                       ld_preload, preload_core_path, (*cpp)+ld_preload_len);
+         VG_(snprintf)(cp, len, "%s%s:%s",
+                       ld_preload, preload_string, (*cpp)+ld_preload_len);
 
-	 *cpp = cp;
-	 
-	 ld_preload_done = 1;
-      } else if (VG_(memcmp)(*cpp, valgrind_clo, valgrind_clo_len) == 0) {
-	 *cpp = "";
+         *cpp = cp;
+
+         ld_preload_done = True;
       }
    }
 
    /* Add the missing bits */
    if (!ld_preload_done) {
-      int len = ld_preload_len + preload_core_path_len;
-      HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc (len);
+      Int len = ld_preload_len + preload_string_len;
+      HChar *cp = VG_(malloc) (len);
       vg_assert(cp);
-      
-      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_core_path);
-      
+
+      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_string);
+
       ret[envc++] = cp;
    }
 
-   //FIXME   VG_(free)(preload_core_path);
+   /* ret[0 .. envc-1] is live now. */
+   /* Find and remove a binding for VALGRIND_LAUNCHER. */
+   for (i = 0; i < envc; i++)
+      if (0 == VG_(memcmp(ret[i], v_launcher, v_launcher_len)))
+         break;
+
+   if (i < envc) {
+      for (; i < envc-1; i++)
+         ret[i] = ret[i+1];
+      envc--;
+   }
+
+   VG_(free)(preload_string);
    ret[envc] = NULL;
 
    return ret;
 }
+
 
 extern char **environ;		/* our environment */
 
@@ -718,6 +674,8 @@ static char *copy_str(char **tab, const char *str)
                   | undefined       |
 		  :                 :
  */
+/* XXX- this function requires syncing, but too hacked up for netbsd
+   already. Simple diff wont work  */
 static Addr setup_client_stack(void* init_sp,
                                char **orig_argv, char **orig_envp, 
 			       const struct exeinfo *info,
@@ -1384,7 +1342,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       else VG_BOOL_CLO(arg, "--model-pthreads",   VG_(clo_model_pthreads))
 
       else VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command))
-      else VG_STR_CLO (arg, "--weird-hacks",      VG_(clo_weird_hacks))
+      else VG_STR_CLO (arg, "--sim-hints",      VG_(clo_sim_hints))
 
       else VG_NUM_CLO (arg, "--dump-error",       VG_(clo_dump_error))
       else VG_NUM_CLO (arg, "--input-fd",         VG_(clo_input_fd))
@@ -2357,6 +2315,36 @@ Int main(Int argc, HChar **argv, HChar **envp)
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
 
    VG_(printf)("after debuglog startup\n");
+   VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
+   { HChar* limLo  = (HChar*)(&VG_(interim_stack).bytes[0]);
+     HChar* limHi  = limLo + sizeof(VG_(interim_stack));
+     HChar* aLocal = (HChar*)&zero; /* any auto local will do */
+     if (aLocal < limLo || aLocal >= limHi) {
+        /* something's wrong.  Stop. */
+        VG_(debugLog)(0, "main", "Root stack %p to %p, a local %p\n",
+                          limLo, limHi, aLocal );
+        VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                                 "Initial stack switched failed.\n");
+        VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
+        VG_(exit)(1);
+     }
+   }
+   VG_(debugLog)(1, "main", "Checking initial stack was noted\n");
+   if (sp_at_startup == 0) {
+      VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                               "Initial stack was not noted.\n");
+      VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
+      VG_(exit)(1);
+   }
+   VG_(debugLog)(1, "main", "Starting the address space manager\n");
+   clstack_top = VG_(am_startup)( sp_at_startup );
+   VG_(debugLog)(1, "main", "Address space manager is running\n");
+   VG_(debugLog)(1, "main", "Starting the dynamic memory manager\n");
+   { void* p = VG_(malloc)( 12345 );
+     if (p) VG_(free)( p );
+   }
+   VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
+
    //============================================================
    // Command line argument handling order:
    // * If --help/--help-debug are present, show usage message 
@@ -2370,89 +2358,153 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // This prevents any internal uses of brk() from having any effect.
    // We remember the old value so we can restore it on exec, so that
    // child processes will have a reasonable brk value.
+   //--------------------------------------------------------------
+   // Check we were launched by stage1
+   //   p: none
+   //--------------------------------------------------------------
+/*    VG_(debugLog)(1, "main", "Doing scan_auxv()\n"); */
+/*    { */
+/*    void* init_sp = argv - 1; */
+/*    scan_auxv(init_sp); */
+/*    } */
+
+   //--------------------------------------------------------------
+   // Look for alternative libdir                                  
+   //   p: none
+   //--------------------------------------------------------------
+     HChar *cp = VG_(getenv)(VALGRINDLIB);
+      if (cp != NULL)
+	 VG_(libdir) = cp;
+   
+   VG_(debugLog)(1, "main", "Getting stage1's name\n");
+   VG_(name_of_launcher) = VG_(getenv)(VALGRIND_LAUNCHER);
+   if (VG_(name_of_launcher) == NULL) {
+      VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
+      VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
+      VG_(exit)(1);
+   }
 //   VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
    // zero.rlim_max = VG_(client_rlimit_data).rlim_max;
    //  VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
 
    // Get the current process stack rlimit.
    VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));
-
-   //--------------------------------------------------------------
-   // Check we were launched by stage1
-   //   p: none
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Doing scan_auxv()\n");
-   {
-   void* init_sp = argv - 1;
-   scan_auxv(init_sp);
+   VG_(debugLog)(1, "main", "Get hardware capabilities ...\n");
+   { VexArch     vex_arch;
+     VexArchInfo vex_archinfo;
+     Bool ok = VG_(machine_get_hwcaps)();
+     if (!ok) {
+        VG_(printf)("\n");
+        VG_(printf)("valgrind: fatal error: unsupported CPU.\n");
+        VG_(printf)("   Supported CPUs are:\n");
+        VG_(printf)("   * x86 (practically any; Pentium-I or above), "
+                    "AMD Athlon or above)\n");
+        VG_(printf)("   * AMD Athlon64/Opteron\n");
+        VG_(printf)("   * PowerPC (most; ppc405 and above)\n");
+        VG_(printf)("\n");
+        VG_(exit)(1);
+     }
+     VG_(machine_get_VexArchInfo)( &vex_arch, &vex_archinfo );
+     VG_(debugLog)(1, "main", "... arch = %s, subarch = %s\n",
+                   LibVEX_ppVexArch   ( vex_arch ),
+                   LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
    }
 
-   //--------------------------------------------------------------
-   // Look for alternative libdir                                  
-   //   p: none
-   //--------------------------------------------------------------
-   if (1) {  HChar *cp = VG_(getenv)(VALGRINDLIB);
-      if (cp != NULL)
-	 VG_(libdir) = cp;
-   }
+   //============================================================
+   // Command line argument handling order:
+   // * If --help/--help-debug are present, show usage message 
+   //   (including the tool-specific usage)
+   // * (If no --tool option given, default to Memcheck)
+   // * Then, if client is missing, abort with error msg
+   // * Then, if any cmdline args are bad, abort with error msg
+   //============================================================
 
    //--------------------------------------------------------------
-   // Get valgrind args + client args (inc. from VALGRIND_OPTS/.valgrindrc).
-   // Pre-process the command line.
-   //   p: none
+   // Split up argv into: C args, V args, V extra args, and exename.
+   //   p: dynamic memory allocation
    //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Split up command line\n");
+   VG_(split_up_argv)( argc, argv );
+   if (0) {
+      for (i = 0; i < VG_(args_for_valgrind).used; i++)
+         VG_(printf)("varg %s\n", VG_(args_for_valgrind).strs[i]);
+      VG_(printf)(" exe %s\n", VG_(args_the_exename));
+      for (i = 0; i < VG_(args_for_client).used; i++)
+         VG_(printf)("carg %s\n", VG_(args_for_client).strs[i]);
+   }
+
    VG_(debugLog)(1, "main", "Preprocess command line opts\n");
-   get_command_line(argc, argv, &vg_argc, &vg_argv, &cl_argv);
-   pre_process_cmd_line_options(&need_help, &tool, &exec);
+   get_helprequest_and_toolname(&need_help, &toolname);
 
-   /* If this process was created by exec done by another Valgrind
-      process, the arguments will only show up at this point.  Hence
-      we need to also snoop around in vg_argv to see if anyone is
-      asking for debug logging. */
-   if (loglevel == 0) {
-      for (i = 1; i < vg_argc; i++) {
-         if (vg_argv[i][0] != '-')
-            break;
-         if (VG_STREQ(vg_argv[i], "--")) 
-            break;
-         if (VG_STREQ(vg_argv[i], "-d")) 
-            loglevel++;
-      }
-      VG_(debugLog_startup)(loglevel, "Stage 2 (second go)");
-   }
-
-   //==============================================================
-   // Nb: once a tool is specified, the tool.so must be loaded even if 
-   // they specified --help or didn't specify a client program.
-   //==============================================================
-
-   //--------------------------------------------------------------
-   // With client padded out, map in tool
-   //   p: set-libdir                     [for VG_(libdir)]
-   //   p: pre_process_cmd_line_options() [for 'tool']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading tool\n");
-   load_tool(tool, &toolinfo, &preload);
-
-   //==============================================================
-   // Can use VG_(malloc)() and VG_(arena_malloc)() only after load_tool()
-   // -- redzone size is now set.  This is checked by vg_malloc2.c.
-   //==============================================================
-   
-   //--------------------------------------------------------------
-   // Finalise address space layout
-   //   p: load_tool()  [for 'toolinfo']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Laying out remaining space\n");
-   layout_remaining_space( (Addr) & argc, toolinfo->shadow_ratio );
+   // Set default vex control params
+   LibVEX_default_VexControl(& VG_(clo_vex_control));
 
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary
-   //   p: pre_process_cmd_line_options()  [for 'exec', 'need_help']
+   //   p: get_helprequest_and_toolname()  [for 'exec', 'need_help']
    //   p: layout_remaining_space          [so there's space]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading client\n");
-   load_client(cl_argv, exec, need_help, &info, &client_eip);
+   if (!need_help) {
+      VG_(debugLog)(1, "main", "Loading client\n");
+
+      if (VG_(args_the_exename) == NULL)
+         missing_prog();
+
+      load_client(&info, &initial_client_IP);
+   }
+
+   //--------------------------------------------------------------
+   // Set up client's environment
+   //   p: set-libdir                   [for VG_(libdir)]
+   //   p: get_helprequest_and_toolname [for toolname]
+   //--------------------------------------------------------------
+   if (!need_help) {
+      VG_(debugLog)(1, "main", "Setup client env\n");
+      env = setup_client_env(envp, toolname);
+   }
+
+   if (!need_help) {
+      void* init_sp = argv - 1;
+      SizeT m1 = 1024 * 1024;
+      SizeT m8 = 8 * m1;
+      VG_(debugLog)(1, "main", "Setup client stack\n");
+      clstack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
+      if (clstack_max_size < m1) clstack_max_size = m1;
+      if (clstack_max_size > m8) clstack_max_size = m8;
+      clstack_max_size = VG_PGROUNDUP(clstack_max_size);
+
+      initial_client_SP
+         = setup_client_stack( init_sp, env, 
+                               &info, &client_auxv, 
+                               clstack_top, clstack_max_size );
+
+      VG_(free)(env);
+
+      VG_(debugLog)(2, "main",
+                       "Client info: "
+                       "initial_IP=%p initial_SP=%p brk_base=%p\n",
+                       (void*)initial_client_IP, 
+                       (void*)initial_client_SP,
+                       (void*)VG_(brk_base) );
+   }
+
+   //--------------------------------------------------------------
+   // Setup client data (brk) segment.  Initially a 1-page segment
+   // which abuts a shrinkable reservation. 
+   //     p: load_client()     [for 'info' and hence VG_(brk_base)]
+   //--------------------------------------------------------------
+   if (!need_help) { 
+      SizeT m1 = 1024 * 1024;
+      SizeT m8 = 8 * m1;
+      SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
+      VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
+      if (dseg_max_size < m1) dseg_max_size = m1;
+      if (dseg_max_size > m8) dseg_max_size = m8;
+      dseg_max_size = VG_PGROUNDUP(dseg_max_size);
+
+      setup_client_dataseg( dseg_max_size );
+   }
+
 
    //--------------------------------------------------------------
    // Everything in place, remove padding done by stage1
@@ -2467,28 +2519,26 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: set-libdir  [for VG_(libdir)]
    //   p: load_tool() [for 'preload']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Setup client env\n");
-   env = fix_environment(envp, preload);
 
    //--------------------------------------------------------------
    // Setup client stack, eip, and VG_(client_arg[cv])
    //   p: load_client()     [for 'info']
    //   p: fix_environment() [for 'env']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Setup client stack\n");
-   { 
-   void* init_sp = argv - 1;
+/*    VG_(debugLog)(1, "main", "Setup client stack\n"); */
+/*    {  */
+/*    void* init_sp = argv - 1; */
 
-   sp_at_startup = setup_client_stack(init_sp, cl_argv, env, &info,
-                                      &client_auxv);
-   //FIXME   free(env);
-   }
+/*    sp_at_startup = setup_client_stack(init_sp, cl_argv, env, &info, */
+/*                                       &client_auxv); */
+/*    //FIXME   free(env); */
+/*    } */
 
-   VG_(debugLog)(2, "main",
-                    "Client info: "
-                    "entry=%p client esp=%p vg_argc=%d brkbase=%p\n",
-                    (void*)client_eip, (void*)sp_at_startup, vg_argc, 
-                    (void*)VG_(brk_base) );
+/*    VG_(debugLog)(2, "main", */
+/*                     "Client info: " */
+/*                     "entry=%p client esp=%p vg_argc=%d brkbase=%p\n", */
+/*                     (void*)client_eip, (void*)sp_at_startup, vg_argc,  */
+/*                     (void*)VG_(brk_base) ); */
 
    //==============================================================
    // Finished setting up operating environment.  Now initialise
@@ -2502,6 +2552,65 @@ Int main(Int argc, HChar **argv, HChar **envp)
    VG_(debugLog)(1, "main", "Setup file descriptors\n");
    setup_file_descriptors();
    VG_(printf)("after setup\n");
+   if (!need_help) {
+      HChar  buf[50], buf2[50+64];
+      HChar  nul[1];
+      Int    fd, r;
+      HChar* exename;
+
+      VG_(debugLog)(1, "main", "Create fake /proc/<pid>/cmdline\n");
+
+      VG_(sprintf)(buf, "proc_%d_cmdline", VG_(getpid)());
+      fd = VG_(mkstemp)( buf, buf2 );
+      if (fd == -1)
+         config_error("Can't create client cmdline file in /tmp.");
+
+      nul[0] = 0;
+      exename = VG_(args_the_exename) ? VG_(args_the_exename)
+                                      : "unknown_exename";
+
+      VG_(write)(fd, VG_(args_the_exename), 
+                     VG_(strlen)( VG_(args_the_exename) ));
+      VG_(write)(fd, nul, 1);
+
+      for (i = 0; i < VG_(args_for_client).used; i++) {
+         VG_(write)(fd, VG_(args_for_client).strs[i],
+                        VG_(strlen)( VG_(args_for_client).strs[i] ));
+         VG_(write)(fd, nul, 1);
+      }
+
+      /* Don't bother to seek the file back to the start; instead do
+	 it every time a copy of it is given out (by PRE(sys_open)). 
+	 That is probably more robust across fork() etc. */
+
+      /* Now delete it, but hang on to the fd. */
+      r = VG_(unlink)( buf2 );
+      if (r)
+         config_error("Can't delete client cmdline file in /tmp.");
+
+      VG_(cl_cmdline_fd) = fd;
+   }
+   {
+      Char* s;
+      Bool  ok;
+      VG_(debugLog)(1, "main", "Initialise the tool part 1 (pre_clo_init)\n");
+      (VG_(tool_info).tl_pre_clo_init)();
+      ok = VG_(sanity_check_needs)( &s );
+      if (!ok) {
+         VG_(tool_panic)(s);
+      }
+   }
+
+   //--------------------------------------------------------------
+   // If --tool and --help/--help-debug was given, now give the core+tool
+   // help message
+   //   p: get_helprequest_and_toolname() [for 'need_help']
+   //   p: tl_pre_clo_init                [for 'VG_(tdict).usage']
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Print help and quit, if requested\n");
+   if (need_help) {
+      usage_NORETURN(/*--help-debug?*/2 == need_help);
+   }
 
    //--------------------------------------------------------------
    // Build segment map (Valgrind segments only)
@@ -2509,53 +2618,52 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 1)\n");
    VG_(parse_procselfmaps) ( build_valgrind_map_callback );
-
-   //==============================================================
-   // Can use VG_(arena_malloc)() with non-CORE arena after segments set up
-   //==============================================================
+   VG_(debugLog)(1, "main", "Process Valgrind's command line options, "
+                            "setup logging\n");
+   logging_to_fd = process_cmd_line_options(client_auxv, toolname);
 
    //--------------------------------------------------------------
-   // Init tool: pre_clo_init, process cmd line, post_clo_init
+   // Zeroise the millisecond counter by doing a first read of it.
+   //   p: none
+   //--------------------------------------------------------------
+   (void) VG_(read_millisecond_timer)();
+
+   //--------------------------------------------------------------
+   // Print the preamble
+   //   p: tl_pre_clo_init            [for 'VG_(details).name' and friends]
+   //   p: process_cmd_line_options() [for VG_(clo_verbosity), VG_(clo_xml),
+   //                                      VG_(clo_log_file_qualifier),
+   //                                      logging_to_fd]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Print the preamble...\n");
+   print_preamble(logging_to_fd, toolname);
+   VG_(debugLog)(1, "main", "...finished the preamble\n");
+
+   //--------------------------------------------------------------
+   // Init tool part 2: post_clo_init
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
-   //   p: load_tool()               [for 'toolinfo']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
+   //   p: print_preamble()          [so any warnings printed in post_clo_init
+   //                                 are shown after the preamble]
    //--------------------------------------------------------------
-   {
-      Char* s;
-      Bool  ok;
-      VG_(debugLog)(1, "main", "Initialise the tool\n");
-      (*toolinfo->tl_pre_clo_init)();
-      ok = VG_(sanity_check_needs)( VG_(shadow_base) != VG_(shadow_end), &s );
-      if (!ok) {
-         VG_(tool_panic)(s);
-      }
-   }
-
-   // If --tool and --help/--help-debug was given, now give the core+tool
-   // help message
-   if (need_help) {
-      usage(/*--help-debug?*/2 == need_help);
-   }
-   process_cmd_line_options(client_auxv, tool);
-
+   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
    VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
-   // Build segment map (all segments)
-   //   p: shadow/redzone segments
-   //   p: setup_client_stack()  [for 'sp_at_startup']
-   //   p: init tool             [for 'new_mem_startup']
+   // Initialise translation table and translation cache
+   //   p: aspacem         [??]
+   //   p: tl_pre_clo_init [for 'VG_(details).avg_translation_sizeB']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n");
-   sp_at_startup___global_arg = sp_at_startup;
-   VG_(parse_procselfmaps) ( build_segment_map_callback );  /* everything */
-   sp_at_startup___global_arg = 0;
+   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+   VG_(init_tt_tc)();
 
-   //==============================================================
-   // Can use VG_(map)() after segments set up
-   //==============================================================
+   //--------------------------------------------------------------
+   // Initialise the redirect table.
+   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
+   //   p: aspacem [so can change ownership of sysinfo pages]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise redirects\n");
+   VG_(setup_code_redirect_table)();
 
    //--------------------------------------------------------------
    // Allow GDB attach
@@ -2573,7 +2681,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
       /* do "jump *$eip" to skip this in gdb (x86) */
       //VG_(do_syscall0)(__NR_pause);
 
-#     if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
+#     if defined(VGP_x86_linux)
       iters = 5;
 #     elif defined(VGP_amd64_linux)
       iters = 10;
@@ -2598,11 +2706,115 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //--------------------------------------------------------------
+   // Load debug info for the existing segments.
+   //   p: setup_code_redirect_table [so that redirs can be recorded]
+   //   p: mallocfree
+   //   p: probably: setup fds and process CLOs, so that logging works
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Load initial debug info\n");
+   { Addr* seg_starts;
+     Int   n_seg_starts;
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
+     /* show them all to the debug info reader.  allow_SkFileV has to
+        be True here so that we read info from the valgrind executable
+        itself. */
+     for (i = 0; i < n_seg_starts; i++)
+        VG_(di_notify_mmap)( seg_starts[i], True/*allow_SkFileV*/ );
+
+     VG_(free)( seg_starts );
+   }
+
+   //--------------------------------------------------------------
+   // Tell aspacem of ownership change of the asm helpers, so that
+   // m_translate allows them to be translated.  However, only do this
+   // after the initial debug info read, since making a hole in the
+   // address range for the stage2 binary confuses the debug info reader.
+   //   p: aspacem
+   //--------------------------------------------------------------
+   { Bool change_ownership_v_c_OK;
+     Addr co_start   = VG_PGROUNDDN( (Addr)&VG_(trampoline_stuff_start) );
+     Addr co_endPlus = VG_PGROUNDUP( (Addr)&VG_(trampoline_stuff_end) );
+     VG_(debugLog)(1,"redir",
+                     "transfer ownership V -> C of 0x%llx .. 0x%llx\n",
+                     (ULong)co_start, (ULong)co_endPlus-1 );
+
+     change_ownership_v_c_OK 
+        = VG_(am_change_ownership_v_to_c)( co_start, co_endPlus - co_start );
+     vg_assert(change_ownership_v_c_OK);
+   }
+
+   //--------------------------------------------------------------
+   // Tell the tool about the initial client memory permissions
+   //   p: aspacem
+   //   p: mallocfree
+   //   p: setup_client_stack
+   //   p: setup_client_dataseg
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Tell tool about initial permissions\n");
+   { Addr*     seg_starts;
+     Int       n_seg_starts;
+     NSegment* seg;
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
+     /* show interesting ones to the tool */
+     for (i = 0; i < n_seg_starts; i++) {
+        seg = VG_(am_find_nsegment)( seg_starts[i] );
+        vg_assert(seg);
+        if (seg->kind == SkFileC || seg->kind == SkAnonC) {
+           VG_(debugLog)(2, "main", 
+                            "tell tool about %010lx-%010lx %c%c%c\n",
+                             seg->start, seg->end,
+                             seg->hasR ? 'r' : '-',
+                             seg->hasW ? 'w' : '-',
+                             seg->hasX ? 'x' : '-' );
+           VG_TRACK( new_mem_startup, seg->start, seg->end+1-seg->start, 
+                                      seg->hasR, seg->hasW, seg->hasX );
+        }
+     }
+
+     VG_(free)( seg_starts );
+
+     /* Also do the initial stack permissions. */
+     seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+
+     /* Stuff below the initial SP is unaddressable. */
+     /* NB: shouldn't this take into account the VG_STACK_REDZONE_SZB
+        bytes below SP?  */
+     VG_TRACK( die_mem_stack, seg->start, initial_client_SP - seg->start );
+     VG_(debugLog)(2, "main", "mark stack inaccessible %010lx-%010lx\n",
+                      seg->start, initial_client_SP-1 );
+
+     /* Also the assembly helpers. */
+     VG_TRACK( new_mem_startup,
+               (Addr)&VG_(trampoline_stuff_start),
+               (Addr)&VG_(trampoline_stuff_end) - (Addr)&VG_(trampoline_stuff_start),
+               False, /* readable? */
+               False, /* writable? */
+               True   /* executable? */ );
+   }
+
+   //--------------------------------------------------------------
    // Initialise the scheduler
    //   p: setup_file_descriptors() [else VG_(safe_fd)() breaks]
+   //   p: setup_client_stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise scheduler\n");
-   VG_(scheduler_init)();
+   { NSegment* seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+     VG_(scheduler_init)( seg->end, clstack_max_size );
+   }
 
    //--------------------------------------------------------------
    // Initialise the pthread model
@@ -2612,7 +2824,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //      setup_scheduler()      [for the rest of state 1 stuff]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise thread 1's state\n");
-   init_thread1state(client_eip, sp_at_startup, &VG_(threads)[1].arch);
+   init_thread1state( initial_client_IP, initial_client_SP, 
+                      &VG_(threads)[1].arch);
 
    //--------------------------------------------------------------
    // Initialise the pthread model
@@ -2627,7 +2840,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-//  VG_(sigstartup_actions)();
+   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Perhaps we're profiling Valgrind?
@@ -2639,7 +2852,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // vg_dummy_profile.c's?
    //
    // XXX: want this as early as possible.  Looking for --profile
-   // in pre_process_cmd_line_options() could get it earlier.
+   // in get_helprequest_and_toolname() could get it earlier.
    //--------------------------------------------------------------
    if (VG_(clo_profile))
       VG_(init_profiling)();
@@ -2656,60 +2869,19 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //--------------------------------------------------------------
-   // Initialise translation table and translation cache
-   //   p: read_procselfmaps  [so the anonymous mmaps for the TT/TC
-   //         aren't identified as part of the client, which would waste
-   //         > 20M of virtual address space.]
-   //--------------------------------------------------------------
-   VG_(init_tt_tc)();
-   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
-
-
-   //--------------------------------------------------------------
-   // Initialise the redirect table.
-   //   p: parse_procselfmaps? [XXX for debug info?]
-   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise redirects\n");
-   VG_(setup_code_redirect_table)();
-
-   //--------------------------------------------------------------
-   // Tell the tool about permissions in our handwritten assembly
-   // helpers.
-   //   p: init tool             [for 'new_mem_startup']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Tell tool about permissions for asm helpers\n");
-   VG_TRACK( new_mem_startup,
-             (Addr)&VG_(trampoline_stuff_start),
-             &VG_(trampoline_stuff_end) - &VG_(trampoline_stuff_start),
-             False, /* readable? */
-             False, /* writable? */
-             True   /* executable? */ );
-
-   //--------------------------------------------------------------
-   // Verbosity message
-   //   p: end_rdtsc_calibration [so startup message is printed first]
-   //--------------------------------------------------------------
-   if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "For more details, rerun with: -v");
-   if (VG_(clo_verbosity) > 0)
-      VG_(message)(Vg_UserMsg, "");
-
-   //--------------------------------------------------------------
-   // Setup pointercheck
-   //   p: layout_remaining_space() [for VG_(client_{base,end})]
-   //   p: process_cmd_line_options() [for VG_(clo_pointercheck)]
-   //--------------------------------------------------------------
-   if (VG_(clo_pointercheck))
-      VG_(clo_pointercheck) =
-         VG_(setup_pointercheck)( VG_(client_base), VG_(client_end));
-
-   //--------------------------------------------------------------
    // register client stack
    //--------------------------------------------------------------
-   VG_(printf)("registering client stack... ");
    VG_(clstk_id) = VG_(register_stack)(VG_(clstk_base), VG_(clstk_end));
-   VG_(printf)("registered! ");
+
+   //--------------------------------------------------------------
+   // Show the address space state so far
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(am_show_nsegments)(1,"Memory layout at client startup");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
+
    //--------------------------------------------------------------
    // Run!
    //--------------------------------------------------------------
@@ -2717,21 +2889,261 @@ Int main(Int argc, HChar **argv, HChar **envp)
 
    if (VG_(clo_xml)) {
       HChar buf[50];
-      VG_(ctime)(buf);
-      VG_(message)(Vg_UserMsg, "<status> <state>RUNNING</state> "
-                               "<time>%t</time> </status>", buf);
+      VG_(elapsed_wallclock_time)(buf);
+      VG_(message)(Vg_UserMsg, "<status>\n"
+                               "  <state>RUNNING</state>\n"
+                               "  <time>%t</time>\n"
+                               "</status>", 
+                               buf);
       VG_(message)(Vg_UserMsg, "");
    }
 
    VG_(debugLog)(1, "main", "Running thread 1\n");
+
    /* As a result of the following call, the last thread standing
-      eventually winds up running VG_(shutdown_actions_NORETURN) just
-      below. */
+      eventually winds up running shutdown_actions_NORETURN
+      just below.  Unfortunately, simply exporting said function
+      causes m_main to be part of a module cycle, which is pretty
+      nonsensical.  So instead of doing that, the address of said
+      function is stored in a global variable 'owned' by m_syswrap,
+      and it uses that function pointer to get back here when it needs
+      to. */
+
+   /* Set continuation address. */
+   VG_(address_of_m_main_shutdown_actions_NORETURN)
+      = & shutdown_actions_NORETURN;
+
+   /* Run the first thread, eventually ending up at the continuation
+      address. */
    VG_(main_thread_wrapper_NORETURN)(1);
 
    /*NOTREACHED*/
    vg_assert(0);
 }
+
+
+/*    //============================================================== */
+/*    // Can use VG_(arena_malloc)() with non-CORE arena after segments set up */
+/*    //============================================================== */
+
+/*    //-------------------------------------------------------------- */
+/*    // Init tool: pre_clo_init, process cmd line, post_clo_init */
+/*    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]'] */
+/*    //   p: load_tool()               [for 'toolinfo'] */
+/*    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)'] */
+/*    //   p: parse_procselfmaps        [so VG segments are setup so tool can */
+/*    //                                 call VG_(malloc)] */
+/*    //-------------------------------------------------------------- */
+/*    { */
+/*       Char* s; */
+/*       Bool  ok; */
+/*       VG_(debugLog)(1, "main", "Initialise the tool\n"); */
+/*       (*toolinfo->tl_pre_clo_init)(); */
+/*       ok = VG_(sanity_check_needs)( VG_(shadow_base) != VG_(shadow_end), &s ); */
+/*       if (!ok) { */
+/*          VG_(tool_panic)(s); */
+/*       } */
+/*    } */
+
+/*    // If --tool and --help/--help-debug was given, now give the core+tool */
+/*    // help message */
+/*    if (need_help) { */
+/*       usage(/\*--help-debug?*\/2 == need_help); */
+/*    } */
+/*    process_cmd_line_options(client_auxv, tool); */
+
+/*    VG_TDICT_CALL(tool_post_clo_init); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Build segment map (all segments) */
+/*    //   p: shadow/redzone segments */
+/*    //   p: setup_client_stack()  [for 'sp_at_startup'] */
+/*    //   p: init tool             [for 'new_mem_startup'] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n"); */
+/*    sp_at_startup___global_arg = sp_at_startup; */
+/*    VG_(parse_procselfmaps) ( build_segment_map_callback );  /\* everything *\/ */
+/*    sp_at_startup___global_arg = 0; */
+
+/*    //============================================================== */
+/*    // Can use VG_(map)() after segments set up */
+/*    //============================================================== */
+
+/*    //-------------------------------------------------------------- */
+/*    // Allow GDB attach */
+/*    //   p: process_cmd_line_options()  [for VG_(clo_wait_for_gdb)] */
+/*    //-------------------------------------------------------------- */
+/*    /\* Hook to delay things long enough so we can get the pid and */
+/*       attach GDB in another shell. *\/ */
+/*    if (VG_(clo_wait_for_gdb)) { */
+/*       Long q, iters; */
+/*       VG_(debugLog)(1, "main", "Wait for GDB\n"); */
+/*       VG_(printf)("pid=%d, entering delay loop\n", VG_(getpid)()); */
+/*       /\* jrs 20050206: I don't understand why this works on x86.  On */
+/*          amd64 the obvious analogues (jump *$rip or jump *$rcx) don't */
+/*          work. *\/ */
+/*       /\* do "jump *$eip" to skip this in gdb (x86) *\/ */
+/*       //VG_(do_syscall0)(__NR_pause); */
+
+/* #     if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2) */
+/*       iters = 5; */
+/* #     elif defined(VGP_amd64_linux) */
+/*       iters = 10; */
+/* #     elif defined(VGP_ppc32_linux) */
+/*       iters = 5; */
+/* #     else */
+/* #     error "Unknown plat" */
+/* #     endif */
+
+/*       iters *= 1000*1000*1000; */
+/*       for (q = 0; q < iters; q++)  */
+/*          ; */
+/*    } */
+
+/*    //-------------------------------------------------------------- */
+/*    // Search for file descriptors that are inherited from our parent */
+/*    //   p: process_cmd_line_options  [for VG_(clo_track_fds)] */
+/*    //-------------------------------------------------------------- */
+/*    if (VG_(clo_track_fds)) { */
+/*       VG_(debugLog)(1, "main", "Init preopened fds\n"); */
+/*       VG_(init_preopened_fds)(); */
+/*    } */
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise the scheduler */
+/*    //   p: setup_file_descriptors() [else VG_(safe_fd)() breaks] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(debugLog)(1, "main", "Initialise scheduler\n"); */
+/*    VG_(scheduler_init)(); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise the pthread model */
+/*    //   p: ? */
+/*    //      load_client()          [for 'client_eip'] */
+/*    //      setup_client_stack()   [for 'sp_at_startup'] */
+/*    //      setup_scheduler()      [for the rest of state 1 stuff] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(debugLog)(1, "main", "Initialise thread 1's state\n"); */
+/*    init_thread1state(client_eip, sp_at_startup, &VG_(threads)[1].arch); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise the pthread model */
+/*    //   p: ? */
+/*    //-------------------------------------------------------------- */
+/*    //if (VG_(clo_model_pthreads)) */
+/*    //   VG_(pthread_init)(); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise the signal handling subsystem */
+/*    //   p: n/a */
+/*    //-------------------------------------------------------------- */
+/*    // Nb: temporarily parks the saved blocking-mask in saved_sigmask. */
+/*    VG_(debugLog)(1, "main", "Initialise signal management\n"); */
+/* //  VG_(sigstartup_actions)(); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Perhaps we're profiling Valgrind? */
+/*    //   p: process_cmd_line_options()  [for VG_(clo_profile)] */
+/*    //   p: others? */
+/*    // */
+/*    // XXX: this seems to be broken?   It always says the tool wasn't built */
+/*    // for profiling;  vg_profile.c's functions don't seem to be overriding */
+/*    // vg_dummy_profile.c's? */
+/*    // */
+/*    // XXX: want this as early as possible.  Looking for --profile */
+/*    // in pre_process_cmd_line_options() could get it earlier. */
+/*    //-------------------------------------------------------------- */
+/*    if (VG_(clo_profile)) */
+/*       VG_(init_profiling)(); */
+
+/*    VGP_PUSHCC(VgpStartup); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Read suppression file */
+/*    //   p: process_cmd_line_options()  [for VG_(clo_suppressions)] */
+/*    //-------------------------------------------------------------- */
+/*    if (VG_(needs).core_errors || VG_(needs).tool_errors) { */
+/*       VG_(debugLog)(1, "main", "Load suppressions\n"); */
+/*       VG_(load_suppressions)(); */
+/*    } */
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise translation table and translation cache */
+/*    //   p: read_procselfmaps  [so the anonymous mmaps for the TT/TC */
+/*    //         aren't identified as part of the client, which would waste */
+/*    //         > 20M of virtual address space.] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(init_tt_tc)(); */
+/*    VG_(debugLog)(1, "main", "Initialise TT/TC\n"); */
+
+
+/*    //-------------------------------------------------------------- */
+/*    // Initialise the redirect table. */
+/*    //   p: parse_procselfmaps? [XXX for debug info?] */
+/*    //   p: init_tt_tc [so it can call VG_(search_transtab) safely] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(debugLog)(1, "main", "Initialise redirects\n"); */
+/*    VG_(setup_code_redirect_table)(); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Tell the tool about permissions in our handwritten assembly */
+/*    // helpers. */
+/*    //   p: init tool             [for 'new_mem_startup'] */
+/*    //-------------------------------------------------------------- */
+/*    VG_(debugLog)(1, "main", "Tell tool about permissions for asm helpers\n"); */
+/*    VG_TRACK( new_mem_startup, */
+/*              (Addr)&VG_(trampoline_stuff_start), */
+/*              &VG_(trampoline_stuff_end) - &VG_(trampoline_stuff_start), */
+/*              False, /\* readable? *\/ */
+/*              False, /\* writable? *\/ */
+/*              True   /\* executable? *\/ ); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Verbosity message */
+/*    //   p: end_rdtsc_calibration [so startup message is printed first] */
+/*    //-------------------------------------------------------------- */
+/*    if (VG_(clo_verbosity) == 1 && !VG_(clo_xml)) */
+/*       VG_(message)(Vg_UserMsg, "For more details, rerun with: -v"); */
+/*    if (VG_(clo_verbosity) > 0) */
+/*       VG_(message)(Vg_UserMsg, ""); */
+
+/*    //-------------------------------------------------------------- */
+/*    // Setup pointercheck */
+/*    //   p: layout_remaining_space() [for VG_(client_{base,end})] */
+/*    //   p: process_cmd_line_options() [for VG_(clo_pointercheck)] */
+/*    //-------------------------------------------------------------- */
+/*    if (VG_(clo_pointercheck)) */
+/*       VG_(clo_pointercheck) = */
+/*          VG_(setup_pointercheck)( VG_(client_base), VG_(client_end)); */
+
+/*    //-------------------------------------------------------------- */
+/*    // register client stack */
+/*    //-------------------------------------------------------------- */
+/*    VG_(printf)("registering client stack... "); */
+/*    VG_(clstk_id) = VG_(register_stack)(VG_(clstk_base), VG_(clstk_end)); */
+/*    VG_(printf)("registered! "); */
+/*    //-------------------------------------------------------------- */
+/*    // Run! */
+/*    //-------------------------------------------------------------- */
+/*    VGP_POPCC(VgpStartup); */
+
+/*    if (VG_(clo_xml)) { */
+/*       HChar buf[50]; */
+/*       VG_(ctime)(buf); */
+/*       VG_(message)(Vg_UserMsg, "<status> <state>RUNNING</state> " */
+/*                                "<time>%t</time> </status>", buf); */
+/*       VG_(message)(Vg_UserMsg, ""); */
+/*    } */
+
+/*    VG_(debugLog)(1, "main", "Running thread 1\n"); */
+/*    /\* As a result of the following call, the last thread standing */
+/*       eventually winds up running VG_(shutdown_actions_NORETURN) just */
+/*       below. *\/ */
+/*    VG_(main_thread_wrapper_NORETURN)(1); */
+
+/*    /\*NOTREACHED*\/ */
+/*    vg_assert(0); */
+/* } */
 
 
 /* Final clean-up before terminating the process.  

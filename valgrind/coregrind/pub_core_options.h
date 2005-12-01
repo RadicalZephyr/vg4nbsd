@@ -122,22 +122,19 @@ extern Int   VG_(clo_dump_error);
 /* Number of parents of a backtrace.  Default: 8.  */
 extern Int   VG_(clo_backtrace_size);
 /* Engage miscellaneous weird hacks needed for some progs. */
-extern Char* VG_(clo_weird_hacks);
+extern Char* VG_(clo_sim_hints);
 
 /* Track open file descriptors? */
 extern Bool  VG_(clo_track_fds);
 
 /* Should we run __libc_freeres at exit?  Sometimes causes crashes.
    Default: YES.  Note this is subservient to VG_(needs).libc_freeres;
-   if the latter says False, then the setting of VG_(clo_weird_hacks)
+   if the latter says False, then the setting of VG_(clo_run_libc_freeres)
    is ignored.  Ie if a tool says no, I don't want this to run, that
    cannot be overridden from the command line. */
 extern Bool  VG_(clo_run_libc_freeres);
 /* Continue stack traces below main()?  Default: NO */
 extern Bool VG_(clo_show_below_main);
-/* Test each client pointer dereference to check it's within the
-   client address space bounds */
-extern Bool VG_(clo_pointercheck);
 /* Model the pthread library */
 extern Bool VG_(clo_model_pthreads);
 
@@ -158,14 +155,18 @@ typedef
    enum { 
       Vg_SmcNone,  // never generate self-checking translations
       Vg_SmcStack, // generate s-c-t's for code found in stacks
-                   // (segments with SF_GROWDOWN, to be precise)
                    // (this is the default)
       Vg_SmcAll    // make all translations self-checking.
    } 
    VgSmc;
 
+/* Describe extent to which self-modifying-code should be
+   auto-detected. */
 extern VgSmc VG_(clo_smc_check);
 
+/* String containing comma-separated names of minor kernel variants,
+   so they can be properly handled by m_syswrap. */
+extern HChar* VG_(clo_kernel_variant);
 
 #endif   // __PUB_CORE_OPTIONS_H
 

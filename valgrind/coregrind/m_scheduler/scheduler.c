@@ -187,7 +187,7 @@ ThreadId VG_(alloc_ThreadState) ( void )
    structures and the CPU.  Up until we get the sema, we must not
    touch any shared state.
 
-   When this returns, we'll actually be running.
+   When this returns, we'll actually be runninlsg.
  */
 void VG_(set_running)(ThreadId tid)
 {

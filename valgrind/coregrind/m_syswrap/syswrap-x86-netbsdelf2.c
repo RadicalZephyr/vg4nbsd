@@ -72,46 +72,46 @@
 
    They're allocated lazily, but never freed.
  */
-#define FILL	0xdeadbeef
+/* #define FILL	0xdeadbeef */
 
-// Valgrind's stack size, in words.
-#define STACK_SIZE_W      16384
+/* // Valgrind's stack size, in words. */
+/* #define STACK_SIZE_W      16384 */
 
-static UWord* allocstack(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord *esp;
+/* static UWord* allocstack(ThreadId tid) */
+/* { */
+/*    ThreadState *tst = VG_(get_ThreadState)(tid); */
+/*    UWord *esp; */
 
-   if (tst->os_state.valgrind_stack_base == 0) {
-	   VG_(printf)("stackbase = 0 so mmap stk ptr\n");
-      void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE,
-			    VKI_PROT_READ|VKI_PROT_WRITE,
-			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS,
-			    SF_VALGRIND,
-			    -1, 0);
+/*    if (tst->os_state.valgrind_stack_base == 0) { */
+/* 	   VG_(printf)("stackbase = 0 so mmap stk ptr\n"); */
+/*       void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE, */
+/* 			    VKI_PROT_READ|VKI_PROT_WRITE, */
+/* 			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, */
+/* 			    SF_VALGRIND, */
+/* 			    -1, 0); */
 
-      if (stk != (void *)-1) {
-         VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /* guard page */
-         tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE;
-         tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord);
-      } else 
-      return (UWord*)-1;
-   }
+/*       if (stk != (void *)-1) { */
+/*          VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /\* guard page *\/ */
+/*          tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE; */
+/*          tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord); */
+/*       } else  */
+/*       return (UWord*)-1; */
+/*    } */
 
-   for (esp = (UWord*) tst->os_state.valgrind_stack_base;
-        esp < (UWord*)(tst->os_state.valgrind_stack_base + 
-                       tst->os_state.valgrind_stack_szB); 
-        esp++)
-      *esp = FILL;
-   /* esp is left at top of stack */
+/*    for (esp = (UWord*) tst->os_state.valgrind_stack_base; */
+/*         esp < (UWord*)(tst->os_state.valgrind_stack_base +  */
+/*                        tst->os_state.valgrind_stack_szB);  */
+/*         esp++) */
+/*       *esp = FILL; */
+/*    /\* esp is left at top of stack *\/ */
 
-   if (1)
-      VG_(printf)("stack for tid %d at %p (%x); esp=%p\n",
-		  tid, tst->os_state.valgrind_stack_base, 
-                  *(UWord*)(tst->os_state.valgrind_stack_base), esp);
-/* XXX - Kailash is this correct ? Within our layout*/
-   return esp;
-}
+/*    if (1) */
+/*       VG_(printf)("stack for tid %d at %p (%x); esp=%p\n", */
+/* 		  tid, tst->os_state.valgrind_stack_base,  */
+/*                   *(UWord*)(tst->os_state.valgrind_stack_base), esp); */
+/* /\* XXX - Kailash is this correct ? Within our layout*\/ */
+/*    return esp; */
+/* } */
 
 /* NB: this is identical the the amd64 version. */
 /* Return how many bytes of this stack have not been used */
@@ -138,90 +138,23 @@ SSizeT VG_(stack_unused)(ThreadId tid)
 /* Run a thread all the way to the end, then do appropriate exit actions
    (this is the last-one-out-turn-off-the-lights bit). 
 */
-static void run_a_thread_NORETURN ( Word tidW )
-{
-	VG_(printf)("in run a thread_noreturn\n");
-   ThreadId tid = (ThreadId)tidW;
-
-   VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) called\n",
-                       (ULong)tidW);
-
-   /* Run the thread all the way through. */
-   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
-
-   VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) done\n",
-                       (ULong)tidW);
-
-   Int c = VG_(count_living_threads)();
-   vg_assert(c >= 1); /* stay sane */
-
-   if (c == 1) {
-
-      VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "last one standing\n",
-                          (ULong)tidW);
-
-      /* We are the last one standing.  Keep hold of the lock and
-         carry on to show final tool results, then exit the entire system. */
-      VG_(shutdown_actions_NORETURN)(tid, src);
-
-   } else {
-
-      VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "not last one standing\n",
-                          (ULong)tidW);
-
-      /* OK, thread is dead, but others still exist.  Just exit. */
-      ThreadState *tst = VG_(get_ThreadState)(tid);
-
-      /* This releases the run lock */
-      VG_(exit_thread)(tid);
-      vg_assert(tst->status == VgTs_Zombie);
-
-      /* We have to use this sequence to terminate the thread to
-         prevent a subtle race.  If VG_(exit_thread)() had left the
-         ThreadState as Empty, then it could have been reallocated,
-         reusing the stack while we're doing these last cleanups.
-         Instead, VG_(exit_thread) leaves it as Zombie to prevent
-         reallocation.  We need to make sure we don't touch the stack
-         between marking it Empty and exiting.  Hence the
-         assembler. */
-      asm volatile (
-         "movl	%1, %0\n"	/* set tst->status = VgTs_Empty */
-         "movl	%2, %%eax\n"    /* set %eax = __NR_exit */
-         "movl	%3, %%ebx\n"    /* set %ebx = tst->os_state.exitcode */
-         "int	$0x80\n"	/* exit(tst->os_state.exitcode) */
-         : "=m" (tst->status)
-         : "n" (VgTs_Empty), "n" (__NR_exit), "m" (tst->os_state.exitcode));
-
-      VG_(core_panic)("Thread exit failed?\n");
-   }
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
 
 /* Call f(arg1), but first switch stacks, using 'stack' as the new
    stack, and use 'retaddr' as f's return-to address.  Also, clear all
    the integer registers before entering f.*/
 __attribute__((noreturn))
-void call_on_new_stack_0_1 ( Addr stack,
-			     Addr retaddr,
-			     void (*f)(Word),
-                             Word arg1 );
+void ML_(call_on_new_stack_0_1) ( Addr stack,
+			          Addr retaddr,
+			          void (*f)(Word),
+                                  Word arg1 );
 //  4(%esp) == stack
 //  8(%esp) == retaddr
 // 12(%esp) == f
 // 16(%esp) == arg1
 asm(
-"call_on_new_stack_0_1:\n"
+".text\n"
+".globl vgModuleLocal_call_on_new_stack_0_1\n"
+"vgModuleLocal_call_on_new_stack_0_1:\n"
 "   movl %esp, %esi\n"     // remember old stack pointer
 "   movl 4(%esi), %esp\n"  // set stack
 "   pushl 16(%esi)\n"      // arg1 to stack
@@ -236,48 +169,9 @@ asm(
 "   movl $0, %ebp\n"
 "   ret\n"                 // jump to f
 "   ud2\n"                 // should never get here
+".previous\n"
 );
 
-
-/*
-   Allocate a stack for the main thread, and run it all the way to the
-   end.  
-*/
-void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
-{
-	VG_(printf)( "syswrap-x86-netbsd  entering VG_(main_thread_wrapper_NORETURN)\n"); 
-
-   UWord* esp = allocstack(tid);
-
-   /* shouldn't be any other threads around yet */
-   vg_assert( VG_(count_living_threads)() == 1 );
-   VG_(printf)("calling call on new_stack\n");
-   call_on_new_stack_0_1( 
-      (Addr)esp,              /* stack */
-      0,                      /*bogus return address*/
-      run_a_thread_NORETURN,  /* fn to call */
-      (Word)tid               /* arg to give it */
-   );
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-static Int start_thread_NORETURN ( void* arg )
-{
-   ThreadState* tst = (ThreadState*)arg;
-   ThreadId     tid = tst->tid;
-
-   run_a_thread_NORETURN ( (Word)tid );
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-/* ---------------------------------------------------------------------
-   clone() handling
-   ------------------------------------------------------------------ */
 
 /*
         Perform a clone system call.  clone is strange because it has
@@ -303,8 +197,9 @@ static Int start_thread_NORETURN ( void* arg )
             pid_t* child_tid    in %edi
             void*  tls_ptr      in %esi
 
-	Returns an Int encoded in the netbsd-x86 way, not a SysRes.
+	Returns an Int encoded in the linux-x86 way, not a SysRes.
  */
+
 #define STRINGIFZ(__str) #__str
 #define STRINGIFY(__str)  STRINGIFZ(__str)
 #define FSZ               "4+4+4+4" /* frame size = retaddr+ebx+edi+esi */
@@ -366,7 +261,7 @@ asm(
 #undef FSZ
 #undef __NR_CLONE
 #undef __NR_EXIT
-#undef STRINGIFY
+
 #undef STRINGIFZ
 
 

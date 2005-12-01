@@ -35,16 +35,14 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
+#include "pub_core_debuginfo.h"     // VG_(di_notify_mmap)
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
-#include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)()
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
@@ -57,169 +55,32 @@
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"    /* for decls of generic wrappers */
 #include "priv_syswrap-linux.h"      /* for decls of linux-ish wrappers */
+#include "priv_syswrap-linux-variants.h" /* decls of linux variant wrappers */
 #include "priv_syswrap-main.h"
 
 #include "vki_unistd.h"              /* for the __NR_* constants */
 
 
 /* ---------------------------------------------------------------------
-   Stacks, thread wrappers
-   Note.  Why is this stuff here?
+   clone() handling
    ------------------------------------------------------------------ */
-
-/* 
-   Allocate a stack for this thread.
-
-   They're allocated lazily, but never freed.
- */
-#define FILL	0xdeadbeef
-
-// Valgrind's stack size, in words.
-#define STACK_SIZE_W      16384
-
-static UWord* allocstack(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord *esp;
-
-   if (tst->os_state.valgrind_stack_base == 0) {
-      void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE,
-			    VKI_PROT_READ|VKI_PROT_WRITE,
-			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS,
-			    SF_VALGRIND,
-			    -1, 0);
-
-      if (stk != (void *)-1) {
-         VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /* guard page */
-         tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE;
-         tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord);
-      } else 
-      return (UWord*)-1;
-   }
-
-   for (esp = (UWord*) tst->os_state.valgrind_stack_base;
-        esp < (UWord*)(tst->os_state.valgrind_stack_base + 
-                       tst->os_state.valgrind_stack_szB); 
-        esp++)
-      *esp = FILL;
-   /* esp is left at top of stack */
-
-   if (0)
-      VG_(printf)("stack for tid %d at %p (%x); esp=%p\n",
-		  tid, tst->os_state.valgrind_stack_base, 
-                  *(UWord*)(tst->os_state.valgrind_stack_base), esp);
-
-   return esp;
-}
-
-/* NB: this is identical the the amd64 version. */
-/* Return how many bytes of this stack have not been used */
-SSizeT VG_(stack_unused)(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord* p;
-
-   for (p = (UWord*)tst->os_state.valgrind_stack_base; 
-	p && (p < (UWord*)(tst->os_state.valgrind_stack_base +
-                           tst->os_state.valgrind_stack_szB)); 
-	p++)
-      if (*p != FILL)
-	 break;
-
-   if (0)
-      VG_(printf)("p=%p %x tst->os_state.valgrind_stack_base=%p\n",
-                  p, *p, tst->os_state.valgrind_stack_base);
-
-   return ((Addr)p) - tst->os_state.valgrind_stack_base;
-}
-
-
-/* Run a thread all the way to the end, then do appropriate exit actions
-   (this is the last-one-out-turn-off-the-lights bit). 
-*/
-static void run_a_thread_NORETURN ( Word tidW )
-{
-   ThreadId tid = (ThreadId)tidW;
-
-   VG_(debugLog)(1, "syswrap-x86-linux", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) called\n",
-                       (ULong)tidW);
-
-   /* Run the thread all the way through. */
-   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
-
-   VG_(debugLog)(1, "syswrap-x86-linux", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) done\n",
-                       (ULong)tidW);
-
-   Int c = VG_(count_living_threads)();
-   vg_assert(c >= 1); /* stay sane */
-
-   if (c == 1) {
-
-      VG_(debugLog)(1, "syswrap-x86-linux", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "last one standing\n",
-                          (ULong)tidW);
-
-      /* We are the last one standing.  Keep hold of the lock and
-         carry on to show final tool results, then exit the entire system. */
-      VG_(shutdown_actions_NORETURN)(tid, src);
-
-   } else {
-
-      VG_(debugLog)(1, "syswrap-x86-linux", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "not last one standing\n",
-                          (ULong)tidW);
-
-      /* OK, thread is dead, but others still exist.  Just exit. */
-      ThreadState *tst = VG_(get_ThreadState)(tid);
-
-      /* This releases the run lock */
-      VG_(exit_thread)(tid);
-      vg_assert(tst->status == VgTs_Zombie);
-
-      /* We have to use this sequence to terminate the thread to
-         prevent a subtle race.  If VG_(exit_thread)() had left the
-         ThreadState as Empty, then it could have been reallocated,
-         reusing the stack while we're doing these last cleanups.
-         Instead, VG_(exit_thread) leaves it as Zombie to prevent
-         reallocation.  We need to make sure we don't touch the stack
-         between marking it Empty and exiting.  Hence the
-         assembler. */
-      asm volatile (
-         "movl	%1, %0\n"	/* set tst->status = VgTs_Empty */
-         "movl	%2, %%eax\n"    /* set %eax = __NR_exit */
-         "movl	%3, %%ebx\n"    /* set %ebx = tst->os_state.exitcode */
-         "int	$0x80\n"	/* exit(tst->os_state.exitcode) */
-         : "=m" (tst->status)
-         : "n" (VgTs_Empty), "n" (__NR_exit), "m" (tst->os_state.exitcode));
-
-      VG_(core_panic)("Thread exit failed?\n");
-   }
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
 
 /* Call f(arg1), but first switch stacks, using 'stack' as the new
    stack, and use 'retaddr' as f's return-to address.  Also, clear all
    the integer registers before entering f.*/
 __attribute__((noreturn))
-void call_on_new_stack_0_1 ( Addr stack,
-			     Addr retaddr,
-			     void (*f)(Word),
-                             Word arg1 );
+void ML_(call_on_new_stack_0_1) ( Addr stack,
+			          Addr retaddr,
+			          void (*f)(Word),
+                                  Word arg1 );
 //  4(%esp) == stack
 //  8(%esp) == retaddr
 // 12(%esp) == f
 // 16(%esp) == arg1
 asm(
-"call_on_new_stack_0_1:\n"
+".text\n"
+".globl vgModuleLocal_call_on_new_stack_0_1\n"
+"vgModuleLocal_call_on_new_stack_0_1:\n"
 "   movl %esp, %esi\n"     // remember old stack pointer
 "   movl 4(%esi), %esp\n"  // set stack
 "   pushl 16(%esi)\n"      // arg1 to stack
@@ -234,49 +95,9 @@ asm(
 "   movl $0, %ebp\n"
 "   ret\n"                 // jump to f
 "   ud2\n"                 // should never get here
+".previous\n"
 );
 
-
-/*
-   Allocate a stack for the main thread, and run it all the way to the
-   end.  
-*/
-void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
-{
-   VG_(debugLog)(1, "syswrap-x86-linux", 
-                    "entering VG_(main_thread_wrapper_NORETURN)\n");
-
-   UWord* esp = allocstack(tid);
-
-   /* shouldn't be any other threads around yet */
-   vg_assert( VG_(count_living_threads)() == 1 );
-
-   call_on_new_stack_0_1( 
-      (Addr)esp,              /* stack */
-      0,                      /*bogus return address*/
-      run_a_thread_NORETURN,  /* fn to call */
-      (Word)tid               /* arg to give it */
-   );
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-static Int start_thread_NORETURN ( void* arg )
-{
-   ThreadState* tst = (ThreadState*)arg;
-   ThreadId     tid = tst->tid;
-
-   run_a_thread_NORETURN ( (Word)tid );
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-/* ---------------------------------------------------------------------
-   clone() handling
-   ------------------------------------------------------------------ */
 
 /*
         Perform a clone system call.  clone is strange because it has
@@ -304,14 +125,12 @@ static Int start_thread_NORETURN ( void* arg )
 
 	Returns an Int encoded in the linux-x86 way, not a SysRes.
  */
-#define STRINGIFZ(__str) #__str
-#define STRINGIFY(__str)  STRINGIFZ(__str)
 #define FSZ               "4+4+4+4" /* frame size = retaddr+ebx+edi+esi */
-#define __NR_CLONE        STRINGIFY(__NR_clone)
-#define __NR_EXIT         STRINGIFY(__NR_exit)
+#define __NR_CLONE        VG_STRINGIFY(__NR_clone)
+#define __NR_EXIT         VG_STRINGIFY(__NR_exit)
 
 extern
-Int do_syscall_clone_x86_linux ( Int (*fn)(void *), 
+Int do_syscall_clone_x86_linux ( Word (*fn)(void *), 
                                  void* stack, 
                                  Int   flags, 
                                  void* arg,
@@ -319,7 +138,7 @@ Int do_syscall_clone_x86_linux ( Int (*fn)(void *),
                                  Int*  parent_tid, 
                                  vki_modify_ldt_t * );
 asm(
-"\n"
+".text\n"
 "do_syscall_clone_x86_linux:\n"
 "        push    %ebx\n"
 "        push    %edi\n"
@@ -360,13 +179,12 @@ asm(
 "        pop     %edi\n"
 "        pop     %ebx\n"
 "        ret\n"
+".previous\n"
 );
 
 #undef FSZ
 #undef __NR_CLONE
 #undef __NR_EXIT
-#undef STRINGIFY
-#undef STRINGIFZ
 
 
 // forward declarations
@@ -395,7 +213,7 @@ static SysRes do_clone ( ThreadId ptid,
    ThreadState* ptst = VG_(get_ThreadState)(ptid);
    ThreadState* ctst = VG_(get_ThreadState)(ctid);
    UWord*       stack;
-   Segment*     seg;
+   NSegment*    seg;
    SysRes       res;
    Int          eax;
    vki_sigset_t blockall, savedmask;
@@ -405,7 +223,11 @@ static SysRes do_clone ( ThreadId ptid,
    vg_assert(VG_(is_running_thread)(ptid));
    vg_assert(VG_(is_valid_tid)(ctid));
 
-   stack = allocstack(ctid);
+   stack = (UWord*)ML_(allocstack)(ctid);
+   if (stack == NULL) {
+      res = VG_(mk_SysRes_Error)( VKI_ENOMEM );
+      goto out;
+   }
 
    /* Copy register state
 
@@ -443,14 +265,14 @@ static SysRes do_clone ( ThreadId ptid,
       memory mappings and try to derive some useful information.  We
       assume that esp starts near its highest possible value, and can
       only go down to the start of the mmaped segment. */
-   seg = VG_(find_segment)((Addr)esp);
-   if (seg) {
+   seg = VG_(am_find_nsegment)((Addr)esp);
+   if (seg && seg->kind != SkResvn) {
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(esp);
-      ctst->client_stack_szB  = ctst->client_stack_highest_word - seg->addr;
+      ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
 	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
-		     ctid, seg->addr, VG_PGROUNDUP(esp));
+		     ctid, seg->start, VG_PGROUNDUP(esp));
    } else {
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with ESP(%p) unmapped\n",
 		   ctid, esp);
@@ -477,7 +299,7 @@ static SysRes do_clone ( ThreadId ptid,
 
    /* Create the new thread */
    eax = do_syscall_clone_x86_linux(
-            start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
+            ML_(start_thread_NORETURN), stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
    res = VG_(mk_SysRes_x86_linux)( eax );
@@ -494,52 +316,6 @@ static SysRes do_clone ( ThreadId ptid,
    return res;
 }
 
-
-/* Do a clone which is really a fork() */
-static SysRes do_fork_clone ( ThreadId tid, 
-                              UInt flags, Addr esp, 
-                              Int* parent_tidptr, 
-                              Int* child_tidptr )
-{
-   vki_sigset_t fork_saved_mask;
-   vki_sigset_t mask;
-   SysRes       res;
-
-   if (flags & (VKI_CLONE_SETTLS | VKI_CLONE_FS | VKI_CLONE_VM 
-                | VKI_CLONE_FILES | VKI_CLONE_VFORK))
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-   /* Block all signals during fork, so that we can fix things up in
-      the child without being interrupted. */
-   VG_(sigfillset)(&mask);
-   VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
-
-   /* Since this is the fork() form of clone, we don't need all that
-      VG_(clone) stuff */
-   res = VG_(do_syscall5)( __NR_clone, flags, 
-                           (UWord)NULL, (UWord)parent_tidptr, 
-                           (UWord)NULL, (UWord)child_tidptr );
-
-   if (!res.isError && res.val == 0) {
-      /* child */
-      VG_(do_atfork_child)(tid);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   } 
-   else 
-   if (!res.isError && res.val > 0) {
-      /* parent */
-      if (VG_(clo_trace_syscalls))
-	  VG_(printf)("   clone(fork): process %d created child %d\n", 
-                      VG_(getpid)(), res.val);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   }
-
-   return res;
-}
 
 /* ---------------------------------------------------------------------
    LDT/GDT simulation
@@ -986,6 +762,7 @@ DECL_TEMPLATE(x86_linux, sys_fstat64);
 DECL_TEMPLATE(x86_linux, sys_lstat64);
 DECL_TEMPLATE(x86_linux, sys_clone);
 DECL_TEMPLATE(x86_linux, old_mmap);
+DECL_TEMPLATE(x86_linux, sys_mmap2);
 DECL_TEMPLATE(x86_linux, sys_sigreturn);
 DECL_TEMPLATE(x86_linux, sys_ipc);
 DECL_TEMPLATE(x86_linux, sys_rt_sigreturn);
@@ -995,6 +772,7 @@ DECL_TEMPLATE(x86_linux, sys_get_thread_area);
 DECL_TEMPLATE(x86_linux, sys_ptrace);
 DECL_TEMPLATE(x86_linux, sys_sigaction);
 DECL_TEMPLATE(x86_linux, old_select);
+DECL_TEMPLATE(x86_linux, sys_syscall223);
 
 PRE(old_select)
 {
@@ -1043,21 +821,24 @@ PRE(sys_clone)
 
    if (ARG1 & VKI_CLONE_PARENT_SETTID) {
       PRE_MEM_WRITE("clone(parent_tidptr)", ARG3, sizeof(Int));
-      if (!VG_(is_addressable)(ARG3, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG3, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
       PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
-      if (!VG_(is_addressable)(ARG5, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & VKI_CLONE_SETTLS) {
       PRE_MEM_READ("clone(tls_user_desc)", ARG4, sizeof(vki_modify_ldt_t));
-      if (!VG_(is_addressable)(ARG4, sizeof(vki_modify_ldt_t), VKI_PROT_READ)) {
+      if (!VG_(am_is_valid_for_client)(ARG4, sizeof(vki_modify_ldt_t), 
+                                             VKI_PROT_READ)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
@@ -1075,13 +856,18 @@ PRE(sys_clone)
       - ??? specifies clone flags of 0x1200011.
       - NPTL specifies clone flags of 0x7D0F00.
       - The Quadrics Elan3 driver specifies clone flags of 0xF00.
+      - Newer Quadrics Elan3 drivers with NTPL support specify 0x410F00.
       Everything else is rejected. 
    */
    if (
+        1 ||
+        /* 11 Nov 05: for the time being, disable this ultra-paranoia.
+           The switch below probably does a good enough job. */
           (cloneflags == 0x100011 || cloneflags == 0x1200011
                                   || cloneflags == 0x7D0F00
                                   || cloneflags == 0x790F00
                                   || cloneflags == 0x3D0F00
+                                  || cloneflags == 0x410F00
                                   || cloneflags == 0xF00
                                   || cloneflags == 0xF21)) {
      /* OK */
@@ -1111,9 +897,8 @@ PRE(sys_clone)
 
    case 0: /* plain fork */
       SET_STATUS_from_SysRes(
-         do_fork_clone(tid,
+         ML_(do_fork_clone)(tid,
                        cloneflags,      /* flags */
-                       (Addr)ARG2,      /* child ESP */
                        (Int *)ARG3,     /* parent_tidptr */
                        (Int *)ARG5));   /* child_tidptr */
       break;
@@ -1350,7 +1135,7 @@ PRE(sys_ipc)
       *flags |= SfMayBlock;
       break;
    case VKI_MSGSND:
-      ML_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
+      ML_(linux_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
       break;
@@ -1366,7 +1151,7 @@ PRE(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      ML_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(linux_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
 
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
@@ -1375,7 +1160,7 @@ PRE(sys_ipc)
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      ML_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(linux_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
@@ -1432,13 +1217,13 @@ POST(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      ML_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(linux_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
       break;
    }
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      ML_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(linux_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
@@ -1483,71 +1268,44 @@ PRE(old_mmap)
          unsigned long offset;
    }; */
    UWord a1, a2, a3, a4, a5, a6;
+   SysRes r;
 
    UWord* args = (UWord*)ARG1;
    PRE_REG_READ1(long, "old_mmap", struct mmap_arg_struct *, args);
    PRE_MEM_READ( "old_mmap(args)", (Addr)args, 6*sizeof(UWord) );
 
-   a1 = args[0];
-   a2 = args[1];
-   a3 = args[2];
-   a4 = args[3];
-   a5 = args[4];
-   a6 = args[5];
+   a1 = args[1-1];
+   a2 = args[2-1];
+   a3 = args[3-1];
+   a4 = args[4-1];
+   a5 = args[5-1];
+   a6 = args[6-1];
 
    PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
          a1, (ULong)a2, a3, a4, a5, a6 );
 
-   if (a2 == 0) {
-      /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
-         shall be established. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
+   r = ML_(generic_PRE_sys_mmap)( tid, a1, a2, a3, a4, a5, (Off64T)a6 );
+   SET_STATUS_from_SysRes(r);
+}
 
-   if (/*(a4 & VKI_MAP_FIXED) &&*/ (0 != (a1 & (VKI_PAGE_SIZE-1)))) {
-      /* zap any misaligned addresses. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
+PRE(sys_mmap2)
+{
+   SysRes r;
 
-   if (a4 & VKI_MAP_FIXED) {
-      if (!ML_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
-         PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
-         SET_STATUS_Failure( VKI_ENOMEM );
-      }
-   } else {
-      Addr a = VG_(find_map_space)(a1, a2, True);
-      if (0) VG_(printf)("find_map_space(%p, %d) -> %p\n",a1,a2,a);
-      if (a == 0 && a1 != 0) {
-         a1 = VG_(find_map_space)(0, a2, True);
-      }
-      else
-         a1 = a;
-      if (a1 == 0)
-         SET_STATUS_Failure( VKI_ENOMEM );
-      else
-         a4 |= VKI_MAP_FIXED;
-   }
+   // Exactly like old_mmap() except:
+   //  - all 6 args are passed in regs, rather than in a memory-block.
+   //  - the file offset is specified in pagesize units rather than bytes,
+   //    so that it can be used for files bigger than 2^32 bytes.
+   PRINT("sys_mmap2 ( %p, %llu, %d, %d, %d, %d )",
+         ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
+   PRE_REG_READ6(long, "mmap2",
+                 unsigned long, start, unsigned long, length,
+                 unsigned long, prot,  unsigned long, flags,
+                 unsigned long, fd,    unsigned long, offset);
 
-   if (! FAILURE) {
-      SysRes res = VG_(mmap_native)((void*)a1, a2, a3, a4, a5, a6);
-      SET_STATUS_from_SysRes(res);
-      if (!res.isError) {
-         vg_assert(ML_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
-         ML_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
-      }
-   }
-
-   if (0)
-   VG_(printf)("old_mmap( %p, fixed %d ) -> %s(%p)\n", 
-               args[0], 
-               args[3]&VKI_MAP_FIXED, 
-               FAILURE ? "Fail" : "Success", RES_unchecked);
-
-   /* Stay sane */
-   if (SUCCESS && (args[3] & VKI_MAP_FIXED))
-      vg_assert(RES == args[0]);
+   r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, 
+                                       VKI_PAGE_SIZE * (Off64T)ARG6 );
+   SET_STATUS_from_SysRes(r);
 }
 
 // XXX: lstat64/fstat64/stat64 are generic, but not necessarily
@@ -1873,11 +1631,12 @@ PRE(sys_sigaction)
 
    if (ARG2 != 0) {
       struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
-      PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
-      PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
-      PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
-      if (sa->sa_flags & VKI_SA_RESTORER)
-         PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
+      PRE_MEM_READ( "sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+      PRE_MEM_READ( "sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+      PRE_MEM_READ( "sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
+      if (ML_(safe_to_deref)(sa,sizeof(sa)) 
+          && (sa->sa_flags & VKI_SA_RESTORER))
+         PRE_MEM_READ( "sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
    }
 
    if (ARG3 != 0) {
@@ -1916,6 +1675,41 @@ POST(sys_sigaction)
    vg_assert(SUCCESS);
    if (RES == 0 && ARG3 != 0)
       POST_MEM_WRITE( ARG3, sizeof(struct vki_old_sigaction));
+}
+
+
+/* ---------------------------------------------------------------
+   PRE/POST wrappers for x86/Linux-variant specific syscalls
+   ------------------------------------------------------------ */
+
+PRE(sys_syscall223)
+{
+   Int err;
+
+   /* 223 is used by sys_bproc.  If we're not on a declared bproc
+      variant, fail in the usual way. */
+
+   if (!VG_(strstr)(VG_(clo_kernel_variant), "bproc")) {
+      PRINT("non-existent syscall! (syscall 223)");
+      PRE_REG_READ0(long, "ni_syscall(223)");
+      SET_STATUS_Failure( VKI_ENOSYS );
+      return;
+   }
+
+   err = ML_(linux_variant_PRE_sys_bproc)( ARG1, ARG2, ARG3, 
+                                           ARG4, ARG5, ARG6 );
+   if (err) {
+      SET_STATUS_Failure( err );
+      return;
+   }
+   /* Let it go through. */
+   *flags |= SfMayBlock; /* who knows?  play safe. */
+}
+
+POST(sys_syscall223)
+{
+   ML_(linux_variant_POST_sys_bproc)( ARG1, ARG2, ARG3, 
+                                      ARG4, ARG5, ARG6 );
 }
 
 #undef PRE
@@ -1959,16 +1753,16 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_mknod,             sys_mknod),          // 14
 
    GENX_(__NR_chmod,             sys_chmod),          // 15
-//zz    //   (__NR_lchown,            sys_lchown16),       // 16 ## P
+//zz    LINX_(__NR_lchown,            sys_lchown16),       // 16
    GENX_(__NR_break,             sys_ni_syscall),     // 17
 //zz    //   (__NR_oldstat,           sys_stat),           // 18 (obsolete)
-   GENX_(__NR_lseek,             sys_lseek),          // 19
+   LINX_(__NR_lseek,             sys_lseek),          // 19
 
    GENX_(__NR_getpid,            sys_getpid),         // 20
    LINX_(__NR_mount,             sys_mount),          // 21
    LINX_(__NR_umount,            sys_oldumount),      // 22
-   GENX_(__NR_setuid,            sys_setuid16),       // 23 ## P
-   GENX_(__NR_getuid,            sys_getuid16),       // 24 ## P
+   LINX_(__NR_setuid,            sys_setuid16),       // 23 ## P
+   LINX_(__NR_getuid,            sys_getuid16),       // 24 ## P
 //zz 
 //zz    //   (__NR_stime,             sys_stime),          // 25 * (SVr4,SVID,X/OPEN)
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
@@ -1976,7 +1770,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    //   (__NR_oldfstat,          sys_fstat),          // 28 * L -- obsolete
    GENX_(__NR_pause,             sys_pause),          // 29
 
-   GENX_(__NR_utime,             sys_utime),          // 30
+   LINX_(__NR_utime,             sys_utime),          // 30
    GENX_(__NR_stty,              sys_ni_syscall),     // 31
    GENX_(__NR_gtty,              sys_ni_syscall),     // 32
    GENX_(__NR_access,            sys_access),         // 33
@@ -1990,17 +1784,17 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    GENX_(__NR_rmdir,             sys_rmdir),          // 40
    GENXY(__NR_dup,               sys_dup),            // 41
-   GENXY(__NR_pipe,              sys_pipe),           // 42
+   LINXY(__NR_pipe,              sys_pipe),           // 42
    GENXY(__NR_times,             sys_times),          // 43
    GENX_(__NR_prof,              sys_ni_syscall),     // 44
 //zz 
    GENX_(__NR_brk,               sys_brk),            // 45
-   GENX_(__NR_setgid,            sys_setgid16),       // 46
-   GENX_(__NR_getgid,            sys_getgid16),       // 47
+   LINX_(__NR_setgid,            sys_setgid16),       // 46
+   LINX_(__NR_getgid,            sys_getgid16),       // 47
 //zz    //   (__NR_signal,            sys_signal),         // 48 */* (ANSI C)
-   GENX_(__NR_geteuid,           sys_geteuid16),      // 49
+   LINX_(__NR_geteuid,           sys_geteuid16),      // 49
 
-   GENX_(__NR_getegid,           sys_getegid16),      // 50
+   LINX_(__NR_getegid,           sys_getegid16),      // 50
    GENX_(__NR_acct,              sys_acct),           // 51
    LINX_(__NR_umount2,           sys_umount),         // 52
    GENX_(__NR_lock,              sys_ni_syscall),     // 53
@@ -2024,10 +1818,10 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    //   (__NR_sgetmask,          sys_sgetmask),       // 68 */* (ANSI C)
 //zz    //   (__NR_ssetmask,          sys_ssetmask),       // 69 */* (ANSI C)
 //zz 
-   GENX_(__NR_setreuid,          sys_setreuid16),     // 70
-   GENX_(__NR_setregid,          sys_setregid16),     // 71
+   LINX_(__NR_setreuid,          sys_setreuid16),     // 70
+   LINX_(__NR_setregid,          sys_setregid16),     // 71
 //zz    GENX_(__NR_sigsuspend,        sys_sigsuspend),     // 72
-   GENXY(__NR_sigpending,        sys_sigpending),     // 73
+   LINXY(__NR_sigpending,        sys_sigpending),     // 73
 //zz    //   (__NR_sethostname,       sys_sethostname),    // 74 */*
 //zz 
    GENX_(__NR_setrlimit,         sys_setrlimit),      // 75
@@ -2036,8 +1830,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_gettimeofday,      sys_gettimeofday),   // 78
    GENX_(__NR_settimeofday,      sys_settimeofday),   // 79
 
-   GENXY(__NR_getgroups,         sys_getgroups16),    // 80
-   GENX_(__NR_setgroups,         sys_setgroups16),    // 81
+   LINXY(__NR_getgroups,         sys_getgroups16),    // 80
+   LINX_(__NR_setgroups,         sys_setgroups16),    // 81
    PLAX_(__NR_select,            old_select),         // 82
    GENX_(__NR_symlink,           sys_symlink),        // 83
 //zz    //   (__NR_oldlstat,          sys_lstat),          // 84 -- obsolete
@@ -2054,7 +1848,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_ftruncate,         sys_ftruncate),      // 93
    GENX_(__NR_fchmod,            sys_fchmod),         // 94
 
-   GENX_(__NR_fchown,            sys_fchown16),       // 95
+   LINX_(__NR_fchown,            sys_fchown16),       // 95
    GENX_(__NR_getpriority,       sys_getpriority),    // 96
    GENX_(__NR_setpriority,       sys_setpriority),    // 97
    GENX_(__NR_profil,            sys_ni_syscall),     // 98
@@ -2091,7 +1885,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    LINXY(__NR_adjtimex,          sys_adjtimex),       // 124
 //zz 
    GENXY(__NR_mprotect,          sys_mprotect),       // 125
-   GENXY(__NR_sigprocmask,       sys_sigprocmask),    // 126
+   LINXY(__NR_sigprocmask,       sys_sigprocmask),    // 126
 //zz    // Nb: create_module() was removed 2.4-->2.6
    GENX_(__NR_create_module,     sys_ni_syscall),     // 127
    GENX_(__NR_init_module,       sys_init_module),    // 128
@@ -2099,7 +1893,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //zz 
 //zz    // Nb: get_kernel_syms() was removed 2.4-->2.6
    GENX_(__NR_get_kernel_syms,   sys_ni_syscall),     // 130
-   GENX_(__NR_quotactl,          sys_quotactl),       // 131
+   LINX_(__NR_quotactl,          sys_quotactl),       // 131
    GENX_(__NR_getpgid,           sys_getpgid),        // 132
    GENX_(__NR_fchdir,            sys_fchdir),         // 133
 //zz    //   (__NR_bdflush,           sys_bdflush),        // 134 */Linux
@@ -2125,17 +1919,17 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_mlock,             sys_mlock),          // 150
    GENX_(__NR_munlock,           sys_munlock),        // 151
    GENX_(__NR_mlockall,          sys_mlockall),       // 152
-   GENX_(__NR_munlockall,        sys_munlockall),     // 153
-   GENXY(__NR_sched_setparam,    sys_sched_setparam), // 154
+   LINX_(__NR_munlockall,        sys_munlockall),     // 153
+   LINXY(__NR_sched_setparam,    sys_sched_setparam), // 154
 
-   GENXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
-   GENX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
-   GENX_(__NR_sched_getscheduler,     sys_sched_getscheduler),    // 157
-   GENX_(__NR_sched_yield,            sys_sched_yield),           // 158
-   GENX_(__NR_sched_get_priority_max, sys_sched_get_priority_max),// 159
+   LINXY(__NR_sched_getparam,         sys_sched_getparam),        // 155
+   LINX_(__NR_sched_setscheduler,     sys_sched_setscheduler),    // 156
+   LINX_(__NR_sched_getscheduler,     sys_sched_getscheduler),    // 157
+   LINX_(__NR_sched_yield,            sys_sched_yield),           // 158
+   LINX_(__NR_sched_get_priority_max, sys_sched_get_priority_max),// 159
 
-   GENX_(__NR_sched_get_priority_min, sys_sched_get_priority_min),// 160
-//zz    //   (__NR_sched_rr_get_interval,  sys_sched_rr_get_interval), // 161 */*
+   LINX_(__NR_sched_get_priority_min, sys_sched_get_priority_min),// 160
+//zz    //LINX?(__NR_sched_rr_get_interval,  sys_sched_rr_get_interval), // 161 */*
    GENXY(__NR_nanosleep,         sys_nanosleep),      // 162
    GENX_(__NR_mremap,            sys_mremap),         // 163
    LINX_(__NR_setresuid,         sys_setresuid16),    // 164
@@ -2150,21 +1944,21 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_getresgid,         sys_getresgid16),    // 171
    LINX_(__NR_prctl,             sys_prctl),          // 172
    PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 173 x86/Linux only?
-   GENXY(__NR_rt_sigaction,      sys_rt_sigaction),   // 174
+   LINXY(__NR_rt_sigaction,      sys_rt_sigaction),   // 174
 
-   GENXY(__NR_rt_sigprocmask,    sys_rt_sigprocmask), // 175
-   GENXY(__NR_rt_sigpending,     sys_rt_sigpending),  // 176
-   GENXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),// 177
-   GENXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 178
-   GENX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),  // 179
+   LINXY(__NR_rt_sigprocmask,    sys_rt_sigprocmask), // 175
+   LINXY(__NR_rt_sigpending,     sys_rt_sigpending),  // 176
+   LINXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),// 177
+   LINXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),// 178
+   LINX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),  // 179
 
    GENXY(__NR_pread64,           sys_pread64),        // 180
    GENX_(__NR_pwrite64,          sys_pwrite64),       // 181
-   GENX_(__NR_chown,             sys_chown16),        // 182
+   LINX_(__NR_chown,             sys_chown16),        // 182
    GENXY(__NR_getcwd,            sys_getcwd),         // 183
-   GENXY(__NR_capget,            sys_capget),         // 184
+   LINXY(__NR_capget,            sys_capget),         // 184
 
-   GENX_(__NR_capset,            sys_capset),         // 185
+   LINX_(__NR_capset,            sys_capset),         // 185
    GENXY(__NR_sigaltstack,       sys_sigaltstack),    // 186
    LINXY(__NR_sendfile,          sys_sendfile),       // 187
    GENXY(__NR_getpmsg,           sys_getpmsg),        // 188
@@ -2173,7 +1967,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    // Nb: we treat vfork as fork
    GENX_(__NR_vfork,             sys_fork),           // 190
    GENXY(__NR_ugetrlimit,        sys_getrlimit),      // 191
-   GENXY(__NR_mmap2,             sys_mmap2),          // 192
+   PLAX_(__NR_mmap2,             sys_mmap2),          // 192
    GENX_(__NR_truncate64,        sys_truncate64),     // 193
    GENX_(__NR_ftruncate64,       sys_ftruncate64),    // 194
    
@@ -2210,34 +2004,34 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_getdents64,        sys_getdents64),     // 220
    GENXY(__NR_fcntl64,           sys_fcntl64),        // 221
    GENX_(222,                    sys_ni_syscall),     // 222
-   GENX_(223,                    sys_ni_syscall),     // 223
+   PLAXY(223,                    sys_syscall223),     // 223 // sys_bproc?
    LINX_(__NR_gettid,            sys_gettid),         // 224
 
 //zz    //   (__NR_readahead,         sys_readahead),      // 225 */(Linux?)
-   GENX_(__NR_setxattr,          sys_setxattr),       // 226
-   GENX_(__NR_lsetxattr,         sys_lsetxattr),      // 227
-   GENX_(__NR_fsetxattr,         sys_fsetxattr),      // 228
-   GENXY(__NR_getxattr,          sys_getxattr),       // 229
+   LINX_(__NR_setxattr,          sys_setxattr),       // 226
+   LINX_(__NR_lsetxattr,         sys_lsetxattr),      // 227
+   LINX_(__NR_fsetxattr,         sys_fsetxattr),      // 228
+   LINXY(__NR_getxattr,          sys_getxattr),       // 229
 
-   GENXY(__NR_lgetxattr,         sys_lgetxattr),      // 230
-   GENXY(__NR_fgetxattr,         sys_fgetxattr),      // 231
-   GENXY(__NR_listxattr,         sys_listxattr),      // 232
-   GENXY(__NR_llistxattr,        sys_llistxattr),     // 233
-   GENXY(__NR_flistxattr,        sys_flistxattr),     // 234
+   LINXY(__NR_lgetxattr,         sys_lgetxattr),      // 230
+   LINXY(__NR_fgetxattr,         sys_fgetxattr),      // 231
+   LINXY(__NR_listxattr,         sys_listxattr),      // 232
+   LINXY(__NR_llistxattr,        sys_llistxattr),     // 233
+   LINXY(__NR_flistxattr,        sys_flistxattr),     // 234
 
-   GENX_(__NR_removexattr,       sys_removexattr),    // 235
-   GENX_(__NR_lremovexattr,      sys_lremovexattr),   // 236
-   GENX_(__NR_fremovexattr,      sys_fremovexattr),   // 237
+   LINX_(__NR_removexattr,       sys_removexattr),    // 235
+   LINX_(__NR_lremovexattr,      sys_lremovexattr),   // 236
+   LINX_(__NR_fremovexattr,      sys_fremovexattr),   // 237
 //zz    LINX_(__NR_tkill,             sys_tkill),          // 238 */Linux
    LINXY(__NR_sendfile64,        sys_sendfile64),     // 239
 
    LINXY(__NR_futex,             sys_futex),             // 240
-   GENX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
-   GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
+   LINX_(__NR_sched_setaffinity, sys_sched_setaffinity), // 241
+   LINXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 242
    PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
    PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
 
-   LINX_(__NR_io_setup,          sys_io_setup),       // 245
+   LINXY(__NR_io_setup,          sys_io_setup),       // 245
    LINX_(__NR_io_destroy,        sys_io_destroy),     // 246
    LINXY(__NR_io_getevents,      sys_io_getevents),   // 247
    LINX_(__NR_io_submit,         sys_io_submit),      // 248
@@ -2253,17 +2047,17 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_epoll_wait,        sys_epoll_wait),        // 256
 //zz    //   (__NR_remap_file_pages,  sys_remap_file_pages),  // 257 */Linux
    LINX_(__NR_set_tid_address,   sys_set_tid_address),   // 258
-   GENXY(__NR_timer_create,      sys_timer_create),      // 259
+   LINXY(__NR_timer_create,      sys_timer_create),      // 259
 
-   GENXY(__NR_timer_settime,     sys_timer_settime),  // (timer_create+1)
-   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // (timer_create+2)
-   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),//(timer_create+3)
-   GENX_(__NR_timer_delete,      sys_timer_delete),   // (timer_create+4)
-   GENX_(__NR_clock_settime,     sys_clock_settime),  // (timer_create+5)
+   LINXY(__NR_timer_settime,     sys_timer_settime),  // (timer_create+1)
+   LINXY(__NR_timer_gettime,     sys_timer_gettime),  // (timer_create+2)
+   LINX_(__NR_timer_getoverrun,  sys_timer_getoverrun),//(timer_create+3)
+   LINX_(__NR_timer_delete,      sys_timer_delete),   // (timer_create+4)
+   LINX_(__NR_clock_settime,     sys_clock_settime),  // (timer_create+5)
 
-   GENXY(__NR_clock_gettime,     sys_clock_gettime),  // (timer_create+6)
-   GENXY(__NR_clock_getres,      sys_clock_getres),   // (timer_create+7)
-   GENXY(__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
+   LINXY(__NR_clock_gettime,     sys_clock_gettime),  // (timer_create+6)
+   LINXY(__NR_clock_getres,      sys_clock_getres),   // (timer_create+7)
+   LINXY(__NR_clock_nanosleep,   sys_clock_nanosleep),// (timer_create+8) */*
    GENXY(__NR_statfs64,          sys_statfs64),       // 268
    GENXY(__NR_fstatfs64,         sys_fstatfs64),      // 269
 
@@ -2271,19 +2065,19 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_utimes,            sys_utimes),         // 271
    LINX_(__NR_fadvise64_64,      sys_fadvise64_64),   // 272 */(Linux?)
    GENX_(__NR_vserver,           sys_ni_syscall),     // 273
-//zz    //   (__NR_mbind,             sys_mbind),          // 274 ?/?
-//zz 
+   LINX_(__NR_mbind,             sys_mbind),          // 274 ?/?
+
    LINXY(__NR_get_mempolicy,     sys_get_mempolicy),  // 275 ?/?
    LINX_(__NR_set_mempolicy,     sys_set_mempolicy),  // 276 ?/?
-   GENXY(__NR_mq_open,           sys_mq_open),        // 277
-   GENX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
-   GENX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
+   LINXY(__NR_mq_open,           sys_mq_open),        // 277
+   LINX_(__NR_mq_unlink,         sys_mq_unlink),      // (mq_open+1)
+   LINX_(__NR_mq_timedsend,      sys_mq_timedsend),   // (mq_open+2)
 
-   GENXY(__NR_mq_timedreceive,   sys_mq_timedreceive),// (mq_open+3)
-   GENX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
-   GENXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
+   LINXY(__NR_mq_timedreceive,   sys_mq_timedreceive),// (mq_open+3)
+   LINX_(__NR_mq_notify,         sys_mq_notify),      // (mq_open+4)
+   LINXY(__NR_mq_getsetattr,     sys_mq_getsetattr),  // (mq_open+5)
    GENX_(__NR_sys_kexec_load,    sys_ni_syscall),     // 283
-   GENXY(__NR_waitid,            sys_waitid),         // 284
+   LINXY(__NR_waitid,            sys_waitid),         // 284
 
    GENX_(285,                    sys_ni_syscall),     // 285
 //   LINX_(__NR_add_key,           sys_add_key),        // 286

@@ -105,6 +105,7 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    return res.isError ? -1 : res.val;
 }
 /* XXX (sjamaan): WTF is this for, again? */
+/* THis is for VG_pipe to work under netbsd - kailash. Our pipe has a different semantic than Linux's pipe, hence we have a kludge to transform it back and forth. While keeping VG_(pipe)'s semantics the same,  otherwise we would ahve to hack around everywhere vg_pope is implemented and change it around.   */
 #if defined (VGP_x86_netbsdelf2) 
 /* Int VG_(do_pipe_inner)(int pipeno ,Int fd[2]) */
 /* { */
@@ -152,8 +153,8 @@ OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 #else
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
-	SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
-   return res.isError ? (-1) : 0;
+   SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
+   return res.isError ? (-1) : res.val;
    /* if you change the error-reporting conventions of this, also
       change VG_(pread) and all other usage points. */
 }
@@ -240,11 +241,19 @@ Int VG_(getdents) (UInt fd, struct vki_dirent *dirp, UInt count)
    nonzero otherwise. */
 Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 {
-   UWord w = (irusr ? VKI_R_OK : 0)
-	     | (iwusr ? VKI_W_OK : 0)
-	     | (ixusr ? VKI_X_OK : 0);
+#if defined(VGO_linux)
+   /* Very annoyingly, I cannot find any definition for R_OK et al in
+      the kernel interfaces.  Therefore I reluctantly resort to
+      hardwiring in these magic numbers that I determined by
+      experimentation. */
+   UWord w = (irusr ? 4/*R_OK*/ : 0)
+             | (iwusr ? 2/*W_OK*/ : 0)
+             | (ixusr ? 1/*X_OK*/ : 0);
    SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
    return res.isError ? 1 : res.val;
+#else
+#  error "Don't know how to do VG_(access) on this OS"
+#endif
 }
 
 /* 

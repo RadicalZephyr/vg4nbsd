@@ -983,6 +983,7 @@ struct  vki_seminfo {
 #define	VKI_EEXIST		17	/* File exists */
 #define	VKI_EINVAL		22	/* Invalid argument */
 #define	VKI_EMFILE		24	/* Too many open files */
+#define VKI_ECHILD 10
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-generic/errno.h

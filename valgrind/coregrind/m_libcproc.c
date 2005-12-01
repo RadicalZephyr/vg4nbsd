@@ -35,6 +35,7 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_syscall.h"
+#include "pub_core_clientstate.h"
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
@@ -43,12 +44,7 @@
 
 /* As deduced from sp_at_startup, the client's argc, argv[] and
    envp[] as extracted from the client's stack at startup-time. */
-Int    VG_(client_argc);
-Char** VG_(client_argv);
 Char** VG_(client_envp);
-
-/* client executable file descriptor */
-Int VG_(clexecfd) = -1;
 
 /* Path to library directory */
 const Char *VG_(libdir) = VG_LIBDIR;
@@ -206,15 +202,13 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    buf = VG_(arena_malloc)(VG_AR_CORE, VG_(strlen)(VG_(libdir)) + 20);
 
    // Remove Valgrind-specific entries from LD_*.
-   VG_(sprintf)(buf, "%s*/vg_preload_core.so", VG_(libdir));
-   mash_colon_env(ld_preload_str, buf);
    VG_(sprintf)(buf, "%s*/vgpreload_*.so", VG_(libdir));
    mash_colon_env(ld_preload_str, buf);
    VG_(sprintf)(buf, "%s*", VG_(libdir));
    mash_colon_env(ld_library_path_str, buf);
 
-   // Remove VALGRIND_CLO variable.
-   VG_(env_unsetenv)(envp, VALGRINDCLO);
+   // Remove VALGRIND_LAUNCHER variable.
+   VG_(env_unsetenv)(envp, VALGRIND_LAUNCHER);
 
    // XXX if variable becomes empty, remove it completely?
 
@@ -307,9 +301,6 @@ Int VG_(system) ( Char* cmd )
 /* ---------------------------------------------------------------------
    Resource limits
    ------------------------------------------------------------------ */
-
-struct vki_rlimit VG_(client_rlimit_data);
-struct vki_rlimit VG_(client_rlimit_stack);
 
 /* Support for getrlimit. */
 Int VG_(getrlimit) (Int resource, struct vki_rlimit *rlim)
@@ -409,6 +400,69 @@ Int VG_(getegid) ( void )
    return VG_(do_syscall0)(__NR_getegid) . val;
 }
 
+/* Get supplementary groups into list[0 .. size-1].  Returns the
+   number of groups written, or -1 if error.  Note that in order to be
+   portable, the groups are 32-bit unsigned ints regardless of the
+   platform. */
+Int VG_(getgroups)( Int size, UInt* list )
+{
+#  if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
+   Int    i;
+   SysRes sres;
+   UShort list16[32];
+   if (size < 0) return -1;
+   if (size > 32) size = 32;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list16);
+   if (sres.isError)
+      return -1;
+   if (sres.val != size)
+      return -1;
+   for (i = 0; i < size; i++)
+      list[i] = (UInt)list16[i];
+   return size;
+
+#  elif defined(VGP_amd64_linux)
+   SysRes sres;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list);
+   if (sres.isError)
+      return -1;
+   return sres.val;
+#elif defined (VG_netbsdelf2)
+   SysRes sres;
+   sres = VG_(do_syscall2)(__NR_getgroups,size,(Addr)list);
+   if(sres.isError)
+	   return -1;
+   return sres.val;
+#  else
+#     error "VG_(getgroups): needs implementation on this platform"
+#  endif
+}
+
+/* ---------------------------------------------------------------------
+   Process tracing
+   ------------------------------------------------------------------ */
+
+Int VG_(ptrace) ( Int request, Int pid, void *addr, void *data )
+{
+   SysRes res;
+   res = VG_(do_syscall4)(__NR_ptrace, request, pid, (UWord)addr, (UWord)data);
+   if (res.isError)
+      return -1;
+   return res.val;
+}
+
+/* ---------------------------------------------------------------------
+   Fork
+   ------------------------------------------------------------------ */
+
+Int VG_(fork) ( void )
+{
+   SysRes res;
+   res = VG_(do_syscall0)(__NR_fork);
+   if (res.isError)
+      return -1;
+   return res.val;
+}
 
 /* ---------------------------------------------------------------------
    Timing stuff

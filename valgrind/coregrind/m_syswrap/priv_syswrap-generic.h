@@ -86,11 +86,9 @@ DECL_TEMPLATE(generic, sys_chdir);
 DECL_TEMPLATE(generic, sys_time);
 DECL_TEMPLATE(generic, sys_mknod);
 DECL_TEMPLATE(generic, sys_chmod);
-DECL_TEMPLATE(generic, sys_lseek);
 DECL_TEMPLATE(generic, sys_getpid);
 DECL_TEMPLATE(generic, sys_alarm);
 DECL_TEMPLATE(generic, sys_pause);
-DECL_TEMPLATE(generic, sys_utime);
 DECL_TEMPLATE(generic, sys_access);
 DECL_TEMPLATE(generic, sys_kill);
 DECL_TEMPLATE(generic, sys_rename);
@@ -117,15 +115,6 @@ DECL_TEMPLATE(generic, sys_fdatasync);
 DECL_TEMPLATE(generic, sys_mlock);
 DECL_TEMPLATE(generic, sys_munlock);
 DECL_TEMPLATE(generic, sys_mlockall);
-DECL_TEMPLATE(generic, sys_munlockall);
-DECL_TEMPLATE(generic, sys_sched_setparam);
-DECL_TEMPLATE(generic, sys_sched_getparam);
-DECL_TEMPLATE(generic, sys_sched_rr_get_interval);
-DECL_TEMPLATE(generic, sys_sched_setscheduler);
-DECL_TEMPLATE(generic, sys_sched_getscheduler);
-DECL_TEMPLATE(generic, sys_sched_yield);
-DECL_TEMPLATE(generic, sys_sched_get_priority_max);
-DECL_TEMPLATE(generic, sys_sched_get_priority_min);
 DECL_TEMPLATE(generic, sys_nanosleep);
 DECL_TEMPLATE(generic, sys_mremap);    // POSIX, but Linux arg order may be odd
 DECL_TEMPLATE(generic, sys_getuid);
@@ -171,25 +160,6 @@ DECL_TEMPLATE(generic, sys_fchown);       // SVr4,4.3BSD
 DECL_TEMPLATE(generic, sys_setgid);       // SVr4,SVID
 DECL_TEMPLATE(generic, sys_utimes);       // 4.3BSD
 
-// These ones may be Linux specific... not sure.  They use 16-bit gid_t and
-// uid_t types.  The similarly named (minus the "16" suffix) ones below use
-// 32-bit versions of these types.
-DECL_TEMPLATE(generic, sys_setuid16);              // ## P
-DECL_TEMPLATE(generic, sys_getuid16);              // ## P
-DECL_TEMPLATE(generic, sys_setgid16);              // ## SVr4,SVID
-DECL_TEMPLATE(generic, sys_getgid16);              // ## P
-DECL_TEMPLATE(generic, sys_geteuid16);             // ## P
-DECL_TEMPLATE(generic, sys_getegid16);             // ## P
-DECL_TEMPLATE(generic, sys_setreuid16);            // ## BSD4.3
-DECL_TEMPLATE(generic, sys_setregid16);            // ## BSD4.3
-DECL_TEMPLATE(generic, sys_getgroups16);           // ## P
-DECL_TEMPLATE(generic, sys_setgroups16);           // ## SVr4, SVID, X/OPEN, 4.3BSD
-DECL_TEMPLATE(generic, sys_fchown16);              // ## SVr4,BSD4.3
-DECL_TEMPLATE(generic, sys_chown16);               // ## P
-
-// Some archs on Linux do not match the generic wrapper for sys_pipe().
-DECL_TEMPLATE(generic, sys_pipe);
-
 // May not be generic for every architecture under Linux.
 DECL_TEMPLATE(generic, sys_sigaction);             // (x86) P
 
@@ -210,13 +180,6 @@ DECL_TEMPLATE(generic, sys_iopl);                  // (x86/amd64) L
 DECL_TEMPLATE(generic, sys_ipc);                   // (x86) L
 DECL_TEMPLATE(generic, sys_newuname);              // * P
 DECL_TEMPLATE(generic, sys_init_module);           // * L?
-DECL_TEMPLATE(generic, sys_quotactl);              // * (?)
-DECL_TEMPLATE(generic, sys_rt_sigaction);          // (x86) ()
-DECL_TEMPLATE(generic, sys_rt_sigprocmask);        // * ?
-DECL_TEMPLATE(generic, sys_rt_sigpending);         // * ?
-DECL_TEMPLATE(generic, sys_rt_sigtimedwait);       // * ?
-DECL_TEMPLATE(generic, sys_rt_sigqueueinfo);       // * ?
-DECL_TEMPLATE(generic, sys_rt_sigsuspend);         // () ()
 DECL_TEMPLATE(generic, sys_pread64);               // * (Unix98?)
 DECL_TEMPLATE(generic, sys_pwrite64);              // * (Unix98?)
 DECL_TEMPLATE(generic, sys_sigaltstack);           // (x86) (XPG4-UNIX)
@@ -229,20 +192,6 @@ DECL_TEMPLATE(generic, sys_lchown);                // * (L?)
 DECL_TEMPLATE(generic, sys_mincore);               // * L?
 DECL_TEMPLATE(generic, sys_getdents64);            // * (SVr4,SVID?)
 DECL_TEMPLATE(generic, sys_fcntl64);               // * P?
-DECL_TEMPLATE(generic, sys_setxattr);              // * L?
-DECL_TEMPLATE(generic, sys_lsetxattr);             // * L?
-DECL_TEMPLATE(generic, sys_fsetxattr);             // * L?
-DECL_TEMPLATE(generic, sys_getxattr);              // * L?
-DECL_TEMPLATE(generic, sys_lgetxattr);             // * L?
-DECL_TEMPLATE(generic, sys_fgetxattr);             // * L?
-DECL_TEMPLATE(generic, sys_listxattr);             // * L?
-DECL_TEMPLATE(generic, sys_llistxattr);            // * L?
-DECL_TEMPLATE(generic, sys_flistxattr);            // * L?
-DECL_TEMPLATE(generic, sys_removexattr);           // * L?
-DECL_TEMPLATE(generic, sys_lremovexattr);          // * L?
-DECL_TEMPLATE(generic, sys_fremovexattr);          // * L?
-DECL_TEMPLATE(generic, sys_sched_setaffinity);     // * L?
-DECL_TEMPLATE(generic, sys_sched_getaffinity);     // * L?
 DECL_TEMPLATE(generic, sys_lookup_dcookie);        // (*/32/64) L
 DECL_TEMPLATE(generic, sys_statfs64);              // * (?)
 DECL_TEMPLATE(generic, sys_fstatfs64);             // * (?)

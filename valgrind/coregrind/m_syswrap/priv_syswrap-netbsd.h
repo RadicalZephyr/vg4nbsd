@@ -34,6 +34,13 @@
 /* requires #include "priv_types_n_macros.h" */
 
 // Run a thread from beginning to end. 
+extern Word ML_(start_thread_NORETURN) ( void* arg );
+extern Addr ML_(allocstack)            ( ThreadId tid );
+extern void ML_(call_on_new_stack_0_1) ( Addr stack, Addr retaddr,
+			                 void (*f)(Word), Word arg1 );
+extern SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
+                                   Int* parent_tidptr, Int* child_tidptr );
+
 extern VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tid);
 DECL_TEMPLATE(netbsdelf2, sys_set_tid_address);
 DECL_TEMPLATE(netbsdelf2, sys_exit_group);

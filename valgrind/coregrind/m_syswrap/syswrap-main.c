@@ -170,6 +170,37 @@
    build signal frames).  Do not do this.  If you want a signal poll
    after the syscall goes through, do "*flags |= SfPollAfter" and the
    driver logic will do it for you.
+
+   -----------
+
+   Another critical requirement following introduction of new address
+   space manager (JRS, 20050923):
+
+   In a situation where the mappedness of memory has changed, aspacem
+   should be notified BEFORE the tool.  Hence the following is
+   correct:
+
+      Bool d = VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      if (d)
+         VG_(discard_translations)(s->start, s->end+1 - s->start);
+
+   whilst this is wrong:
+
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      Bool d = VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      if (d)
+         VG_(discard_translations)(s->start, s->end+1 - s->start);
+
+   The reason is that the tool may itself ask aspacem for more shadow
+   memory as a result of the VG_TRACK call.  In such a situation it is
+   critical that aspacem's segment array is up to date -- hence the
+   need to notify aspacem first.
+
+   -----------
+
+   Also .. take care to call VG_(discard_translnations) whenever
+   memory with execute permissions is unmapped.
 */
 
 
@@ -388,6 +419,8 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    }
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
+   vg_assert(canonical->what == SsSuccess 
+             || canonical->what == SsFailure);
    if (canonical->what == SsFailure) {
       /* This isn't exactly right, in that really a Failure with res
          not in the range 1 .. 4095 is unrepresentable in the
@@ -400,6 +433,9 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 #elif defined(VGP_ppc32_linux)
    VexGuestPPC32State* gst = (VexGuestPPC32State*)gst_vanilla;
    UInt old_cr = LibVEX_GuestPPC32_get_CR(gst);
+
+   vg_assert(canonical->what == SsSuccess 
+             || canonical->what == SsFailure);
 
    gst->guest_GPR3 = canonical->val;
 
@@ -642,7 +678,7 @@ void VG_(client_syscall) ( ThreadId tid )
          success. */
       PRINT(" --> [pre-success] Success(0x%llx)\n", (Long)sci->status.val );
                                        
-      /* In this case thes allowable flag are to ask for a signal-poll
+      /* In this case the allowable flags are to ask for a signal-poll
          and/or a yield after the call.  Changing the args isn't
          allowed. */
       vg_assert(0 == (sci->flags & ~(SfPollAfter | SfYieldAfter)));
@@ -677,9 +713,9 @@ void VG_(client_syscall) ( ThreadId tid )
          by doing it directly in this thread, which is a lot
          simpler. */
 
-      /* Check that the given flags are allowable: MayBlock and
-         PostOnFail are ok. */
-      vg_assert(0 == (sci->flags & ~(SfMayBlock | SfPostOnFail)));
+      /* Check that the given flags are allowable: MayBlock, PollAfter
+         and PostOnFail are ok. */
+      vg_assert(0 == (sci->flags & ~(SfMayBlock | SfPostOnFail | SfPollAfter)));
 
       if (sci->flags & SfMayBlock) {
 
@@ -1121,6 +1157,20 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
    sci->status.what = SsIdle;
 }
 
+
+/* ---------------------------------------------------------------------
+   A place to store the where-to-call-when-really-done pointer
+   ------------------------------------------------------------------ */
+
+// When the final thread is done, where shall I call to shutdown the
+// system cleanly?  Is set once at startup (in m_main) and never
+// changes after that.  Is basically a pointer to the exit
+// continuation.  This is all just a nasty hack to avoid calling
+// directly from m_syswrap to m_main at exit, since that would cause
+// m_main to become part of a module cycle, which is silly.
+void (* VG_(address_of_m_main_shutdown_actions_NORETURN) )
+       (ThreadId,VgSchedReturnCode)
+   = NULL;
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

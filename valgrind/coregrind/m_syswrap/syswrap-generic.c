@@ -5061,11 +5061,6 @@ PRE(sys_setregid)
    PRE_REG_READ2(long, "setregid", vki_gid_t, rgid, vki_gid_t, egid);
 }
 
-PRE(sys_setreuid16)
-{
-   PRINT("setreuid16 ( 0x%x, 0x%x )", ARG1, ARG2);
-   PRE_REG_READ2(long, "setreuid16", vki_old_uid_t, ruid, vki_old_uid_t, euid);
-}
 
 PRE(sys_setreuid)
 {

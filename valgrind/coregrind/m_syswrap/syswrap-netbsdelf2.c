@@ -43,6 +43,7 @@
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_syscall.h"
+#include "pub_core_syswrap.h"
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"

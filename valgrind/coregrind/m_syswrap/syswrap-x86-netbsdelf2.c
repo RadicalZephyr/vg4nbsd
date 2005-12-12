@@ -67,78 +67,6 @@
    Note.  Why is this stuff here?
    ------------------------------------------------------------------ */
 
-/* 
-   Allocate a stack for this thread.
-
-   They're allocated lazily, but never freed.
- */
-/* #define FILL	0xdeadbeef */
-
-/* // Valgrind's stack size, in words. */
-/* #define STACK_SIZE_W      16384 */
-
-/* static UWord* allocstack(ThreadId tid) */
-/* { */
-/*    ThreadState *tst = VG_(get_ThreadState)(tid); */
-/*    UWord *esp; */
-
-/*    if (tst->os_state.valgrind_stack_base == 0) { */
-/* 	   VG_(printf)("stackbase = 0 so mmap stk ptr\n"); */
-/*       void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE, */
-/* 			    VKI_PROT_READ|VKI_PROT_WRITE, */
-/* 			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, */
-/* 			    SF_VALGRIND, */
-/* 			    -1, 0); */
-
-/*       if (stk != (void *)-1) { */
-/*          VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /\* guard page *\/ */
-/*          tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE; */
-/*          tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord); */
-/*       } else  */
-/*       return (UWord*)-1; */
-/*    } */
-
-/*    for (esp = (UWord*) tst->os_state.valgrind_stack_base; */
-/*         esp < (UWord*)(tst->os_state.valgrind_stack_base +  */
-/*                        tst->os_state.valgrind_stack_szB);  */
-/*         esp++) */
-/*       *esp = FILL; */
-/*    /\* esp is left at top of stack *\/ */
-
-/*    if (1) */
-/*       VG_(printf)("stack for tid %d at %p (%x); esp=%p\n", */
-/* 		  tid, tst->os_state.valgrind_stack_base,  */
-/*                   *(UWord*)(tst->os_state.valgrind_stack_base), esp); */
-/* /\* XXX - Kailash is this correct ? Within our layout*\/ */
-/*    return esp; */
-/* } */
-
-/* NB: this is identical the the amd64 version. */
-/* Return how many bytes of this stack have not been used */
-SSizeT VG_(stack_unused)(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord* p;
-
-   for (p = (UWord*)tst->os_state.valgrind_stack_base; 
-	p && (p < (UWord*)(tst->os_state.valgrind_stack_base +
-                           tst->os_state.valgrind_stack_szB)); 
-	p++)
-      if (*p != FILL)
-	 break;
-
-   if (0)
-      VG_(printf)("p=%p %x tst->os_state.valgrind_stack_base=%p\n",
-                  p, *p, tst->os_state.valgrind_stack_base);
-
-   return ((Addr)p) - tst->os_state.valgrind_stack_base;
-}
-
-
-/* Run a thread all the way to the end, then do appropriate exit actions
-   (this is the last-one-out-turn-off-the-lights bit). 
-*/
-
 /* Call f(arg1), but first switch stacks, using 'stack' as the new
    stack, and use 'retaddr' as f's return-to address.  Also, clear all
    the integer registers before entering f.*/
@@ -291,7 +219,7 @@ static SysRes do_clone ( ThreadId ptid,
    ThreadState* ptst = VG_(get_ThreadState)(ptid);
    ThreadState* ctst = VG_(get_ThreadState)(ctid);
    UWord*       stack;
-   Segment*     seg;
+   NSegment*    seg;
    SysRes       res;
    Int          eax;
    vki_sigset_t blockall, savedmask;
@@ -301,7 +229,11 @@ static SysRes do_clone ( ThreadId ptid,
    vg_assert(VG_(is_running_thread)(ptid));
    vg_assert(VG_(is_valid_tid)(ctid));
 
-   stack = allocstack(ctid);
+   stack = (UWord*)ML_(allocstack)(ctid);
+   if (stack == NULL) {
+      res = VG_(mk_SysRes_Error)( VKI_ENOMEM );
+      goto out;
+   }
 
    /* Copy register state
 
@@ -339,14 +271,14 @@ static SysRes do_clone ( ThreadId ptid,
       memory mappings and try to derive some useful information.  We
       assume that esp starts near its highest possible value, and can
       only go down to the start of the mmaped segment. */
-   seg = VG_(find_segment)((Addr)esp);
-   if (seg) {
+   seg = VG_(am_find_nsegment)((Addr)esp);
+   if (seg && seg->kind != SkResvn) {
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(esp);
-      ctst->client_stack_szB  = ctst->client_stack_highest_word - seg->addr;
+      ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
 	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
-		     ctid, seg->addr, VG_PGROUNDUP(esp));
+		     ctid, seg->start, VG_PGROUNDUP(esp));
    } else {
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with ESP(%p) unmapped\n",
 		   ctid, esp);
@@ -372,8 +304,8 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &blockall, &savedmask);
 
    /* Create the new thread */
-   eax = do_syscall_clone_x86_netbsd(
-            start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
+   eax = do_syscall_clone_x86_netbsdelf2(
+            ML_(start_thread_NORETURN), stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );
    res = VG_(mk_SysRes_x86_netbsdelf2)( eax );
@@ -390,52 +322,6 @@ static SysRes do_clone ( ThreadId ptid,
    return res;
 }
 
-
-/* Do a clone which is really a fork() */
-static SysRes do_fork_clone ( ThreadId tid, 
-                              UInt flags, Addr esp, 
-                              Int* parent_tidptr, 
-                              Int* child_tidptr )
-{
-   vki_sigset_t fork_saved_mask;
-   vki_sigset_t mask;
-   SysRes       res;
-
-   if (flags & (VKI_CLONE_SETTLS | VKI_CLONE_FS | VKI_CLONE_VM 
-                | VKI_CLONE_FILES | VKI_CLONE_VFORK))
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-   /* Block all signals during fork, so that we can fix things up in
-      the child without being interrupted. */
-   VG_(sigfillset)(&mask);
-   VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
-
-   /* Since this is the fork() form of clone, we don't need all that
-      VG_(clone) stuff */
-   res = VG_(do_syscall5)( __NR_clone, flags, 
-                           (UWord)NULL, (UWord)parent_tidptr, 
-                           (UWord)NULL, (UWord)child_tidptr );
-
-   if (!res.isError && res.val == 0) {
-      /* child */
-      VG_(do_atfork_child)(tid);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   } 
-   else 
-   if (!res.isError && res.val > 0) {
-      /* parent */
-      if (VG_(clo_trace_syscalls))
-	  VG_(printf)("   clone(fork): process %d created child %d\n", 
-                      VG_(getpid)(), res.val);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   }
-
-   return res;
-}
 
 /* ---------------------------------------------------------------------
    LDT/GDT simulation
@@ -982,21 +868,24 @@ PRE(sys_clone)
 
    if (ARG1 & VKI_CLONE_PARENT_SETTID) {
       PRE_MEM_WRITE("clone(parent_tidptr)", ARG3, sizeof(Int));
-      if (!VG_(is_addressable)(ARG3, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG3, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
       PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
-      if (!VG_(is_addressable)(ARG5, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & VKI_CLONE_SETTLS) {
       PRE_MEM_READ("clone(tls_user_desc)", ARG4, sizeof(vki_modify_ldt_t));
-      if (!VG_(is_addressable)(ARG4, sizeof(vki_modify_ldt_t), VKI_PROT_READ)) {
+      if (!VG_(am_is_valid_for_client)(ARG4, sizeof(vki_modify_ldt_t), 
+                                             VKI_PROT_READ)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
@@ -1017,6 +906,9 @@ PRE(sys_clone)
       Everything else is rejected. 
    */
    if (
+        1 ||
+        /* 11 Nov 05: for the time being, disable this ultra-paranoia.
+           The switch below probably does a good enough job. */
           (cloneflags == 0x100011 || cloneflags == 0x1200011
                                   || cloneflags == 0x7D0F00
                                   || cloneflags == 0x790F00
@@ -1050,9 +942,8 @@ PRE(sys_clone)
 
    case 0: /* plain fork */
       SET_STATUS_from_SysRes(
-         do_fork_clone(tid,
+         ML_(do_fork_clone)(tid,
                        cloneflags,      /* flags */
-                       (Addr)ARG2,      /* child ESP */
                        (Int *)ARG3,     /* parent_tidptr */
                        (Int *)ARG5));   /* child_tidptr */
       break;
@@ -1391,72 +1282,45 @@ PRE(old_mmap)
          unsigned long offset;
    }; */
    UWord a1, a2, a3, a4, a5, a6;
+   SysRes r;
 
    UWord* args = (UWord*)ARG1;
    PRE_REG_READ1(long, "old_mmap", struct mmap_arg_struct *, args);
    PRE_MEM_READ( "old_mmap(args)", (Addr)args, 6*sizeof(UWord) );
 
-   a1 = args[0];
-   a2 = args[1];
-   a3 = args[2];
-   a4 = args[3];
-   a5 = args[4];
-   a6 = args[5];
+   a1 = args[1-1];
+   a2 = args[2-1];
+   a3 = args[3-1];
+   a4 = args[4-1];
+   a5 = args[5-1];
+   a6 = args[6-1];
 
    PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
          a1, (ULong)a2, a3, a4, a5, a6 );
 
-   if (a2 == 0) {
-      /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
-         shall be established. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-
-   if (/*(a4 & VKI_MAP_FIXED) &&*/ (0 != (a1 & (VKI_PAGE_SIZE-1)))) {
-      /* zap any misaligned addresses. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-
-   if (a4 & VKI_MAP_FIXED) {
-      if (!ML_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
-         PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
-         SET_STATUS_Failure( VKI_ENOMEM );
-      }
-   } else {
-      Addr a = VG_(find_map_space)(a1, a2, True);
-      if (0) VG_(printf)("find_map_space(%p, %d) -> %p\n",a1,a2,a);
-      if (a == 0 && a1 != 0) {
-         a1 = VG_(find_map_space)(0, a2, True);
-      }
-      else
-         a1 = a;
-      if (a1 == 0)
-         SET_STATUS_Failure( VKI_ENOMEM );
-      else
-         a4 |= VKI_MAP_FIXED;
-   }
-
-   if (! FAILURE) {
-      SysRes res = VG_(mmap_native)((void*)a1, a2, a3, a4, a5, a6);
-      SET_STATUS_from_SysRes(res);
-      if (!res.isError) {
-         vg_assert(ML_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
-         ML_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
-      }
-   }
-
-   if (0)
-   VG_(printf)("old_mmap( %p, fixed %d ) -> %s(%p)\n", 
-               args[0], 
-               args[3]&VKI_MAP_FIXED, 
-               FAILURE ? "Fail" : "Success", RES_unchecked);
-
-   /* Stay sane */
-   if (SUCCESS && (args[3] & VKI_MAP_FIXED))
-      vg_assert(RES == args[0]);
+   r = ML_(generic_PRE_sys_mmap)( tid, a1, a2, a3, a4, a5, (Off64T)a6 );
+   SET_STATUS_from_SysRes(r);
 }
+
+/* PRE(sys_mmap2) */
+/* { */
+/*    SysRes r; */
+
+/*    // Exactly like old_mmap() except: */
+/*    //  - all 6 args are passed in regs, rather than in a memory-block. */
+/*    //  - the file offset is specified in pagesize units rather than bytes, */
+/*    //    so that it can be used for files bigger than 2^32 bytes. */
+/*    PRINT("sys_mmap2 ( %p, %llu, %d, %d, %d, %d )", */
+/*          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 ); */
+/*    PRE_REG_READ6(long, "mmap2", */
+/*                  unsigned long, start, unsigned long, length, */
+/*                  unsigned long, prot,  unsigned long, flags, */
+/*                  unsigned long, fd,    unsigned long, offset); */
+
+/*    r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5,  */
+/*                                        VKI_PAGE_SIZE * (Off64T)ARG6 ); */
+/*    SET_STATUS_from_SysRes(r); */
+/* } */
 
 // XXX: lstat64/fstat64/stat64 are generic, but not necessarily
 // applicable to every architecture -- I think only to 32-bit archs.
@@ -1964,7 +1828,6 @@ POST(sys_rasctl)
 {
    I_die_here;
 }
-
 #undef PRE
 #undef POST
 
@@ -1977,7 +1840,8 @@ POST(sys_rasctl)
 #define PLAX_(sysno, name)    WRAPPER_ENTRY_X_(x86_netbsdelf2, sysno, name) 
 #define PLAXY(sysno, name)    WRAPPER_ENTRY_XY(x86_netbsdelf2, sysno, name)
 
-
+// for system calls required in netbsd, die stubs are implemented
+// under PLAX_. So these a in the same file and can be moved about later.
 // This table maps from __NR_xxx syscall numbers (from
 // linux/include/asm-i386/unistd.h) to the appropriate PRE/POST sys_foo()
 // wrappers on x86 (as per sys_call_table in linux/arch/i386/kernel/entry.S).
@@ -2017,10 +1881,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_getpid,            sys_getpid),         // 20
    NBSDX_(__NR_mount,            sys_mount),          // 21
    NBSDX_(__NR_unmount,          sys_unmount),        // 22
-   GENX_(__NR_setuid,            sys_setuid16),       // 23 ## P
-   GENX_(__NR_getuid,            sys_getuid16),       // 24 ## P
-
-   GENX_(__NR_geteuid,           sys_geteuid16),      // 25
+/*    GENX_(__NR_setuid,            sys_setuid),       // 23 ## P */
+   GENX_(__NR_setuid,            sys_ni_syscall),       // 23 ## P
+/*    GENX_(__NR_getuid,            sys_getuid),       // 24 ## P */
+   GENX_(__NR_getuid,            sys_ni_syscall),       // 24 ## P
+/*    GENX_(__NR_geteuid,           sys_geteuid),      // 25 */
+   GENX_(__NR_geteuid,           sys_ni_syscall),      // 25
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
    NBSDXY(__NR_recvmsg,          sys_recvmsg),        // 27
    NBSDX_(__NR_sendmsg,          sys_sendmsg),        // 28
@@ -2040,13 +1906,14 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    NBSDXY(__NR_compat_43_lstat43,sys_compat_lstat),   // 40
    GENXY(__NR_dup,               sys_dup),            // 41
-   GENXY(__NR_pipe,              sys_pipe),           // 42
-   GENX_(__NR_getegid,           sys_getegid16),      // 43
+   GENX_(__NR_pipe,              sys_ni_syscall),           // 42
+/*    GENX_(__NR_pipe,              sys_pipe),           // 42 */
+   GENX_(__NR_getegid,           sys_getegid),      // 43
    GENX_(__NR_profil,            sys_ni_syscall),     // 44
 
    GENX_(__NR_ktrace,            sys_ni_syscall),     // 45
    NBSDXY(__NR_compat_13_sigaction13, sys_compat_sigaction),     // 46
-   GENX_(__NR_getgid,            sys_getgid16),       // 47
+   GENX_(__NR_getgid,            sys_getgid),       // 47
    NBSDXY(__NR_compat_13_sigprocmask13, sys_compat_sigprocmask), // 48
    NBSDX_(__NR___getlogin,       sys_getlogin),       // 49
 
@@ -2085,9 +1952,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // (__NR_vhangup,   sys_vhangup),                     // 76 obsolete
 // (__NR_vlimit,    sys_vlimit),                      // 77 obsolete
    GENXY(__NR_mincore,           sys_mincore),        // 78
-   GENXY(__NR_getgroups,         sys_getgroups16),    // 79
+   GENXY(__NR_getgroups,         sys_getgroups),    // 79
 
-   GENX_(__NR_setgroups,         sys_setgroups16),    // 80
+   GENX_(__NR_setgroups,         sys_setgroups),    // 80
    GENX_(__NR_getpgrp,           sys_getpgrp),        // 81
    GENX_(__NR_setpgid,           sys_setpgid),        // 82
    GENXY(__NR_setitimer,         sys_setitimer),      // 83
@@ -2142,12 +2009,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_readv,             sys_readv),          // 120
    GENX_(__NR_writev,            sys_writev),         // 121
    GENX_(__NR_settimeofday,      sys_settimeofday),   // 122
-   GENX_(__NR_fchown,            sys_fchown16),       // 123
+   GENX_(__NR_fchown,            sys_fchown),       // 123
    GENX_(__NR_fchmod,            sys_fchmod),         // 124
 
    NBSDXY(__NR_compat_43_orecvfrom, sys_compat_orecvfrom), // 125
-   GENX_(__NR_setreuid,          sys_setreuid16),     // 126
-   GENX_(__NR_setregid,          sys_setregid16),     // 127
+   GENX_(__NR_setreuid,          sys_setreuid),     // 126
+   GENX_(__NR_setregid,          sys_setregid),     // 127
    GENX_(__NR_rename,            sys_rename),         // 128
    NBSDX_(__NR_compat_43_otruncate, sys_compat_otruncate),  // 129
 
@@ -2174,7 +2041,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_compat_43_osetrlimit, sys_ni_syscall),   // 145
    NBSDX_(__NR_compat_43_okillpg,sys_compat_okillpg), // 146
    GENX_(__NR_setsid,            sys_setsid),         // 147
-   GENX_(__NR_quotactl,          sys_quotactl),       // 148
+/*    GENX_(__NR_quotactl,          sys_quotactl),       // 148 */
+   GENX_(__NR_quotactl,          sys_ni_syscall),       // 148
    NBSDX_(__NR_compat_43_oquota, sys_compat_oquota),  // 149 XXX What's this?
 
    NBSDXY(__NR_compat_43_ogetsockname,sys_compat_ogetsockname),// 150
@@ -2215,7 +2083,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(179,                    sys_ni_syscall),     // 179
 
    GENX_(180,                    sys_ni_syscall),     // 180
-   GENX_(__NR_setgid,            sys_setgid16),       // 181
+   GENX_(__NR_setgid,            sys_setgid),       // 181
    NBSDX_(__NR_setegid,          sys_setegid),        // 182
    NBSDX_(__NR_seteuid,          sys_seteuid),        // 183
    NBSDXY(__NR_lfs_bmapv,        sys_lfs_bmapv),      // 184
@@ -2236,7 +2104,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDXY(__NR_compat_12_getdirentries, sys_compat_getdirentries), // 196
    PLAX_(__NR_mmap,              old_mmap),           // 197
    PLAXY(__NR___syscall,         sys_syscall),        // 198
-   GENX_(__NR_lseek,             sys_lseek),          // 199
+   GENX_(__NR_lseek,             sys_ni_syscall),          // 199
+/*    GENX_(__NR_lseek,             sys_lseek),          // 199 */
 
    GENX_(__NR_truncate,          sys_truncate),       // 200
    GENX_(__NR_ftruncate,         sys_ftruncate),      // 201
@@ -2280,22 +2149,34 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // XXX: Note: There may be trouble here.  stuff like (timer_create+7) in the
 //       linux versions may indicate a stupid reliance on position of
 //       timer_create in the syscall table.
-   GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232
-   GENX_(__NR_clock_settime,     sys_clock_settime),  // 233
-   GENXY(__NR_clock_getres,      sys_clock_getres),   // 234
+/*    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232 */
+   GENXY(__NR_clock_gettime,     sys_ni_syscall),  // 232
+/*    GENX_(__NR_clock_settime,     sys_clock_settime),  // 233 */
+   GENX_(__NR_clock_settime,     sys_ni_syscall),  // 233
+/*    GENXY(__NR_clock_getres,      sys_clock_getres),   // 234 */
+   GENXY(__NR_clock_getres,      sys_ni_syscall),   // 234
 
-   GENXY(__NR_timer_create,      sys_timer_create),   // 235
-   GENX_(__NR_timer_delete,      sys_timer_delete),   // 236
-   GENXY(__NR_timer_settime,     sys_timer_settime),  // 237
-   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238
-   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239
+/*    GENXY(__NR_timer_create,      sys_timer_create),   // 235 */
+/*    GENX_(__NR_timer_delete,      sys_timer_delete),   // 236 */
+/*    GENXY(__NR_timer_settime,     sys_timer_settime),  // 237 */
+/*    GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238 */
+/*    GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239 */
+
+   GENXY(__NR_timer_create,      sys_ni_syscall),   // 235
+   GENX_(__NR_timer_delete,      sys_ni_syscall),   // 236
+   GENXY(__NR_timer_settime,     sys_ni_syscall),  // 237
+   GENXY(__NR_timer_gettime,     sys_ni_syscall),  // 238
+   GENX_(__NR_timer_getoverrun,  sys_ni_syscall),// 239
 
    GENXY(__NR_nanosleep,         sys_nanosleep),      // 240
    GENX_(__NR_fdatasync,         sys_fdatasync),      // 241
-   GENX_(__NR_mlockall,          sys_mlockall),       // 242
-   GENX_(__NR_munlockall,        sys_munlockall),     // 243
+/*    GENX_(__NR_mlockall,          sys_mlockall),       // 242 */
+/*    GENX_(__NR_munlockall,        sys_munlockall),     // 243 */
+   GENX_(__NR_mlockall,          sys_ni_syscall),       // 242
+   GENX_(__NR_munlockall,        sys_ni_syscall),     // 243
 // XXX: Is this really the same as rt_sigtimedwait??
-   GENX_(__NR___sigtimedwait,    sys_rt_sigtimedwait),// 244
+/*    GENX_(__NR___sigtimedwait,    sys_rt_sigtimedwait),// 244 */
+   GENX_(__NR___sigtimedwait,    sys_ni_syscall),// 244
 
    GENX_(__NR__ksem_init,        sys_ni_syscall),     // 247  XXX: What's this?
    GENX_(__NR__ksem_open,        sys_ni_syscall),     // 248  XXX: What's this?
@@ -2349,7 +2230,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR___vfork14,         sys_fork),           // 282
 // Only slightly different semantics from normal chown/fchown/lchown call
    GENX_(__NR___posix_chown,     sys_chown),          // 283
-   GENX_(__NR___posix_fchown,    sys_fchown16),       // 284
+   GENX_(__NR___posix_fchown,    sys_fchown),       // 284
 
    GENX_(__NR___posix_lchown,    sys_lchown),         // 285
    GENX_(__NR_getsid,            sys_getsid),         // 286
@@ -2360,9 +2241,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDX_(__NR_pwritev,          sys_pwritev),        // 290
 // XXX: Are the following funcs the same thing?
    PLAXY(__NR_compat_16___sigaction14, sys_sigaction),// 291
-   GENXY(__NR___sigpending14,    sys_sigpending),     // 292
-   GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293
-   GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294
+/*    GENXY(__NR___sigpending14,    sys_sigpending),     // 292 */
+/*    GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293 */
+/*    GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294 */
+   GENXY(__NR___sigpending14,    sys_ni_syscall),     // 292
+   GENXY(__NR___sigprocmask14,   sys_ni_syscall),    // 293
+   GENX_(__NR___sigsuspend14,    sys_ni_syscall),     // 294
 
    PLAX_(__NR_compat_16___sigreturn14, sys_sigreturn),// 295
    GENXY(__NR___getcwd,          sys_getcwd),         // 296

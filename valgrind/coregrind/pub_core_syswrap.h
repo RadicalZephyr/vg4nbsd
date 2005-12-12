@@ -36,9 +36,6 @@
 // wrappers, but also the main syscall jacketing code.
 //--------------------------------------------------------------------
 
-// Return how many bytes of a thread's Valgrind stack are unused
-extern SSizeT VG_(stack_unused)(ThreadId tid);
-
 // Allocates a stack for the first thread, then runs it,
 // as if the thread had been set up by clone()
 extern void VG_(main_thread_wrapper_NORETURN)(ThreadId tid);
@@ -68,6 +65,15 @@ extern void VG_(cleanup_thread) ( ThreadArchState* );
 /* fd leakage calls. */
 extern void VG_(init_preopened_fds) ( void );
 extern void VG_(show_open_fds) ( void );
+
+// When the final thread is done, where shall I call to shutdown the
+// system cleanly?  Is set once at startup (in m_main) and never
+// changes after that.  Is basically a pointer to the exit
+// continuation.  This is all just a nasty hack to avoid calling
+// directly from m_syswrap to m_main at exit, since that would cause
+// m_main to become part of a module cycle, which is silly.
+extern void (* VG_(address_of_m_main_shutdown_actions_NORETURN) )
+            (ThreadId,VgSchedReturnCode);
 
 #endif   // __PUB_CORE_SYSWRAP_H
 

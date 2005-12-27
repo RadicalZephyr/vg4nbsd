@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- The main module.                             pub_core_main.h ---*/
+/*--- An ordered set implemenation.                pub_core_oset.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -28,28 +28,21 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PUB_CORE_MAIN_H
-#define __PUB_CORE_MAIN_H
+#ifndef __PUB_CORE_OSET_H
+#define __PUB_CORE_OSET_H
 
 //--------------------------------------------------------------------
-// PURPOSE: This module is the main module, ie. the one holding main().
-// It arguably shouldn't export anything to other modules, since it depends
-// on almost every other module!  But currently it exports quite a few
-// things.
+// PURPOSE:  A generic data structure with fast (eg. amortised log(n) or
+// better) insertion, lookup and deletion of elements.  It does not allow
+// duplicates.
 //--------------------------------------------------------------------
 
-// Help set up the child used when doing execve() with --trace-children=yes
-Char* VG_(build_child_VALGRINDCLO) ( Char* exename );
-Char* VG_(build_child_exename)     ( void );
+#include "pub_tool_oset.h"
 
-// Do everything which needs doing before the process finally ends,
-// like printing reports, etc
-extern void VG_(shutdown_actions_NORETURN) (
-               ThreadId tid, 
-               VgSchedReturnCode tids_schedretcode 
-            );
+// No core-only exports;  everything in this module is visible to both
+// the core and tools.
 
-#endif   // __PUB_CORE_MAIN_H
+#endif   // __PUB_CORE_OSET_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

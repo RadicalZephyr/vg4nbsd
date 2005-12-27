@@ -1,0 +1,20 @@
+AM_CFLAGS_BASE = -O -g -Wmissing-prototypes -Winline -Wall -Wshadow \
+                 -Wpointer-arith -Wstrict-prototypes -Wmissing-declarations
+
+AM_CFLAGS_PIC = -fpic -fno-omit-frame-pointer
+
+AM_CPPFLAGS_X86_LINUX = $(add_includes_x86_linux)
+AM_CFLAGS_X86_LINUX = $(WERROR) @FLAG_M32@ @PREFERRED_STACK_BOUNDARY@ $(AM_CFLAGS_BASE)
+AM_CCASFLAGS_X86_LINUX = $(add_includes_x86_linux) @FLAG_M32@ -g
+
+AM_CPPFLAGS_AMD64_LINUX = $(add_includes_amd64_linux)
+AM_CFLAGS_AMD64_LINUX = $(WERROR) -m64 -fomit-frame-pointer @PREFERRED_STACK_BOUNDARY@ $(AM_CFLAGS_BASE)
+AM_CCASFLAGS_AMD64_LINUX = $(add_includes_amd64_linux) -m64 -g
+
+AM_CPPFLAGS_PPC32_LINUX = $(add_includes_ppc32_linux)
+AM_CFLAGS_PPC32_LINUX = $(WERROR) $(AM_CFLAGS_BASE)
+AM_CCASFLAGS_PPC32_LINUX = $(add_includes_ppc32_linux) -Wa,-maltivec -g
+
+AM_CPPFLAGS = $(AM_CPPFLAGS_@VG_MAKE_PLATFORM@)
+AM_CFLAGS = $(AM_CFLAGS_@VG_MAKE_PLATFORM@)
+AM_CCASFLAGS = $(AM_CCASFLAGS_@VG_MAKE_PLATFORM@)

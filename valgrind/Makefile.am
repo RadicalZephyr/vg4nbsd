@@ -16,8 +16,8 @@ TOOLS =		memcheck \
 # And we want to include Addrcheck in the distro, but not compile/test it.
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
-SUBDIRS = 	include coregrind . tests auxprogs $(TOOLS) helgrind docs
-DIST_SUBDIRS =	$(SUBDIRS) addrcheck
+SUBDIRS = include coregrind . tests auxprogs $(TOOLS) helgrind docs
+DIST_SUBDIRS  = $(SUBDIRS) addrcheck
 
 SUPP_FILES = \
 	glibc-2.2.supp glibc-2.3.supp glibc-2.4.supp \
@@ -32,8 +32,25 @@ incincdir = $(includedir)/valgrind
 nodist_incinc_HEADERS = $(VEX_PUBLIC_HDRS)
 
 BUILT_SOURCES  = default.supp valgrind.pc
-CLEANFILES     =
+CLEANFILES     = 
 DISTCLEANFILES = default.supp
+
+if VG_X86_LINUX
+BUILT_SOURCES += valt_load_address_x86_linux.lds
+CLEANFILES += valt_load_address_x86_linux.lds
+endif
+if VG_AMD64_LINUX
+BUILT_SOURCES += valt_load_address_amd64_linux.lds
+CLEANFILES += valt_load_address_amd64_linux.lds
+endif
+if VG_PPC32_LINUX
+BUILT_SOURCES += valt_load_address_ppc32_linux.lds
+CLEANFILES += valt_load_address_ppc32_linux.lds
+endif
+if VG_X86_NETBSD
+BUILT_SOURCES += valt_load_address_x86_netbsd.lds
+CLEANFILES += valt_load_address_x86_netbsd.lds
+endif
 
 default.supp: $(SUPP_FILES)
 
@@ -42,13 +59,12 @@ regtest: check
 	@PERL@ tests/vg_regtest $(TOOLS)
 
 EXTRA_DIST = \
-	FAQ.txt \
 	ACKNOWLEDGEMENTS \
 	README_DEVELOPERS \
 	README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL \
 	valgrind.spec.in valgrind.pc.in \
-	Makefile.all.am Makefile.tool.am Makefile.core-AM_CPPFLAGS.am \
+	Makefile.all.am Makefile.tool.am Makefile.core.am \
 	Makefile.tool-inplace.am \
 	$(VEX_PRIMARY_SOURCES)
 
@@ -162,10 +178,30 @@ VEX_PRIMARY_SOURCES = \
 #
 # So we search for the line with a hex value "+ SIZEOF_HEADERS", and replace
 # all the hex values in that line with "valt_load_address".
-#valt_load_address.lds: Makefile
+#valt_load_address_x86_linux.lds: Makefile
+#	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | sed \
+#		-e '1,/^=====\+$$/d' \
+#		-e '/^=====\+$$/d' \
+#		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+#	|| rm -f $@
+#
+#valt_load_address_amd64_linux.lds: Makefile
+#	$(CC) -m64 -Wl,--verbose -nostdlib 2>&1 | sed \
+#		-e '1,/^=====\+$$/d' \
+#		-e '/^=====\+$$/d' \
+#		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+#	|| rm -f $@
+#
+#valt_load_address_ppc32_linux.lds: Makefile
 #	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
 #		-e '1,/^=====\+$$/d' \
 #		-e '/^=====\+$$/d' \
 #		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
 #	|| rm -f $@
-
+#
+#valt_load_address_x86_netbsd.lds: Makefile
+#	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | sed \
+#		-e '1,/^=====\+$$/d' \
+#		-e '/^=====\+$$/d' \
+#		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+#	|| rm -f $@

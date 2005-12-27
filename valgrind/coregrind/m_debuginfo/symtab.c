@@ -36,7 +36,6 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_machine.h"
 #include "pub_core_mallocfree.h"
@@ -44,6 +43,8 @@
 #include "pub_core_profile.h"
 #include "pub_core_redir.h"
 #include "pub_core_tooliface.h"     // For VG_(needs).data_syms
+
+#include "pub_core_aspacemgr.h"
 
 #include "priv_symtypes.h"
 #include "priv_symtab.h"
@@ -92,6 +93,131 @@ static SegInfo* segInfo_list = NULL;
 #else
 # error "VG_WORDSIZE should be 4 or 8"
 #endif
+
+
+/*------------------------------------------------------------*/
+/*--- Forwards decls                                       ---*/
+/*------------------------------------------------------------*/
+
+static Bool is_elf_object_file ( const void *buf );
+static void unload_symbols ( Addr start, SizeT length );
+
+
+/*------------------------------------------------------------*/
+/*--- TOP LEVEL                                            ---*/
+/*------------------------------------------------------------*/
+
+/* If this mapping is at the beginning of a file, isn't part of
+   Valgrind, is at least readable and seems to contain an object
+   file, then try reading symbols from it.
+
+   Getting this heuristic right is critical.  On x86-linux,
+   objects are typically mapped twice:
+
+   1b8fb000-1b8ff000 r-xp 00000000 08:02 4471477 vgpreload_memcheck.so
+   1b8ff000-1b900000 rw-p 00004000 08:02 4471477 vgpreload_memcheck.so
+
+   whereas ppc32-linux mysteriously does this:
+
+   118a6000-118ad000 r-xp 00000000 08:05 14209428 vgpreload_memcheck.so
+   118ad000-118b6000 ---p 00007000 08:05 14209428 vgpreload_memcheck.so
+   118b6000-118bd000 rwxp 00000000 08:05 14209428 vgpreload_memcheck.so
+
+   The third mapping should not be considered to have executable code in.
+   Therefore a test which works for both is: r and x and NOT w.  Reading
+   symbols from the rwx segment -- which overlaps the r-x segment in the
+   file -- causes the redirection mechanism to redirect to addresses in
+   that third segment, which is wrong and causes crashes.
+*/
+
+static void nuke_syms_in_range ( Addr start, SizeT length )
+{
+   /* Repeatedly scan the segInfo list, looking for segInfos in this
+      range, and call unload_symbols on the segInfo's stated start
+      point.  This modifies the list, hence the multiple
+      iterations. */
+   Bool found;
+   SegInfo* curr;
+
+   while (True) {
+      found = False;
+
+      curr = segInfo_list;
+      while (True) {
+         if (curr == NULL) break;
+         if (start+length-1 < curr->start || curr->start+curr->size-1 < start) {
+	   /* no overlap */
+	 } else {
+	   found = True;
+	   break;
+	 }
+	 curr = curr->next;
+      }
+
+      if (!found) break;
+      unload_symbols( curr->start, curr->size );
+
+   }
+}
+
+/* Notify the debuginfo system about a new mapping.  This is the way
+   new debug information gets loaded.  If allow_SkFileV is True, it
+   will try load debug info if the mapping at 'a' belongs to Valgrind;
+   whereas normally (False) it will not do that.  This allows us to
+   carefully control when the thing will read symbols from the
+   Valgrind executable itself. */
+
+void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
+{
+   NSegment* seg;
+   HChar*    filename;
+   Bool      ok;
+
+   seg = VG_(am_find_nsegment)(a);
+   vg_assert(seg);
+
+   filename = VG_(am_get_filename)( seg );
+   if (!filename)
+      return;
+
+   filename = VG_(arena_strdup)( VG_AR_SYMTAB, filename );
+
+   ok = (seg->kind == SkFileC || (seg->kind == SkFileV && allow_SkFileV))
+        && seg->offset == 0
+        && seg->fnIdx != -1
+        && seg->hasR
+        && seg->hasX
+        && !seg->hasW
+        && is_elf_object_file( (const void*)seg->start );
+
+   if (!ok) {
+      VG_(arena_free)(VG_AR_SYMTAB, filename);
+      return;
+   }
+
+   nuke_syms_in_range( seg->start, seg->end + 1 - seg->start );
+   VG_(read_seg_symbols)( seg->start, seg->end + 1 - seg->start, 
+                          seg->offset, filename );
+
+   /* VG_(read_seg_symbols) makes its own copy of filename, so is safe
+      to free it. */
+   VG_(arena_free)(VG_AR_SYMTAB, filename);
+}
+
+void VG_(di_notify_munmap)( Addr a, SizeT len )
+{
+   nuke_syms_in_range(a, len);
+}
+
+void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot )
+{
+   Bool exe_ok = toBool(prot & VKI_PROT_EXEC);
+#  if defined(VGP_x86_linux)
+   exe_ok = exe_ok || toBool(prot & VKI_PROT_READ);
+#  endif
+   if (0 && !exe_ok)
+      nuke_syms_in_range(a, len);
+}
 
 
 /*------------------------------------------------------------*/
@@ -273,23 +399,29 @@ void ML_(addLineInfo) ( SegInfo* si,
    /* vg_assert(this < si->start + si->size && next-1 >= si->start); */
    if (this >= si->start + si->size || next-1 < si->start) {
        if (0)
-       VG_(message)(Vg_DebugMsg, 
-                    "warning: ignoring line info entry falling "
-                    "outside current SegInfo: %p %p %p %p",
-                    si->start, si->start + si->size, 
-                    this, next-1);
+          VG_(message)(Vg_DebugMsg, 
+                       "warning: ignoring line info entry falling "
+                       "outside current SegInfo: %p %p %p %p",
+                       si->start, si->start + si->size, 
+                       this, next-1);
        return;
    }
 
    vg_assert(lineno >= 0);
    if (lineno > MAX_LINENO) {
-       VG_(message)(Vg_UserMsg, 
-                    "warning: ignoring line info entry with "
-                    "huge line number (%d)", lineno);
-       VG_(message)(Vg_UserMsg, 
-                    "         Can't handle line numbers "
-                    "greater than %d, sorry", MAX_LINENO);
-       return;
+      static Bool complained = False;
+      if (!complained) {
+         complained = True;
+         VG_(message)(Vg_UserMsg, 
+                      "warning: ignoring line info entry with "
+                      "huge line number (%d)", lineno);
+         VG_(message)(Vg_UserMsg, 
+                      "         Can't handle line numbers "
+                      "greater than %d, sorry", MAX_LINENO);
+         VG_(message)(Vg_UserMsg, 
+                      "(Nb: this message is only shown once)");
+      }
+      return;
    }
 
    loc.addr      = this;
@@ -368,6 +500,8 @@ void ML_(addScopeInfo) ( SegInfo* si,
 void ML_(addCfiSI) ( SegInfo* si, CfiSI* cfisi )
 {
    static const Bool debug = False;
+   UInt   new_sz, i;
+   CfiSI* new_tab;
 
    if (debug) {
       VG_(printf)("adding CfiSI: ");
@@ -375,9 +509,6 @@ void ML_(addCfiSI) ( SegInfo* si, CfiSI* cfisi )
    }
 
    vg_assert(cfisi->len > 0 && cfisi->len < 2000000);
-
-   UInt   new_sz, i;
-   CfiSI* new_tab;
 
    /* Rule out ones which are completely outside the segment.  These
       probably indicate some kind of bug, but for the meantime ignore
@@ -929,7 +1060,7 @@ void canonicaliseCfiSI ( SegInfo* si )
 /*--- Read info from a .so/exe file.                       ---*/
 /*------------------------------------------------------------*/
 
-Bool VG_(is_object_file)(const void *buf)
+static Bool is_elf_object_file(const void *buf)
 {
    {
       ElfXX_Ehdr *ehdr = (ElfXX_Ehdr *)buf;
@@ -1179,9 +1310,8 @@ calc_gnu_debuglink_crc32(UInt crc, const UChar *buf, Int len)
 static
 Addr open_debug_file( Char* name, UInt crc, UInt* size )
 {
-   SysRes fd;
+   SysRes fd, sres;
    struct vki_stat stat_buf;
-   Addr addr;
    UInt calccrc;
 
    fd = VG_(open)(name, VKI_O_RDONLY, 0);
@@ -1198,26 +1328,24 @@ Addr open_debug_file( Char* name, UInt crc, UInt* size )
 
    *size = stat_buf.st_size;
    
-   if ((addr = (Addr)VG_(mmap)(NULL, *size, VKI_PROT_READ,
-                               VKI_MAP_PRIVATE|VKI_MAP_NOSYMS, 
-                               0, fd.val, 0)) == (Addr)-1) 
-   {
-      VG_(close)(fd.val);
-      return 0;
-   }
+   sres = VG_(am_mmap_file_float_valgrind)
+             ( *size, VKI_PROT_READ, fd.val, 0 );
 
    VG_(close)(fd.val);
    
-   calccrc = calc_gnu_debuglink_crc32(0, (UChar*)addr, *size);
+   if (sres.isError)
+      return 0;
+
+   calccrc = calc_gnu_debuglink_crc32(0, (UChar*)sres.val, *size);
    if (calccrc != crc) {
-      int res = VG_(munmap)((void*)addr, *size);
-      vg_assert(0 == res);
+      SysRes res = VG_(am_munmap_valgrind)(sres.val, *size);
+      vg_assert(!res.isError);
       if (VG_(clo_verbosity) > 1)
 	 VG_(message)(Vg_DebugMsg, "... CRC mismatch (computed %08x wanted %08x)", calccrc, crc);
       return 0;
    }
    
-   return addr;
+   return sres.val;
 }
 
 /*
@@ -1261,7 +1389,7 @@ Bool read_lib_symbols ( SegInfo* si )
    ElfXX_Ehdr*   ehdr;       /* The ELF header                          */
    ElfXX_Shdr*   shdr;       /* The section table                       */
    UChar*        sh_strtab;  /* The section table's string table        */
-   SysRes        fd;
+   SysRes        fd, sres;
    Int           i;
    Bool          ok;
    Addr          oimage;
@@ -1272,7 +1400,8 @@ Bool read_lib_symbols ( SegInfo* si )
 
    oimage = (Addr)NULL;
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "Reading syms from %s (%p)", si->filename, si->start );
+      VG_(message)(Vg_DebugMsg, "Reading syms from %s (%p)", 
+                                si->filename, si->start );
 
    /* mmap the object image aboard, so that we can read symbols and
       line number info out of it.  It will be munmapped immediately
@@ -1291,17 +1420,18 @@ Bool read_lib_symbols ( SegInfo* si )
       return False;
    }
 
-   oimage = (Addr)VG_(mmap)( NULL, n_oimage, 
-                             VKI_PROT_READ, VKI_MAP_PRIVATE|VKI_MAP_NOSYMS, 
-                             0, fd.val, 0 );
+   sres = VG_(am_mmap_file_float_valgrind)
+             ( n_oimage, VKI_PROT_READ, fd.val, 0 );
 
    VG_(close)(fd.val);
 
-   if (oimage == ((Addr)(-1))) {
+   if (sres.isError) {
       VG_(message)(Vg_UserMsg, "warning: mmap failed on %s", si->filename );
       VG_(message)(Vg_UserMsg, "         no symbols or debug info loaded" );
       return False;
    }
+
+   oimage = sres.val;
 
    /* Ok, the object image is safely in oimage[0 .. n_oimage-1]. 
       Now verify that it is a valid ELF .so or executable image.
@@ -1311,7 +1441,7 @@ Bool read_lib_symbols ( SegInfo* si )
    ehdr = (ElfXX_Ehdr*)oimage;
 
    if (ok)
-      ok &= VG_(is_object_file)(ehdr);
+      ok &= is_elf_object_file(ehdr);
 
    if (!ok) {
       ML_(symerr)("Invalid ELF header, or missing stringtab/sectiontab.");
@@ -1395,11 +1525,8 @@ Bool read_lib_symbols ( SegInfo* si )
 	    else
 	       si->bss_size = 0;
 	 }
-#if 0
-	 /* 20050228: disabled this until VG_(next_segment) can be
-	    reinstated in some clean incarnation of the low level
-	    memory manager. */
-	 mapped = mapped & ~(VKI_PAGE_SIZE-1);
+
+         mapped = mapped & ~(VKI_PAGE_SIZE-1);
 	 mapped_end = (mapped_end + VKI_PAGE_SIZE - 1) & ~(VKI_PAGE_SIZE-1);
 
 	 if (VG_(needs).data_syms &&
@@ -1407,36 +1534,14 @@ Bool read_lib_symbols ( SegInfo* si )
 	     (mapped_end > (si->start+si->size))) {
 	    UInt newsz = mapped_end - si->start;
 	    if (newsz > si->size) {
-	       Segment *seg;
-
 	       if (0)
 		  VG_(printf)("extending mapping %p..%p %d -> ..%p %d\n", 
 			      si->start, si->start+si->size, si->size,
 			      si->start+newsz, newsz);
 
-	       for(seg = VG_(find_segment_containing)(si->start);
-		   seg != NULL && VG_(seg_overlaps)(seg, si->start, si->size); 
-		   seg = VG_(next_segment)(seg)) {
-		  if (seg->symtab == si)
-		     continue;
-
-		  if (seg->symtab != NULL)
-		     VG_(seginfo_decref)(seg->symtab, seg->addr);
-
-		  VG_(seginfo_incref)(si);
-		  seg->symtab = si;
-		  
-		  if (0)
-		     VG_(printf)("adding symtab %p (%p-%p) to segment %p (%p-%p)\n",
-				 si, si->start, si->start+newsz,
-				 seg, seg->addr, seg->addr+seg->len);
-	       }
-	       
 	       si->size = newsz;
 	    }
 	 }
-#endif
-
       }
    }
 
@@ -1494,6 +1599,7 @@ Bool read_lib_symbols ( SegInfo* si )
       for (i = 0; i < ehdr->e_shnum; i++) {
 #        define FIND(sec_name, sec_data, sec_size, sec_addr, in_exec, type) \
          if (0 == VG_(strcmp)(sec_name, sh_strtab + shdr[i].sh_name)) { \
+            Bool nobits; \
             if (0 != sec_data) \
                VG_(core_panic)("repeated section!\n"); \
             if (in_exec) \
@@ -1501,10 +1607,12 @@ Bool read_lib_symbols ( SegInfo* si )
             else \
                sec_data = (type)(oimage + shdr[i].sh_offset); \
             sec_size = shdr[i].sh_size; \
+            nobits = shdr[i].sh_type == SHT_NOBITS; \
             sec_addr = si->offset + shdr[i].sh_addr; \
             TRACE_SYMTAB( "%18s: %p .. %p\n", \
                           sec_name, sec_data, sec_data + sec_size - 1); \
-            if ( shdr[i].sh_offset + sec_size > n_oimage ) { \
+            /* SHT_NOBITS sections have zero size in the file. */ \
+            if ( shdr[i].sh_offset + (nobits ? 0 : sec_size) > n_oimage ) { \
                ML_(symerr)("   section beyond image end?!"); \
                goto out; \
             } \
@@ -1555,7 +1663,7 @@ Bool read_lib_symbols ( SegInfo* si )
          if ((dimage = find_debug_file(si->filename, debuglink, crc, &n_dimage)) != 0) {
             ehdr = (ElfXX_Ehdr*)dimage;
 
-            if (n_dimage >= sizeof(ElfXX_Ehdr) && VG_(is_object_file)(ehdr))
+            if (n_dimage >= sizeof(ElfXX_Ehdr) && is_elf_object_file(ehdr))
             {
                shdr = (ElfXX_Shdr*)(dimage + ehdr->e_shoff);
                sh_strtab = (UChar*)(dimage + shdr[ehdr->e_shstrndx].sh_offset);
@@ -1564,13 +1672,16 @@ Bool read_lib_symbols ( SegInfo* si )
                for (i = 0; i < ehdr->e_shnum; i++) {
 #                 define FIND(sec_name, sec_data, sec_size, type) \
                   if (0 == VG_(strcmp)(sec_name, sh_strtab + shdr[i].sh_name)) { \
+                     Bool nobits; \
                      if (0 != sec_data) \
                         VG_(core_panic)("repeated section!\n"); \
                      sec_data = (type)(dimage + shdr[i].sh_offset); \
                      sec_size = shdr[i].sh_size; \
+                     nobits = shdr[i].sh_type == SHT_NOBITS; \
                      TRACE_SYMTAB( "%18s: %p .. %p\n", \
                                    sec_name, sec_data, sec_data + sec_size - 1); \
-                     if ( shdr[i].sh_offset + sec_size > n_dimage ) { \
+                     /* SHT_NOBITS sections have zero size in the file. */ \
+                     if ( shdr[i].sh_offset + (nobits ? 0 : sec_size) > n_dimage ) { \
                         ML_(symerr)("   section beyond image end?!"); \
                         goto out; \
                      } \
@@ -1616,7 +1727,7 @@ Bool read_lib_symbols ( SegInfo* si )
                                          stabstr, stabstr_sz );
       }
 #     endif
-      if (debug_line) {
+      if (debug_info && debug_abbv && debug_line && debug_str) {
          ML_(read_debuginfo_dwarf2) ( si, 
                                       debug_info,   debug_info_sz,
                                       debug_abbv,
@@ -1631,14 +1742,14 @@ Bool read_lib_symbols ( SegInfo* si )
    res = True;
 
   out: {
-   Int m_res;
+   SysRes m_res;
    /* Last, but not least, heave the image(s) back overboard. */
    if (dimage) {
-      m_res = VG_(munmap) ( (void*)dimage, n_dimage );
-      vg_assert(0 == m_res);
+      m_res = VG_(am_munmap_valgrind) ( dimage, n_dimage );
+      vg_assert(!m_res.isError);
    }
-   m_res = VG_(munmap) ( (void*)oimage, n_oimage );
-   vg_assert(0 == m_res);
+   m_res = VG_(am_munmap_valgrind) ( oimage, n_oimage );
+   vg_assert(!m_res.isError);
    return res;
   } 
 }
@@ -1703,51 +1814,28 @@ SegInfo *VG_(read_seg_symbols) ( Addr seg_addr, SizeT seg_len,
 */
 static void unload_symbols ( Addr start, SizeT length )
 {
-   SegInfo *prev, *curr;
+   SegInfo** prev_next_ptr = &segInfo_list;
+   SegInfo*  curr          =  segInfo_list;
 
-   prev = NULL;
-   curr = segInfo_list;
-   while (True) {
-      if (curr == NULL) break;
-      if (start == curr->start) break;
-      prev = curr;
-      curr = curr->next;
-   }
-   if (curr == NULL) {
-      VGP_POPCC(VgpReadSyms);
-      return;
-   }
-
-   if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, 
-                   "discard syms at %p-%p in %s due to munmap()", 
-                   start, start+length, curr->filename ? curr->filename : (Char *)"???");
-
-   vg_assert(prev == NULL || prev->next == curr);
-
-   if (prev == NULL) {
-      segInfo_list = curr->next;
-   } else {
-      prev->next = curr->next;
+   while (curr) {
+      if (start == curr->start) {
+         // Found it;  remove from list and free it.
+         if (VG_(clo_verbosity) > 1)
+            VG_(message)(Vg_DebugMsg, 
+                         "discard syms at %p-%p in %s due to munmap()", 
+                         start, start+length,
+                         curr->filename ? curr->filename : (Char *)"???");
+         vg_assert(*prev_next_ptr == curr);
+         *prev_next_ptr = curr->next;
+         freeSegInfo(curr);
+         return;
+      }
+      prev_next_ptr = &curr->next;
+      curr          =  curr->next;
    }
 
-   freeSegInfo(curr);
-   return;
-}
-
-void VG_(seginfo_decref)(SegInfo *si, Addr start)
-{
-   vg_assert(si);
-   vg_assert(si->ref >= 1);
-   if (--si->ref == 0)
-      unload_symbols(si->start, si->size);
-}
-
-void VG_(seginfo_incref)(SegInfo *si)
-{
-   vg_assert(si);
-   vg_assert(si->ref > 0);
-   si->ref++;
+   // Not found.
+   VGP_POPCC(VgpReadSyms);
 }
 
 /*------------------------------------------------------------*/
@@ -2488,7 +2576,8 @@ Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf)
 }
 
 /* Returns True if OK.  If not OK, *{ip,sp,fp}P are not changed. */
-
+/* NOTE: this function may rearrange the order of entries in the
+   SegInfo list. */
 Bool VG_(use_CFI_info) ( /*MOD*/Addr* ipP,
                          /*MOD*/Addr* spP,
                          /*MOD*/Addr* fpP,
@@ -2500,10 +2589,15 @@ Bool VG_(use_CFI_info) ( /*MOD*/Addr* ipP,
    CfiSI*   cfisi = NULL;
    Addr     cfa, ipHere, spHere, fpHere, ipPrev, spPrev, fpPrev;
 
+   static UInt n_search = 0;
+   static UInt n_steps = 0;
+   n_search++;
 
    if (0) VG_(printf)("search for %p\n", *ipP);
 
    for (si = segInfo_list; si != NULL; si = si->next) {
+      n_steps++;
+
       /* Use the per-SegInfo summary address ranges to skip
 	 inapplicable SegInfos quickly. */
       if (si->cfisi_used == 0)
@@ -2521,6 +2615,40 @@ Bool VG_(use_CFI_info) ( /*MOD*/Addr* ipP,
 
    if (cfisi == NULL)
       return False;
+
+   if (0 && ((n_search & 0xFFFFF) == 0))
+      VG_(printf)("%u %u\n", n_search, n_steps);
+
+   /* Start of performance-enhancing hack: once every 16 (chosen
+      hackily after profiling) successful searchs, move the found
+      SegInfo one step closer to the start of the list.  This makes
+      future searches cheaper.  For starting konqueror on amd64, this
+      in fact reduces the total amount of searching done by the above
+      find-the-right-SegInfo loop by more than a factor of 20. */
+   if ((n_search & 0xF) == 0) {
+      /* Move si one step closer to the start of the list. */
+      SegInfo* si0 = segInfo_list;
+      SegInfo* si1 = NULL;
+      SegInfo* si2 = NULL;
+      SegInfo* tmp;
+      while (True) {
+         if (si0 == NULL) break;
+         if (si0 == si) break;
+         si2 = si1;
+         si1 = si0;
+         si0 = si0->next;
+      }
+      if (si0 == si && si0 != NULL && si1 != NULL && si2 != NULL) {
+         /* si0 points to si, si1 to its predecessor, and si2 to si1's
+            predecessor.  Swap si0 and si1, that is, move si0 one step
+            closer to the start of the list. */
+         tmp = si0->next;
+         si2->next = si0;
+         si0->next = si1;
+         si1->next = tmp;
+      }
+   }
+   /* End of performance-enhancing hack. */
 
    if (0) {
       VG_(printf)("found cfisi: "); 

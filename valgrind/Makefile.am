@@ -48,8 +48,11 @@ BUILT_SOURCES += valt_load_address_ppc32_linux.lds
 CLEANFILES += valt_load_address_ppc32_linux.lds
 endif
 if VG_X86_NETBSD
-BUILT_SOURCES += valt_load_address_x86_netbsd.lds
-CLEANFILES += valt_load_address_x86_netbsd.lds
+BUILT_SOURCES += valt_load_address.lds
+CLEANFILES += valt_load_address.lds
+# XXX sjamaan: We're using valt_load_address.lds now
+#BUILT_SOURCES += valt_load_address_x86_netbsd.lds
+#CLEANFILES += valt_load_address_x86_netbsd.lds
 endif
 
 default.supp: $(SUPP_FILES)

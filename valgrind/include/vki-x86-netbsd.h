@@ -334,6 +334,21 @@ typedef struct vki_sigcontext {
 #define VKI_S_ISUID  0004000
 #define VKI_S_ISGID  0002000
 #define VKI_S_ISVTX  0001000
+#define VKI_S_IRWXG 0000070                 /* RWX mask for group */
+#define VKI_S_IRGRP 0000040                 /* R for group */
+#define VKI_S_IWGRP 0000020                 /* W for group */
+#define VKI_S_IXGRP 0000010                 /* X for group */
+
+#define VKI_S_IRWXO 0000007                 /* RWX mask for other */
+#define VKI_S_IROTH 0000004                 /* R for other */
+#define VKI_S_IWOTH 0000002                 /* W for other */
+#define VKI_S_IXOTH 0000001                 /* X for other */
+
+#define VKI_S_IRWXU 0000700                 /* RWX mask for owner */
+#define VKI_S_IRUSR 0000400                 /* R for owner */
+#define VKI_S_IWUSR 0000200                 /* W for owner */
+#define VKI_S_IXUSR 0000100                 /* X for owner */
+
 
 #define VKI_S_ISLNK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFLNK)
 #define VKI_S_ISREG(m)	(((m) & VKI_S_IFMT) == VKI_S_IFREG)

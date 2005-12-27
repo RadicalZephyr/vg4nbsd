@@ -480,10 +480,19 @@ void VG_(srandom)(UInt s)
 
 // This random number generator is based on the one suggested in Kernighan
 // and Ritchie's "The C Programming Language".
-UInt VG_(random)(void)
+   
+// A pseudo-random number generator returning a random UInt.  If pSeed
+// is NULL, it uses its own seed, which starts at zero.  If pSeed is
+// non-NULL, it uses and updates whatever pSeed points at.
+      
+
+UInt VG_(random)( /*MOD*/UInt* pSeed )
 {
-   seed = (1103515245*seed + 12345);
-   return seed;
+   if (pSeed == NULL)
+      pSeed = &seed;
+
+   *pSeed = (1103515245 * *pSeed + 12345);
+   return *pSeed;
 }
 
 /*--------------------------------------------------------------------*/

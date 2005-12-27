@@ -117,7 +117,7 @@ extern Int VG_(log2) ( Int x );
 // A pseudo-random number generator returning a random UInt,  and its
 // seed function.
 extern void VG_(srandom) ( UInt seed );
-extern UInt VG_(random)  ( void );
+extern UInt VG_(random)  ( UInt * pSeed );
 
 #endif   // __PUB_TOOL_LIBCBASE_H
 

@@ -251,6 +251,8 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
              | (ixusr ? 1/*X_OK*/ : 0);
    SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
    return res.isError ? 1 : res.val;
+#elif defined(VGO_netbsdelf2) 
+   I_die_here;
 #else
 #  error "Don't know how to do VG_(access) on this OS"
 #endif

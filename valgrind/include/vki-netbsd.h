@@ -58,11 +58,12 @@
 */
 
 #ifndef __VKI_NETBSD_H
-#define __VKI_NETBSD_H
+#define _VKI_NETBSD_H
 
 //----------------------------------------------------------------------
 // Arch-specific POSIX types
 //----------------------------------------------------------------------
+
 
 #if defined(VGA_x86)
 #  include "vki_posixtypes-x86-netbsd.h"
@@ -136,6 +137,11 @@ typedef unsigned long           vki_u_long;
 
 typedef unsigned int	        vki_uint;
 
+struct vki_timespec {
+	vki_time_t	tv_sec;		/* seconds */
+	long		tv_nsec;	/* nanoseconds */
+};
+
 //----------------------------------------------------------------------
 // Now the rest of the arch-specific stuff
 //----------------------------------------------------------------------
@@ -177,10 +183,6 @@ typedef unsigned int	        vki_uint;
 // From linux-2.6.8.1/include/linux/time.h
 //----------------------------------------------------------------------
 
-struct vki_timespec {
-	vki_time_t	tv_sec;		/* seconds */
-	long		tv_nsec;	/* nanoseconds */
-};
 
 struct vki_timeval {
 	vki_time_t	tv_sec;		/* seconds */

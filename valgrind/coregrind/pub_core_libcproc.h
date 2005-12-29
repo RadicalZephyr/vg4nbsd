@@ -45,7 +45,10 @@
 /* Additional command-line arguments; they are overridden by actual
    command-line option.  Each argument is separated by spaces.  There
    is no quoting mechanism.  */
-#define VALGRINDOPTS	"VALGRIND_OPTS"
+#define VALGRIND_OPTS	"VALGRIND_OPTS" /* XXX- kailash we use this
+					   definition as well requires
+   cleaning  later */ 
+/* #define VALGRIND_OPTS VALGRINDOPTS  */
 
 /* If this variable is present in the environment, then valgrind will
    not parse the command line for options at all; all options come

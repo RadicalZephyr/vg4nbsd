@@ -40,7 +40,7 @@
 /* The version number indicates binary-incompatible changes to the
    interface;  if the core and tool versions don't match, Valgrind
    will abort.  */
-#define VG_CORE_INTERFACE_VERSION   8
+#define VG_CORE_INTERFACE_VERSION   9
 
 typedef struct _ToolInfo {
    Int	sizeof_ToolInfo;
@@ -58,19 +58,16 @@ typedef struct _ToolInfo {
       - any other tool-specific initialisation
    */
    void (*tl_pre_clo_init) ( void );
-
-   /* Specifies how big the shadow segment should be as a ratio to the
-      client address space.  0 for no shadow segment. */
-   float shadow_ratio;
 } ToolInfo;
 
+extern const ToolInfo VG_(tool_info);
+
 /* Every tool must include this macro somewhere, exactly once. */
-#define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init, shadow)   \
+#define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init)           \
    const ToolInfo VG_(tool_info) = {                           \
       .sizeof_ToolInfo   = sizeof(ToolInfo),                   \
       .interface_version = VG_CORE_INTERFACE_VERSION,          \
       .tl_pre_clo_init   = pre_clo_init,                       \
-      .shadow_ratio	 = shadow,                             \
    };
 
 /* ------------------------------------------------------------------ */
@@ -81,10 +78,14 @@ extern void VG_(basic_tool_funcs)(
    // processing.
    void  (*post_clo_init)(void),
 
-   // Instrument a basic block.  Must be a true function, ie. the same input
-   // always results in the same output, because basic blocks can be
-   // retranslated.  Unless you're doing something really strange...
-   IRBB* (*instrument)(IRBB* bb_in, VexGuestLayout* layout, 
+   // Instrument a basic block.  Must be a true function, ie. the same
+   // input always results in the same output, because basic blocks
+   // can be retranslated.  Unless you're doing something really
+   // strange...  Note that orig_addr_noredir is not necessarily the
+   // same as the address of the first instruction in the IR, due to
+   // function redirection.
+   IRBB* (*instrument)(IRBB* bb_in, VexGuestLayout* layout,
+                       Addr64 orig_addr_noredir, VexGuestExtents* vge, 
                        IRType gWordTy, IRType hWordTy ),
 
    // Finish up, print out any results, etc.  `exitcode' is program's exit
@@ -189,17 +190,30 @@ extern void VG_(needs_tool_errors) (
    void (*print_extra_suppression_info)(Error* err)
 );
 
-
-/* Is information kept about specific individual basic blocks?  (Eg. for
-   cachegrind there are cost-centres for every instruction, stored at a
-   basic block level.)  If so, it sometimes has to be discarded, because
-   .so mmap/munmap-ping or self-modifying code (informed by the
-   DISCARD_TRANSLATIONS user request) can cause one instruction address
-   to be used for more than one instruction in one program run...  */
+/* Is information kept by the tool about specific instructions or
+   translations?  (Eg. for cachegrind there are cost-centres for every
+   instruction, stored in a per-translation fashion.)  If so, the info
+   may have to be discarded when translations are unloaded (eg. due to
+   .so unloading, or otherwise at the discretion of m_transtab, eg
+   when the table becomes too full) to avoid stale information being
+   reused for new translations. */
 extern void VG_(needs_basic_block_discards) (
-   // Should discard any information that pertains to specific basic blocks
-   // or instructions within the address range given.
-   void (*discard_basic_block_info)(Addr a, SizeT size)
+   // Discard any information that pertains to specific translations
+   // or instructions within the address range given.  There are two
+   // possible approaches.
+   // - If info is being stored at a per-translation level, use orig_addr
+   //   to identify which translation is being discarded.  Each translation
+   //   will be discarded exactly once.
+   //   This orig_addr will match the orig_addr which was passed to
+   //   to instrument() when this translation was made.  Note that orig_addr
+   //   won't necessarily be the same as the first address in "extents".
+   // - If info is being stored at a per-instruction level, you can get
+   //   the address range(s) being discarded by stepping through "extents".
+   //   Note that any single instruction may belong to more than one
+   //   translation, and so could be covered by the "extents" of more than
+   //   one call to this function.
+   // Doing it the first way (as eg. Cachegrind does) is probably easier.
+   void (*discard_basic_block_info)(Addr64 orig_addr, VexGuestExtents extents)
 );
 
 /* Tool defines its own command line options? */
@@ -254,7 +268,9 @@ extern void VG_(needs_data_syms) ( void );
 /* Does the tool need shadow memory allocated? */
 extern void VG_(needs_shadow_memory)( void );
 
-/* Does the tool replace malloc() and friends with its own versions? */
+/* Does the tool replace malloc() and friends with its own versions?
+   This has to be combined with the use of a vgpreload_<tool>.so module
+   or it won't work.  See massif/Makefile.am for how to build it. */
 // The 'p' prefix avoids GCC complaints about overshadowing global names.
 extern void VG_(needs_malloc_replacement)(
    void* (*pmalloc)               ( ThreadId tid, SizeT n ),

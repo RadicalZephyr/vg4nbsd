@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- x86/Linux-specific kernel interface.         vki-x86-linux.h ---*/
+/*--- x86/NetBSD-specific kernel interface.       vki-x86-netbsd.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -43,6 +43,7 @@ typedef unsigned char __vki_u8;
 typedef __signed__ short __vki_s16;
 typedef unsigned short __vki_u16;
 
+typedef __signed__ int __vki_s32;
 typedef unsigned int __vki_u32;
 
 typedef __signed__ long long __vki_s64;
@@ -80,10 +81,9 @@ typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 #define VKI_SIG_DFL	((__vki_sighandler_t)0)	/* default signal handling */
 #define VKI_SIG_IGN	((__vki_sighandler_t)1)	/* ignore signal */
 
-
-#define _VKI_NSIG       63  /* true for linux 2.2.X and 2.4.X */
-#define _VKI_NSIG_BPW   32  /* since we're using UInts */
-#define _VKI_NSIG_WORDS 4
+#define _VKI_NSIG	64
+#define _VKI_NSIG_BPW	32
+#define _VKI_NSIG_WORDS	(_VKI_NSIG / _VKI_NSIG_BPW)
 
 typedef unsigned long vki_old_sigset_t;		/* at least 32 bits */
 
@@ -250,6 +250,8 @@ typedef struct vki_sigcontext {
 #define VKI_PROT_READ	0x1		/* page can be read */
 #define VKI_PROT_WRITE	0x2		/* page can be written */
 #define VKI_PROT_EXEC	0x4		/* page can be executed */
+#define VKI_PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
+#define VKI_PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
 
 #define VKI_MAP_SHARED	0x01		/* Share changes */
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
@@ -322,41 +324,6 @@ typedef struct vki_sigcontext {
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/stat.h
 //----------------------------------------------------------------------
-
-#define VKI_S_IFMT  00170000
-#define VKI_S_IFSOCK 0140000
-#define VKI_S_IFLNK	 0120000
-#define VKI_S_IFREG  0100000
-#define VKI_S_IFBLK  0060000
-#define VKI_S_IFDIR  0040000
-#define VKI_S_IFCHR  0020000
-#define VKI_S_IFIFO  0010000
-#define VKI_S_ISUID  0004000
-#define VKI_S_ISGID  0002000
-#define VKI_S_ISVTX  0001000
-#define VKI_S_IRWXG 0000070                 /* RWX mask for group */
-#define VKI_S_IRGRP 0000040                 /* R for group */
-#define VKI_S_IWGRP 0000020                 /* W for group */
-#define VKI_S_IXGRP 0000010                 /* X for group */
-
-#define VKI_S_IRWXO 0000007                 /* RWX mask for other */
-#define VKI_S_IROTH 0000004                 /* R for other */
-#define VKI_S_IWOTH 0000002                 /* W for other */
-#define VKI_S_IXOTH 0000001                 /* X for other */
-
-#define VKI_S_IRWXU 0000700                 /* RWX mask for owner */
-#define VKI_S_IRUSR 0000400                 /* R for owner */
-#define VKI_S_IWUSR 0000200                 /* W for owner */
-#define VKI_S_IXUSR 0000100                 /* X for owner */
-
-
-#define VKI_S_ISLNK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFLNK)
-#define VKI_S_ISREG(m)	(((m) & VKI_S_IFMT) == VKI_S_IFREG)
-#define VKI_S_ISDIR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFDIR)
-#define VKI_S_ISCHR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFCHR)
-#define VKI_S_ISBLK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFBLK)
-#define VKI_S_ISFIFO(m)	(((m) & VKI_S_IFMT) == VKI_S_IFIFO)
-#define VKI_S_ISSOCK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFSOCK)
 
 struct vki_stat {
 	unsigned int	  st_dev;
@@ -687,7 +654,6 @@ struct vki_ucontext {
 	struct vki_mcontext	uc_mcontext;	/* machine state */
 	long		__uc_pad[5]; 
 };
-
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/segment.h

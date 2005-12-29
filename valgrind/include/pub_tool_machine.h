@@ -31,19 +31,21 @@
 #ifndef __PUB_TOOL_MACHINE_H
 #define __PUB_TOOL_MACHINE_H
 
-/* VG_STACK_REDZONE_SZB: how many bytes below the stack pointer are validly
- * addressible? */
 #if defined(VGA_x86)
-#  define VG_MIN_INSTR_SZB          1
-#  define VG_MAX_INSTR_SZB         16
-#  define VG_STACK_REDZONE_SZB      0
+#  define VG_MIN_INSTR_SZB          1  // min length of native instruction
+#  define VG_MAX_INSTR_SZB         16  // max length of native instruction
+#  define VG_CLREQ_SZB             18  // length of a client request, may
+                                       //   be larger than VG_MAX_INSTR_SZB
+#  define VG_STACK_REDZONE_SZB      0  // number of addressable bytes below SP
 #elif defined(VGA_amd64)
 #  define VG_MIN_INSTR_SZB          1
 #  define VG_MAX_INSTR_SZB         16
+#  define VG_CLREQ_SZB             18
 #  define VG_STACK_REDZONE_SZB    128
 #elif defined(VGA_ppc32)
 #  define VG_MIN_INSTR_SZB          4
 #  define VG_MAX_INSTR_SZB          4 
+#  define VG_CLREQ_SZB             24
 #  define VG_STACK_REDZONE_SZB      0
 #else
 #  error Unknown arch
@@ -53,6 +55,7 @@
 extern Addr VG_(get_SP) ( ThreadId tid );
 extern Addr VG_(get_IP) ( ThreadId tid );
 extern Addr VG_(get_FP) ( ThreadId tid );
+extern Addr VG_(get_LR) ( ThreadId tid );
 
 extern void VG_(set_SP) ( ThreadId tid, Addr sp );
 extern void VG_(set_IP) ( ThreadId tid, Addr ip );
@@ -70,11 +73,11 @@ extern void VG_(set_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
 // doing leak checking.
 extern void VG_(apply_to_GP_regs)(void (*f)(UWord val));
 
-// Searches through all thread stacks to see if any match.  Returns
-// VG_INVALID_THREADID if none match.
-extern ThreadId VG_(first_matching_thread_stack)
-                        ( Bool (*p) ( Addr stack_min, Addr stack_max, void* d ),
-                          void* d );
+// This iterator lets you inspect each live thread's stack bounds.  The
+// params are all 'out' params.  Returns False at the end.
+extern void VG_(thread_stack_reset_iter) ( void );
+extern Bool VG_(thread_stack_next)       ( ThreadId* tid, Addr* stack_min,
+                                                          Addr* stack_max );
 
 #endif   // __PUB_TOOL_MACHINE_H
 

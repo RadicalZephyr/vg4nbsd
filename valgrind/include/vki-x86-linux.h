@@ -43,6 +43,7 @@ typedef unsigned char __vki_u8;
 typedef __signed__ short __vki_s16;
 typedef unsigned short __vki_u16;
 
+typedef __signed__ int __vki_s32;
 typedef unsigned int __vki_u32;
 
 typedef __signed__ long long __vki_s64;
@@ -245,6 +246,8 @@ struct vki_sigcontext {
 #define VKI_PROT_READ	0x1		/* page can be read */
 #define VKI_PROT_WRITE	0x2		/* page can be written */
 #define VKI_PROT_EXEC	0x4		/* page can be executed */
+#define VKI_PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
+#define VKI_PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
 
 #define VKI_MAP_SHARED	0x01		/* Share changes */
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
@@ -317,26 +320,6 @@ struct vki_sigcontext {
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/stat.h
 //----------------------------------------------------------------------
-
-#define VKI_S_IFMT  00170000
-#define VKI_S_IFSOCK 0140000
-#define VKI_S_IFLNK	 0120000
-#define VKI_S_IFREG  0100000
-#define VKI_S_IFBLK  0060000
-#define VKI_S_IFDIR  0040000
-#define VKI_S_IFCHR  0020000
-#define VKI_S_IFIFO  0010000
-#define VKI_S_ISUID  0004000
-#define VKI_S_ISGID  0002000
-#define VKI_S_ISVTX  0001000
-
-#define VKI_S_ISLNK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFLNK)
-#define VKI_S_ISREG(m)	(((m) & VKI_S_IFMT) == VKI_S_IFREG)
-#define VKI_S_ISDIR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFDIR)
-#define VKI_S_ISCHR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFCHR)
-#define VKI_S_ISBLK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFBLK)
-#define VKI_S_ISFIFO(m)	(((m) & VKI_S_IFMT) == VKI_S_IFIFO)
-#define VKI_S_ISSOCK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFSOCK)
 
 struct vki_stat {
 	unsigned long  st_dev;

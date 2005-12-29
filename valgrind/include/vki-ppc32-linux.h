@@ -44,6 +44,7 @@ typedef unsigned char __vki_u8;
 typedef __signed__ short __vki_s16;
 typedef unsigned short __vki_u16;
 
+typedef __signed__ int __vki_s32;
 typedef unsigned int __vki_u32;
 
 typedef __signed__ long long __vki_s64;
@@ -151,16 +152,16 @@ typedef struct {
 #define VKI_SS_ONSTACK		1
 #define VKI_SS_DISABLE		2
 
-//.. struct vki_old_sigaction {
-//..         // [[Nb: a 'k' prefix is added to "sa_handler" because
-//..         // bits/sigaction.h (which gets dragged in somehow via signal.h)
-//..         // #defines it as something else.  Since that is done for glibc's
-//..         // purposes, which we don't care about here, we use our own name.]]
-//..         __vki_sighandler_t ksa_handler;
-//..         vki_old_sigset_t sa_mask;
-//..         unsigned long sa_flags;
-//..         __vki_sigrestore_t sa_restorer;
-//.. };
+struct vki_old_sigaction {
+        // [[Nb: a 'k' prefix is added to "sa_handler" because
+        // bits/sigaction.h (which gets dragged in somehow via signal.h)
+        // #defines it as something else.  Since that is done for glibc's
+        // purposes, which we don't care about here, we use our own name.]]
+        __vki_sighandler_t ksa_handler;
+        vki_old_sigset_t sa_mask;
+        unsigned long sa_flags;
+        __vki_sigrestore_t sa_restorer;
+};
 
 struct vki_sigaction {
         // [[See comment about extra 'k' above]]
@@ -202,7 +203,38 @@ struct vki_pt_regs {
 
 #define vki_user_regs_struct vki_pt_regs
 
-#define VKI_PT_R0		 0
+#define VKI_PT_R0		0
+#define VKI_PT_R1		1
+#define VKI_PT_R2		2
+#define VKI_PT_R3		3
+#define VKI_PT_R4		4
+#define VKI_PT_R5		5
+#define VKI_PT_R6		6
+#define VKI_PT_R7		7
+#define VKI_PT_R8		8
+#define VKI_PT_R9		9
+#define VKI_PT_R10		10
+#define VKI_PT_R11		11
+#define VKI_PT_R12		12
+#define VKI_PT_R13		13
+#define VKI_PT_R14		14
+#define VKI_PT_R15		15
+#define VKI_PT_R16		16
+#define VKI_PT_R17		17
+#define VKI_PT_R18		18
+#define VKI_PT_R19		19
+#define VKI_PT_R20		20
+#define VKI_PT_R21		21
+#define VKI_PT_R22		22
+#define VKI_PT_R23		23
+#define VKI_PT_R24		24
+#define VKI_PT_R25		25
+#define VKI_PT_R26		26
+#define VKI_PT_R27		27
+#define VKI_PT_R28		28
+#define VKI_PT_R29		29
+#define VKI_PT_R30		30
+#define VKI_PT_R31		31
 #define VKI_PT_NIP		32
 #define VKI_PT_MSR		33
 #define VKI_PT_ORIG_R3		34
@@ -236,6 +268,8 @@ struct vki_sigcontext {
 #define VKI_PROT_READ		0x1      /* page can be read */
 #define VKI_PROT_WRITE		0x2      /* page can be written */
 #define VKI_PROT_EXEC		0x4      /* page can be executed */
+#define VKI_PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
+#define VKI_PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
 
 #define VKI_MAP_SHARED		0x01     /* Share changes */
 #define VKI_MAP_PRIVATE		0x02     /* Changes are private */
@@ -301,7 +335,7 @@ struct vki_sigcontext {
 #define VKI_SIOCGSTAMP	0x8906          /* Get stamp */
 
 //----------------------------------------------------------------------
-// From linux-2.6.9/include/asm-ppc/stat.h
+// From linux-2.6.10/include/asm-ppc/stat.h
 //----------------------------------------------------------------------
 
 //.. #define VKI_S_IFMT		00170000
@@ -346,27 +380,28 @@ struct vki_stat {
 };
 
 struct vki_stat64 {
-   unsigned long	st_dev;
-   unsigned long	st_ino;
-   unsigned long	st_rdev;
-   long			st_size;
-   unsigned long	st_blocks;
+   unsigned long long   st_dev;
+   unsigned long long   st_ino;
+   unsigned int         st_mode;
+   unsigned int         st_nlink;
+   unsigned int         st_uid;
+   unsigned int         st_gid;
+   unsigned long long   st_rdev;
+   unsigned short int   __pad2;
+   long long            st_size;
+   long                 st_blksize;
 
-   unsigned int		st_mode;
-   unsigned int		st_uid;
-   unsigned int		st_gid;
-   unsigned int		st_blksize;
-   unsigned int		st_nlink;
-   unsigned int		__pad0;
-
-   unsigned long	st_atime;
-   unsigned long	st_atime_nsec;
-   unsigned long	st_mtime;
-   unsigned long	st_mtime_nsec;
-   unsigned long	st_ctime;
-   unsigned long	st_ctime_nsec;
-   long				__unused[3];
+   long long            st_blocks;
+   long                 st_atime;
+   unsigned long        st_atime_nsec;
+   long                 st_mtime;
+   unsigned long int    st_mtime_nsec;
+   long                 st_ctime;
+   unsigned long int    st_ctime_nsec;
+   unsigned long int    __unused4;
+   unsigned long int    __unused5;
 };
+
 
 //----------------------------------------------------------------------
 // From linux-2.6.9/include/asm-ppc/statfs.h
@@ -865,17 +900,6 @@ struct vki_shminfo64 {
 //.. //
 //.. ///* We need to pay attention to this, because it mmaps memory */
 //.. //#define VKI_DRM_IOCTL_MAP_BUFS		_VKI_IOWR('d', 0x19, struct vki_drm_buf_map)
-
-//.. //----------------------------------------------------------------------
-//.. // From linux-2.6.9/include/asm-i386/ptrace.h
-//.. //----------------------------------------------------------------------
-//.. 
-//.. #define VKI_PTRACE_GETREGS			12
-//.. #define VKI_PTRACE_SETREGS			13
-//.. #define VKI_PTRACE_GETFPREGS		14
-//.. #define VKI_PTRACE_SETFPREGS		15
-//.. #define VKI_PTRACE_GETFPXREGS		18
-//.. #define VKI_PTRACE_SETFPXREGS		19
 
 //----------------------------------------------------------------------
 // And that's it!

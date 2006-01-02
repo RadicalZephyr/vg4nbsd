@@ -295,7 +295,7 @@ static char *copy_str(char **tab, const char *str)
       VG_(have_altivec_ppc32)    // ppc32 only -- is Altivec supported?
 
    ---------------------------------------------------------------- */
- */
+
 /* XXX- this function requires syncing, but too hacked up for netbsd
    already. Simple diff wont work
    XXX - Is this still true?? */

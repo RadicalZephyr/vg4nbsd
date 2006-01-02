@@ -1425,7 +1425,7 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
 #if defined(VGO_netbsdelf2)
       if (0)
 	 VG_(printf)("idx=%d si_signo=%d inset=%d\n", idx,
-		     sq->sigs[idx]._info.signo, VG_(sigismember)(set, sq->sigs[idx]._info.signo));
+		     sq->sigs[idx]._info._signo, VG_(sigismember)(set, sq->sigs[idx]._info._signo));
       if (sq->sigs[idx]._info._signo != 0 && VG_(sigismember)(set, sq->sigs[idx]._info._signo)) {
 	 if (VG_(clo_trace_signals))
 		 VG_(message)(Vg_DebugMsg, "Returning queued signal %d (idx %d) for thread %d", sq->sigs[idx]._info._signo, idx, tid);

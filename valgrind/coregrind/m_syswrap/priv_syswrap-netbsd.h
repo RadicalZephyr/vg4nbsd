@@ -33,7 +33,7 @@
 
 /* requires #include "priv_types_n_macros.h" */
 
-// Run a thread from beginning to end. 
+// Clone-related functions
 extern Word ML_(start_thread_NORETURN) ( void* arg );
 extern Addr ML_(allocstack)            ( ThreadId tid );
 extern void ML_(call_on_new_stack_0_1) ( Addr stack, Addr retaddr,

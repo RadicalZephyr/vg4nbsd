@@ -1,11 +1,11 @@
+
 /*--------------------------------------------------------------------*/
-/*--- Management of function redirection and wrapping.             ---*/
-/*---                                                   vg_redir.c ---*/
+/*--- Function replacement and wrapping.                 m_redir.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Valgrind, an extensible x86 protected-mode
-   emulator for monitoring program execution on x86-Unixes.
+   This file is part of Valgrind, a dynamic binary instrumentation
+   framework.
 
    Copyright (C) 2000-2005 Julian Seward 
       jseward@acm.org
@@ -31,16 +31,19 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_debuginfo.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
+#include "pub_core_oset.h"
 #include "pub_core_redir.h"
-#include "pub_core_skiplist.h"
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
+#include "pub_core_tooliface.h"    // VG_(needs).malloc_replacement
+
 
 /*------------------------------------------------------------*/
 /*--- General purpose redirection.                         ---*/
@@ -64,6 +67,8 @@
   function's arguments and return value.
  */
 struct _CodeRedirect {
+   Addr		from_addr;	/* old addr -- MUST BE THE FIRST WORD! */
+
    enum redir_type {
       R_REDIRECT,		/* plain redirection */
       R_WRAPPER,		/* wrap with valgrind-internal code */
@@ -72,7 +77,6 @@ struct _CodeRedirect {
    
    const Char	*from_lib;	/* library qualifier pattern */
    const Char	*from_sym;	/* symbol */
-   Addr		from_addr;	/* old addr */
 
    Addr		to_addr;	/* used for redirection -- new addr */
    const FuncWrapper *wrapper;  /* used for wrapping */
@@ -80,17 +84,11 @@ struct _CodeRedirect {
    CodeRedirect *next;	        /* next pointer on unresolved list */
 };
 
-static Char *straddr(void *p)
-{
-   static Char buf[16];
-   VG_(sprintf)(buf, "%p", *(Addr *)p);
-   return buf;
-}
+static OSet* resolved_redirs;
 
-static SkipList sk_resolved_redirs = 
-   VG_SKIPLIST_INIT(CodeRedirect, from_addr, VG_(cmp_Addr), 
-                    straddr, VG_AR_SYMTAB);
-
+// We use a linked list here rather than an OSet, because we want to
+// traverse it and possibly remove elements as we look at them.  OSet
+// doesn't support this very well.
 static CodeRedirect *unresolved_redirs = NULL;
 
 static Bool soname_matches(const Char *pattern, const Char* soname)
@@ -123,8 +121,6 @@ static void add_redir_to_resolved_list(CodeRedirect *redir, Bool need_discard)
 
    switch (redir->type) {
    case R_REDIRECT: {
-      CodeRedirect* r;
-   
       TRACE_REDIR("  redir resolved (%s:%s=%p -> %p)", 
                   redir->from_lib, redir->from_sym, redir->from_addr,
                   redir->to_addr);
@@ -151,18 +147,24 @@ static void add_redir_to_resolved_list(CodeRedirect *redir, Bool need_discard)
          TRACE_REDIR("Discarding translation due to redirect of already loaded function" );
          TRACE_REDIR("   %s:%s(%p) -> %p)", redir->from_lib, redir->from_sym,
                                             redir->from_addr, redir->to_addr );
-         VG_(discard_translations)((Addr64)redir->from_addr, 1);
+         VG_(discard_translations)((Addr64)redir->from_addr, 1, 
+                                   "add_redir_to_resolved_list");
       }
 
-      r = VG_(SkipList_Find_Exact)(&sk_resolved_redirs, &redir->from_addr);
-
-      if (r == NULL) {
-         VG_(SkipList_Insert)(&sk_resolved_redirs, redir);
+      // This entails a possible double OSet lookup -- one for Contains(),
+      // one for Insert().  If we had OSet_InsertIfNonDup() we could do it
+      // with one lookup.
+      if ( ! VG_(OSet_Contains)(resolved_redirs, &redir->from_addr) ) {
+         VG_(OSet_Insert)(resolved_redirs, redir);
       } else {
-         /* XXX leak redir */
          TRACE_REDIR("  redir %s:%s:%p->%p duplicated\n",
                      redir->from_lib, redir->from_sym, redir->from_addr,
                      redir->to_addr);
+         // jrs 20 Nov 05: causes this: m_mallocfree.c:170
+         // (mk_plain_bszB): Assertion 'bszB != 0' failed.
+         // Perhaps it is an invalid free?  Disable for now
+         // XXX leak?
+         //VG_(arena_free)(VG_AR_SYMTAB, redir);
       }
       break;
    }
@@ -251,8 +253,8 @@ void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si)
 __attribute__((unused))    // It is used, but not on all platforms...
 static void add_redirect_addr_to_addr( Addr from_addr, Addr to_addr )
 {
-   CodeRedirect *redir = VG_(SkipNode_Alloc)(&sk_resolved_redirs);
-
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
    vg_assert(0 != from_addr && 0 != to_addr);
 
    redir->type      = R_REDIRECT;
@@ -275,8 +277,8 @@ static void add_redirect_sym_to_addr(
    const Char *from_lib, const Char *from_sym, Addr to_addr
 )
 {
-   CodeRedirect *redir = VG_(SkipNode_Alloc)(&sk_resolved_redirs);
-
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
    vg_assert(from_lib && from_sym && 0 != to_addr);
 
    redir->type      = R_REDIRECT;
@@ -302,8 +304,8 @@ static void add_redirect_sym_to_addr(
 CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
 			       const FuncWrapper *wrapper)
 {
-   CodeRedirect *redir = VG_(SkipNode_Alloc)(&sk_resolved_redirs);
-
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
    redir->type      = R_WRAPPER;
    redir->from_lib  = VG_(arena_strdup)(VG_AR_SYMTAB, from_lib);
    redir->from_sym  = VG_(arena_strdup)(VG_AR_SYMTAB, from_sym);
@@ -329,9 +331,7 @@ CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
    address. */
 Addr VG_(code_redirect)(Addr a)
 {
-   CodeRedirect* r;
-
-   r = VG_(SkipList_Find_Exact)(&sk_resolved_redirs, &a);
+   CodeRedirect* r = VG_(OSet_Lookup)(resolved_redirs, &a);
    if (r == NULL)
       return a;
 
@@ -340,8 +340,24 @@ Addr VG_(code_redirect)(Addr a)
    return r->to_addr;
 }
 
+static void* symtab_alloc(SizeT n)
+{
+   return VG_(arena_malloc)(VG_AR_SYMTAB, n);
+}
+
+static void symtab_free(void* p)
+{
+   return VG_(arena_free)(VG_AR_SYMTAB, p);
+}
+
 void VG_(setup_code_redirect_table) ( void )
 {
+   // Initialise resolved_redirs list.
+   resolved_redirs = VG_(OSet_Create)(offsetof(CodeRedirect, from_addr),
+                                      NULL,     // Use fast comparison
+                                      symtab_alloc,
+                                      symtab_free);
+
 #if defined(VGP_x86_linux)
    /* Redirect _dl_sysinfo_int80, which is glibc's default system call
       routine, to our copy so that the special sysinfo unwind hack in
@@ -350,6 +366,14 @@ void VG_(setup_code_redirect_table) ( void )
       "soname:ld-linux.so.2", "_dl_sysinfo_int80",
       (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80)
    );
+   /* If we're using memcheck, use this intercept right from the
+      start, otherwise ld.so (glibc-2.3.5) makes a lot of noise. */
+   if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
+      add_redirect_sym_to_addr(
+         "soname:ld-linux.so.2", "index",
+         (Addr)&VG_(x86_linux_REDIR_FOR_index)
+      );   
+   }
 
 #elif defined(VGP_amd64_linux)
 
@@ -358,7 +382,6 @@ void VG_(setup_code_redirect_table) ( void )
       0xFFFFFFFFFF600000ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vgettimeofday) 
    );
-
    add_redirect_addr_to_addr( 
       0xFFFFFFFFFF600400ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vtime) 
@@ -366,7 +389,18 @@ void VG_(setup_code_redirect_table) ( void )
 
 #elif defined(VGP_ppc32_linux)
 
-   //CAB: TODO
+   /* If we're using memcheck, use these intercepts right from
+      the start, otherwise ld.so makes a lot of noise. */
+   if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
+
+      add_redirect_sym_to_addr(
+         "soname:ld.so.1", "strlen",
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen)
+      );   
+      add_redirect_sym_to_addr(
+         "soname:ld.so.1", "strcmp",
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp)
+      );
 
 #elif defined(VGP_x86_netbsdelf2)
    // NetBSD: TODO - XXXX 
@@ -761,3 +795,7 @@ void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr )
 //:: 
 //::    VG_(SkipList_Insert)(&wrapper_returns, ret);
 //:: }
+
+/*--------------------------------------------------------------------*/
+/*--- end                                                          ---*/
+/*--------------------------------------------------------------------*/

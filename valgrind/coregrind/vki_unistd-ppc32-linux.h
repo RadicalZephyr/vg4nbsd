@@ -55,8 +55,8 @@
 #define __NR_setuid			 23
 #define __NR_getuid			 24
 //#define __NR_stime			 25
-//#define __NR_ptrace			 26
-//#define __NR_alarm			 27
+#define __NR_ptrace			 26
+#define __NR_alarm			 27
 //#define __NR_oldfstat			 28
 #define __NR_pause			 29
 #define __NR_utime			 30
@@ -96,7 +96,7 @@
 #define __NR_getppid			 64
 #define __NR_getpgrp			 65
 #define __NR_setsid			 66
-//#define __NR_sigaction		 67
+#define __NR_sigaction			 67
 //#define __NR_sgetmask			 68
 //#define __NR_ssetmask			 69
 //#define __NR_setreuid			 70
@@ -106,7 +106,7 @@
 //#define __NR_sethostname		 74
 #define __NR_setrlimit			 75
 #define __NR_getrlimit			 76
-//#define __NR_getrusage		 77
+#define __NR_getrusage			 77
 #define __NR_gettimeofday		 78
 //#define __NR_settimeofday		 79
 #define __NR_getgroups			 80
@@ -136,7 +136,7 @@
 #define __NR_setitimer			104
 //#define __NR_getitimer		105
 #define __NR_stat			106
-//#define __NR_lstat			107
+#define __NR_lstat			107
 #define __NR_fstat			108
 //#define __NR_olduname			109
 //#define __NR_iopl			110
@@ -147,7 +147,7 @@
 //#define __NR_swapoff			115
 //#define __NR_sysinfo			116
 #define __NR_ipc			117
-//#define __NR_fsync			118
+#define __NR_fsync			118
 #define __NR_sigreturn			119
 #define __NR_clone			120
 //#define __NR_setdomainname		121
@@ -167,8 +167,8 @@
 //#define __NR_sysfs			135
 //#define __NR_personality		136
 //#define __NR_afs_syscall		137 /* Syscall for Andrew File System */
-//#define __NR_setfsuid			138
-//#define __NR_setfsgid			139
+#define __NR_setfsuid			138
+#define __NR_setfsgid			139
 #define __NR__llseek			140
 #define __NR_getdents			141
 #define __NR__newselect			142
@@ -177,7 +177,7 @@
 #define __NR_readv			145
 #define __NR_writev			146
 //#define __NR_getsid			147
-//#define __NR_fdatasync		148
+#define __NR_fdatasync			148
 #define __NR__sysctl			149
 //#define __NR_mlock			150
 //#define __NR_munlock			151
@@ -185,15 +185,15 @@
 //#define __NR_munlockall		153
 //#define __NR_sched_setparam		154
 #define __NR_sched_getparam		155
-//#define __NR_sched_setscheduler	156
+#define __NR_sched_setscheduler		156
 #define __NR_sched_getscheduler		157
 #define __NR_sched_yield		158
-//#define __NR_sched_get_priority_max	159
-//#define __NR_sched_get_priority_min	160
+#define __NR_sched_get_priority_max	159
+#define __NR_sched_get_priority_min	160
 //#define __NR_sched_rr_get_interval	161
 #define __NR_nanosleep			162
 #define __NR_mremap			163
-//#define __NR_setresuid		164
+#define __NR_setresuid			164
 #define __NR_getresuid			165
 //#define __NR_query_module		166
 #define __NR_poll			167
@@ -207,7 +207,7 @@
 //#define __NR_rt_sigpending		175
 #define __NR_rt_sigtimedwait		176
 //#define __NR_rt_sigqueueinfo		177
-//#define __NR_rt_sigsuspend		178
+#define __NR_rt_sigsuspend		178
 #define __NR_pread64			179
 #define __NR_pwrite64			180
 #define __NR_chown			181
@@ -223,7 +223,7 @@
 //#define __NR_readahead		191
 #define __NR_mmap2			192
 //#define __NR_truncate64		193
-//#define __NR_ftruncate64		194
+#define __NR_ftruncate64		194
 #define __NR_stat64			195
 #define __NR_lstat64			196
 #define __NR_fstat64			197
@@ -234,7 +234,7 @@
 #define __NR_getdents64			202
 //#define __NR_pivot_root		203
 #define __NR_fcntl64			204
-//#define __NR_madvise			205
+#define __NR_madvise			205
 //#define __NR_mincore			206
 #define __NR_gettid			207
 #define __NR_tkill			208
@@ -279,7 +279,7 @@
 //#define __NR_clock_getres		247
 //#define __NR_clock_nanosleep		248
 //#define __NR_swapcontext		249
-//#define __NR_tgkill			250
+#define __NR_tgkill			250
 //#define __NR_utimes			251
 //#define __NR_statfs64			252
 //#define __NR_fstatfs64		253
@@ -291,12 +291,12 @@
 /* Number 259 is reserved for new sys_mbind */
 /* Number 260 is reserved for new sys_get_mempolicy */
 /* Number 261 is reserved for new sys_set_mempolicy */
-//#define __NR_mq_open			262
-//#define __NR_mq_unlink		263
-//#define __NR_mq_timedsend		264
-//#define __NR_mq_timedreceive		265
-//#define __NR_mq_notify		266
-//#define __NR_mq_getsetattr		267
+#define __NR_mq_open			262
+#define __NR_mq_unlink			263
+#define __NR_mq_timedsend		264
+#define __NR_mq_timedreceive		265
+#define __NR_mq_notify			266
+#define __NR_mq_getsetattr		267
 //#define __NR_kexec_load		268
 //#define __NR_add_key		269
 //#define __NR_request_key	270

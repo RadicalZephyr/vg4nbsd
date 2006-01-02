@@ -334,8 +334,34 @@ Bool VG_(string_match) ( const Char* pat, const Char* str )
 
 void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
 {
-   const Char *s = (const Char *)src;
-   Char *d = (Char *)dest;
+   const UChar* s  = (const UChar*)src;
+         UChar* d  =       (UChar*)dest;
+   const UInt*  sI = (const UInt*)src;
+         UInt*  dI =       (UInt*)dest;
+
+   if (VG_IS_4_ALIGNED(dI) && VG_IS_4_ALIGNED(sI)) {
+      while (sz >= 16) {
+         dI[0] = sI[0];
+         dI[1] = sI[1];
+         dI[2] = sI[2];
+         dI[3] = sI[3];
+         sz -= 16;
+         dI += 4;
+         sI += 4;
+      }
+      if (sz == 0) 
+         return dest;
+      while (sz >= 4) {
+         dI[0] = sI[0];
+         sz -= 4;
+         dI += 1;
+         sI += 1;
+      }
+      if (sz == 0) 
+         return dest;
+      s = (const UChar*)sI;
+      d = (UChar*)dI;
+   }
 
    while (sz--)
       *d++ = *s++;
@@ -356,14 +382,16 @@ void* VG_(memset) ( void *dest, Int c, SizeT sz )
 Int VG_(memcmp) ( const void* s1, const void* s2, SizeT n )
 {
    Int res;
+   const UChar *p1 = s1;
+   const UChar *p2 = s2;
    UChar a0;
    UChar b0;
 
    while (n != 0) {
-      a0 = ((UChar *) s1)[0];
-      b0 = ((UChar *) s2)[0];
-      s1 += 1;
-      s2 += 1;
+      a0 = p1[0];
+      b0 = p2[0];
+      p1 += 1;
+      p2 += 1;
       res = a0 - b0;
       if (res != 0)
          return res;
@@ -471,24 +499,18 @@ void VG_(ssort)( void* base, SizeT nmemb, SizeT size,
    #undef SORT
 }
 
-static UInt seed = 0;
-
-void VG_(srandom)(UInt s)
-{
-   seed = s;
-}
-
 // This random number generator is based on the one suggested in Kernighan
 // and Ritchie's "The C Programming Language".
-   
+
 // A pseudo-random number generator returning a random UInt.  If pSeed
 // is NULL, it uses its own seed, which starts at zero.  If pSeed is
 // non-NULL, it uses and updates whatever pSeed points at.
-      
+
+static UInt seed = 0;
 
 UInt VG_(random)( /*MOD*/UInt* pSeed )
 {
-   if (pSeed == NULL)
+   if (pSeed == NULL) 
       pSeed = &seed;
 
    *pSeed = (1103515245 * *pSeed + 12345);

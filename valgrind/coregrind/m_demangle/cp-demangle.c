@@ -235,6 +235,14 @@ static status_t result_push
   PARAMS ((demangling_t));
 static string_list_t result_pop
   PARAMS ((demangling_t));
+static int result_get_caret
+  PARAMS ((demangling_t));
+static void result_set_caret
+  PARAMS ((demangling_t, int));
+static void result_shift_caret
+  PARAMS ((demangling_t, int));
+static int result_previous_char_is_space
+  PARAMS ((demangling_t));
 static int substitution_start
   PARAMS ((demangling_t));
 static status_t substitution_add
@@ -710,14 +718,14 @@ template_arg_list_add_arg (arg_list, arg)
    argument list ARG_LIST.  */
 
 static string_list_t
-template_arg_list_get_arg (arg_list, index)
+template_arg_list_get_arg (arg_list, index2)
      template_arg_list_t arg_list;
-     int index;
+     int index2;
 {
   string_list_t arg = arg_list->first_argument;
   /* Scan down the list of arguments to find the one at position
      INDEX.  */
-  while (index--)
+  while (index2--)
     {
       arg = arg->next;
       if (arg == NULL)
@@ -966,7 +974,7 @@ demangle_char (dm, c)
      demangling_t dm;
      int c;
 {
-  static char *error_message = NULL;
+  //static char *error_message = NULL;    // unused
 
   if (peek_char (dm) == c)
     {
@@ -2152,10 +2160,10 @@ demangle_ctor_dtor_name (dm)
      <pointer-to-member-type> ::= M </class/ type> </member/ type>  */
 
 static status_t
-demangle_type_ptr (dm, insert_pos, substitution_start)
+demangle_type_ptr (dm, insert_pos, substitution_start2)
      demangling_t dm;
      int *insert_pos;
-     int substitution_start;
+     int substitution_start2;
 {
   status_t status;
   int is_substitution_candidate = 1;
@@ -2171,7 +2179,7 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
       advance_char (dm);
       /* Demangle the underlying type.  */
       RETURN_IF_ERROR (demangle_type_ptr (dm, insert_pos, 
-					  substitution_start));
+					  substitution_start2));
       /* Insert an asterisk where we're told to; it doesn't
 	 necessarily go at the end.  If we're doing Java style output, 
 	 there is no pointer symbol.  */
@@ -2187,7 +2195,7 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
       advance_char (dm);
       /* Demangle the underlying type.  */
       RETURN_IF_ERROR (demangle_type_ptr (dm, insert_pos, 
-					  substitution_start));
+					  substitution_start2));
       /* Insert an ampersand where we're told to; it doesn't
 	 necessarily go at the end.  */
       RETURN_IF_ERROR (result_insert_char (dm, *insert_pos, '&'));
@@ -2215,7 +2223,7 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
 	   type, which would in this case give `void () (int, int)'
 	   and set *insert_pos to the spot between the first
 	   parentheses.  */
-	status = demangle_type_ptr (dm, insert_pos, substitution_start);
+	status = demangle_type_ptr (dm, insert_pos, substitution_start2);
       else if (peek_char (dm) == 'A')
 	/* A pointer-to-member array variable.  We want output that
 	   looks like `int (Klass::*) [10]'.  Demangle the array type
@@ -2297,7 +2305,7 @@ demangle_type_ptr (dm, insert_pos, substitution_start)
     }
   
   if (is_substitution_candidate)
-    RETURN_IF_ERROR (substitution_add (dm, substitution_start, 0));
+    RETURN_IF_ERROR (substitution_add (dm, substitution_start2, 0));
   
   return STATUS_OK;
 }
@@ -2988,7 +2996,7 @@ static status_t
 demangle_template_args (dm)
      demangling_t dm;
 {
-  int first = 1;
+  //int first = 1;      // unused
   dyn_string_t old_last_source_name;
   dyn_string_t new_name;
   template_arg_list_t arg_list = template_arg_list_new ();
@@ -3890,6 +3898,7 @@ VG_(java_demangle_v3) (mangled)
 
 #endif /* IN_LIBGCC2 */
 
+#if 0
 
 /* Demangle NAME in the G++ V3 ABI demangling style, and return either
    zero, indicating that some error occurred, or a demangling_t
@@ -3939,7 +3948,6 @@ demangle_v3_with_details (name)
    - '1' if NAME is a complete object constructor,
    - '2' if NAME is a base object constructor, or
    - '3' if NAME is a complete object allocating constructor.  */
-/*
 enum gnu_v3_ctor_kinds
 is_gnu_v3_mangled_ctor (name)
      const char *name;
@@ -3955,7 +3963,6 @@ is_gnu_v3_mangled_ctor (name)
   else
     return 0;
 }
-*/
 
 
 /* Return non-zero iff NAME is the mangled form of a destructor name
@@ -3963,7 +3970,6 @@ is_gnu_v3_mangled_ctor (name)
    - '0' if NAME is a deleting destructor,
    - '1' if NAME is a complete object destructor, or
    - '2' if NAME is a base object destructor.  */
-/*
 enum gnu_v3_dtor_kinds
 is_gnu_v3_mangled_dtor (name)
      const char *name;
@@ -3979,7 +3985,8 @@ is_gnu_v3_mangled_dtor (name)
   else
     return 0;
 }
-*/
+
+#endif
 
 #ifdef STANDALONE_DEMANGLER
 

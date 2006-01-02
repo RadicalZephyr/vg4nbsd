@@ -51,16 +51,16 @@
 
 /* After this many different unsuppressed errors have been observed,
    be more conservative about collecting new ones. */
-#define M_COLLECT_ERRORS_SLOWLY_AFTER 50
+#define M_COLLECT_ERRORS_SLOWLY_AFTER 100
 
 /* After this many different unsuppressed errors have been observed,
    stop collecting errors at all, and tell the user their program is
    evidently a steaming pile of camel dung. */
-#define M_COLLECT_NO_ERRORS_AFTER_SHOWN 300
+#define M_COLLECT_NO_ERRORS_AFTER_SHOWN 1000
 
 /* After this many total errors have been observed, stop collecting
    errors at all.  Counterpart to M_COLLECT_NO_ERRORS_AFTER_SHOWN. */
-#define M_COLLECT_NO_ERRORS_AFTER_FOUND 30000
+#define M_COLLECT_NO_ERRORS_AFTER_FOUND 100000
 
 /* The list of error contexts found, both suppressed and unsuppressed.
    Initially empty, and grows as errors are detected. */
@@ -391,8 +391,7 @@ static void printSuppForIp(UInt n, Addr ip)
    } else if ( VG_(get_objname)(ip, buf, ERRTXT_LEN) ) {
       VG_(printf)("   obj:%s\n", buf);
    } else {
-      VG_(printf)("   ???:???       "
-                  "# unknown, suppression will not work, sorry\n");
+      VG_(printf)("   obj:*\n");
    }
 }
 
@@ -684,8 +683,10 @@ static Bool show_used_suppressions ( void )
       any_supp = True;
       if (VG_(clo_xml)) {
          VG_(message)(Vg_DebugMsg, 
-                      "  <pair> <count>%d</count> "
-                      "<name>%t</name> </pair>", 
+                      "  <pair>\n"
+                      "    <count>%d</count>\n"
+                      "    <name>%t</name>\n"
+                      "  </pair>", 
                       su->count, su->sname);
       } else {
          VG_(message)(Vg_DebugMsg, "supp: %4d %s", su->count, su->sname);
@@ -798,9 +799,11 @@ void VG_(show_error_counts_as_XML) ( void )
       if (err->count <= 0)
          continue;
       VG_(message)(
-         Vg_UserMsg, "  <pair> <count>%d</count> "
-                     "<unique>0x%llx</unique> </pair>",
-         err->count, Ptr_to_ULong(err)
+         Vg_UserMsg, "  <pair>\n"
+                     "    <count>%d</count>\n"
+                     "    <unique>0x%x</unique>\n"
+                     "  </pair>",
+         err->count, err->unique
       );
    }
    VG_(message)(Vg_UserMsg, "</errorcounts>");
@@ -907,6 +910,8 @@ static void load_one_suppressions_file ( Char* filename )
    fd   = -1;
    sres = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (sres.isError) {
+      if (VG_(clo_xml))
+         VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
       VG_(message)(Vg_UserMsg, "FATAL: can't open suppressions file '%s'", 
                    filename );
       VG_(exit)(1);
@@ -1035,6 +1040,8 @@ static void load_one_suppressions_file ( Char* filename )
    return;
 
   syntax_error:
+   if (VG_(clo_xml))
+      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
    VG_(message)(Vg_UserMsg, 
                 "FATAL: in suppressions file '%s': %s", filename, err_str );
    
@@ -1089,16 +1096,20 @@ Bool supp_matches_callers(Error* err, Supp* su)
    for (i = 0; i < su->n_callers; i++) {
       Addr a = ips[i];
       vg_assert(su->callers[i].name != NULL);
+      // The string to be used in the unknown case ("???") can be anything
+      // that couldn't be a valid function or objname.  --gen-suppressions
+      // prints 'obj:*' for such an entry, which will match any string we
+      // use.
       switch (su->callers[i].ty) {
          case ObjName: 
             if (!VG_(get_objname)(a, caller_name, ERRTXT_LEN))
-               return False;
+               VG_(strcpy)(caller_name, "???");
             break; 
 
          case FunName: 
             // Nb: mangled names used in suppressions
             if (!VG_(get_fnname_nodemangle)(a, caller_name, ERRTXT_LEN))
-               return False;
+               VG_(strcpy)(caller_name, "???");
             break;
          default: VG_(tool_panic)("supp_matches_callers");
       }

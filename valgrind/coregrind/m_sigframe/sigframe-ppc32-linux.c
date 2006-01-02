@@ -33,7 +33,6 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -172,7 +171,7 @@ void stack_mcontext ( struct vki_mcontext *mc,
              (Addr)&mc->mc_pad, sizeof(mc->mc_pad) );
    /* invalidate any translation of this area */
    VG_(discard_translations)( (Addr64)(Addr)&mc->mc_pad, 
-                              sizeof(mc->mc_pad) );   
+                              sizeof(mc->mc_pad), "stack_mcontext" );   
 
    /* set the signal handler to return to the trampoline */
    SET_SIGNAL_LR(tst, (Addr) &mc->mc_pad[0]);
@@ -494,17 +493,16 @@ void stack_mcontext ( struct vki_mcontext *mc,
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
    ThreadId tid = tst->tid;
-   Segment *stackseg = NULL;
+   NSegment *stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
-      stackseg = VG_(find_segment)(addr);
+      stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
 	 VG_(printf)("frame=%p seg=%p-%p\n",
-		     addr, stackseg->addr, stackseg->addr+stackseg->len);
+		     addr, stackseg->start, stackseg->end);
    }
 
-   if (stackseg == NULL 
-       || (stackseg->prot & (VKI_PROT_READ|VKI_PROT_WRITE)) == 0) {
+   if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
          "Can't extend stack to %p during signal delivery for thread %d:",
@@ -875,25 +873,31 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    /* Check that the stack frame looks valid */
    sp = tst->arch.vex.guest_GPR1;
    vg_assert(VG_IS_16_ALIGNED(sp));
-   frame_size = *(Addr *)sp - sp;
+   /* JRS 17 Nov 05: This code used to check that *sp -- which should
+      have been set by the stwu at the start of the handler -- points
+      to just above the frame (ie, the previous frame).  However, that
+      isn't valid when delivering signals on alt stacks.  So I removed
+      it.  The frame is still sanity-checked using the priv->magicPI
+      field. */
 
    if (has_siginfo) {
       struct rt_sigframe *frame = (struct rt_sigframe *)sp;
-      vg_assert(frame_size == sizeof(*frame));
+      frame_size = sizeof(*frame);
       mc = &frame->ucontext.uc_mcontext;
       priv = &frame->priv;
+      vg_assert(priv->magicPI == 0x31415927);
       tst->sig_mask = frame->ucontext.uc_sigmask;
    } else {
       struct nonrt_sigframe *frame = (struct nonrt_sigframe *)sp;
-      vg_assert(frame_size == sizeof(*frame));
+      frame_size = sizeof(*frame);
       mc = &frame->mcontext;
       priv = &frame->priv;
+      vg_assert(priv->magicPI == 0x31415927);
       tst->sig_mask.sig[0] = frame->sigcontext.oldmask;
       tst->sig_mask.sig[1] = frame->sigcontext._unused[3];
    }
    tst->tmp_sig_mask = tst->sig_mask;
 
-   vg_assert(priv->magicPI == 0x31415927);
    sigNo = priv->sigNo_private;
 
 #  define DO(gpr)  tst->arch.vex.guest_GPR##gpr = mc->mc_gregs[VKI_PT_R0+gpr]
@@ -952,63 +956,6 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
 //..    /* tell the tools */
 //..    VG_TRACK( post_deliver_signal, tid, sigNo );
 }
-
-//:: /*------------------------------------------------------------*/
-//:: /*--- Making coredumps                                     ---*/
-//:: /*------------------------------------------------------------*/
-//:: 
-//:: void VG_(fill_elfregs_from_tst)(struct vki_user_regs_struct* regs, 
-//::                                  const arch_thread_t* arch)
-//:: {
-//::    regs->eflags = arch->m_eflags;
-//::    regs->esp    = arch->m_esp;
-//::    regs->eip    = arch->m_eip;
-//:: 
-//::    regs->ebx    = arch->m_ebx;
-//::    regs->ecx    = arch->m_ecx;
-//::    regs->edx    = arch->m_edx;
-//::    regs->esi    = arch->m_esi;
-//::    regs->edi    = arch->m_edi;
-//::    regs->ebp    = arch->m_ebp;
-//::    regs->eax    = arch->m_eax;
-//:: 
-//::    regs->cs     = arch->m_cs;
-//::    regs->ds     = arch->m_ds;
-//::    regs->ss     = arch->m_ss;
-//::    regs->es     = arch->m_es;
-//::    regs->fs     = arch->m_fs;
-//::    regs->gs     = arch->m_gs;
-//:: }
-//:: 
-//:: static void fill_fpu(vki_elf_fpregset_t *fpu, const Char *from)
-//:: {
-//::    if (VG_(have_ssestate)) {
-//::       UShort *to;
-//::       Int i;
-//:: 
-//::       /* This is what the kernel does */
-//::       VG_(memcpy)(fpu, from, 7*sizeof(long));
-//::    
-//::       to = (UShort *)&fpu->st_space[0];
-//::       from += 18 * sizeof(UShort);
-//:: 
-//::       for (i = 0; i < 8; i++, to += 5, from += 8) 
-//:: 	 VG_(memcpy)(to, from, 5*sizeof(UShort));
-//::    } else
-//::       VG_(memcpy)(fpu, from, sizeof(*fpu));
-//:: }
-//:: 
-//:: void VG_(fill_elffpregs_from_tst)( vki_elf_fpregset_t* fpu,
-//::                                     const arch_thread_t* arch)
-//:: {
-//::    fill_fpu(fpu, (const Char *)&arch->m_sse);
-//:: }
-//:: 
-//:: void VG_(fill_elffpxregs_from_tst) ( vki_elf_fpxregset_t* xfpu,
-//::                                       const arch_thread_t* arch )
-//:: {
-//::    VG_(memcpy)(xfpu, arch->m_sse.state, sizeof(*xfpu));
-//:: }
 
 /*--------------------------------------------------------------------*/
 /*--- end                                   sigframe-ppc32-linux.c ---*/

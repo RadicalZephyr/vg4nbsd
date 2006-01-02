@@ -362,7 +362,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    }
 
    info->phnum = e->e.e_phnum;
-   info->entry = e->e.e_entry +ebase;
+   info->entry = e->e.e_entry + ebase;
    info->phdr = 0;
    if(1){
 	   VG_(printf)("info->phnum:%d\n , info->entry:%p\n",info->phnum, info->entry); 
@@ -395,36 +395,28 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 break;
 			
       case PT_INTERP: {
-	 char *buf = hack_malloc(ph->p_filesz+1);
-	 int j;
-	 int intfd;
-	 int baseaddr_set;
-	 SysRes res;
+	 char *buf = VG_(malloc)(ph->p_filesz+1);
+	 Int j;
+	 Int intfd;
+	 Int baseaddr_set;
 
          vg_assert(buf);
 	 VG_(pread)(fd, buf, ph->p_filesz, ph->p_offset);
 	 buf[ph->p_filesz] = '\0';
 
-/* 	 intfd = VG_(open)(buf, O_RDONLY, 444); // WAS just open - kailash // */
+	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
+         if (sres.isError) {
+	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
+	    VG_(exit)(1);
+	 }
+         intfd = sres.val;
 
-/* 	 if (intfd == -1) { */
-/* 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n"); */
-/* 	    VG_(exit)(1); */
-/* 	 } */
-	 res = VG_(open)(buf, VKI_O_RDONLY, VKI_S_IRUSR);
-	 if ( !res.isError ) {
-		 intfd = res.val;
-	 }
-	 else {
-		 VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
-		 VG_(exit)(1);
-	 }
 	 interp = readelf(intfd, buf);
 	 if (interp == NULL) {
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
 	    return 1;
 	 }
-	  //FIXME    VG_(free)(buf);
+	 VG_(free)(buf);
 
 	 baseaddr_set = 0;
 	 for(j = 0; j < interp->e.e_phnum; j++) {
@@ -465,9 +457,9 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	   maxaddr + ebase > info->exe_end)) {
 	 VG_(printf)("Executable range %p-%p is outside the\n"
                      "acceptable range %p-%p\n",
-                     (void *)minaddr + ebase, (void *)maxaddr + ebase,
-                     (void *)info->exe_base,  (void *)info->exe_end);
-	 return ENOMEM;
+                     (char *)minaddr + ebase, (char *)maxaddr + ebase,
+                     (char *)info->exe_base,  (char *)info->exe_end);
+	 return VKI_ENOMEM;
       }
    }
 
@@ -479,43 +471,59 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    info->brkbase = mapelf(e, ebase);	/* map the executable */
 
    if (info->brkbase == 0)
-      return ENOMEM;
-
-   if(!interp)
-	   printf("interp is null\n");
-   else 
-	   printf("interp =  %p\n",interp);
+      return VKI_ENOMEM;
 
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
-      SysRes res;
-      Char*  base = (Char *)info->exe_base;
-      Char*  baseoff;
-      Int flags = VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS;
-      VG_(printf)("info->exebase %p\n info->map_base %p\n",info->exe_base,info->map_base);
-      if (info->map_base != 0) {
-	 base = (char *)VG_ROUNDUP(info->map_base, interp_align);
-	 flags |= VKI_MAP_FIXED;
+      MapRequest mreq;
+      Addr       advised;
+      Bool       ok;
+
+      /* Don't actually reserve the space.  Just get an advisory
+         indicating where it would be allocated, and pass that to
+         mapelf(), which in turn asks aspacem to do some fixed maps at
+         the specified address.  This is a bit of hack, but it should
+         work because there should be no intervening transactions with
+         aspacem which could cause those fixed maps to fail.
+
+         Placement policy is:
+
+         if the interpreter asks to be loaded at zero
+            ignore that and put it wherever we like (mappings at zero 
+            are bad news)
+         else
+            try and put it where it asks for, but if that doesn't work,
+            just put it anywhere.
+      */
+      if (interp_addr == 0) {
+         mreq.rkind = MAny;
+         mreq.start = 0;
+         mreq.len   = interp_size;
+      } else {
+         mreq.rkind = MHint;
+         mreq.start = interp_addr;
+         mreq.len   = interp_size;
       }
 
-      printf("doing mmap here\n");
-      res = VG_(mmap_native)( base  , interp_size, VKI_PROT_NONE, flags, -1, 0);
-      check_mmap(res, base, interp_size);
-      vg_assert(!res.isError);
-      base = (Char*)res.val;
+      advised = VG_(am_get_advisory)( &mreq, True/*client*/, &ok );
 
-      baseoff = base - interp_addr;
+      if (!ok) {
+         /* bomb out */
+         SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);
+         if (0) VG_(printf)("reserve for interp: failed\n");
+         check_mmap(res, (Addr)interp_addr, interp_size);
+         /*NOTREACHED*/
+      }
 
-      mapelf(interp, (ESZ(Addr))baseoff);
-      printf("after  mmap and mapelf here\n");
+      (void)mapelf(interp, (ESZ(Addr))advised - interp_addr);
+
       VG_(close)(interp->fd);
 
-      entry = baseoff + interp->e.e_entry;
-      info->interp_base = (ESZ(Addr))base;
-      printf("info interp_base = %p\n " ,info->interp_base);
+      entry = (void *)(advised - interp_addr + interp->e.e_entry);
+      info->interp_base = (ESZ(Addr))advised;
 
-       //FIXME    VG_(free)(interp->p);
-       //FIXME    VG_(free)(interp);
+      VG_(free)(interp->p);
+      VG_(free)(interp);
    } else
       entry = (void *)(ebase + e->e.e_entry);
 
@@ -523,37 +531,71 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    info->exe_end  = maxaddr + ebase;
 
    info->init_eip = (Addr)entry;
-   printf("info->init_eip: %x",info->init_eip);
-    //FIXME    VG_(free)(e->p);
-    //FIXME    VG_(free)(e);
+
+   VG_(free)(e->p);
+   VG_(free)(e);
 
    return 0;
 }
 
 
-static int match_script(const char *hdr, Int len)
+static Bool match_script(char *hdr, Int len)
 {
-   return (len > 2) && VG_(memcmp)(hdr, "#!", 2) == 0;
+   Char* end    = hdr + len;
+   Char* interp = hdr + 2;
+
+   // len < 4: need '#', '!', plus at least a '/' and one more char
+   if (len < 4) return False;    
+   if (0 != VG_(memcmp)(hdr, "#!", 2)) return False;
+
+   // Find interpreter name, make sure it's an absolute path (starts with
+   // '/') and has at least one more char.
+   while (interp < end && VG_(isspace)(*interp)) interp++;
+   if (*interp != '/')  return False;  // absolute path only for interpreter
+   if (interp == end)   return False;  // nothing after the '/'
+
+   // Here we should get the full interpreter name and check it with
+   // check_executable().  See the "EXEC FAILED" failure when running shell
+   // for an example.
+
+   return True;   // looks like a #! script
 }
 
-static int load_script(char *hdr, int len, int fd, const char *name,
-                       struct exeinfo *info)
-{
-   char *interp;
-   char *const end = hdr+len;
-   char *cp;
-   char *arg = NULL;
-   int eol;
+// Forward declaration.
+static Int do_exec_inner(const char *exe, struct exeinfo *info);
 
+/* returns: 0 = success, non-0 is failure */
+static Int load_script(Int fd, const char *name, struct exeinfo *info)
+{
+   Char  hdr[VKI_PAGE_SIZE];
+   Int   len = VKI_PAGE_SIZE;
+   Int   eol;
+   Char* interp;
+   Char* end;
+   Char* cp;
+   Char* arg = NULL;
+   SysRes res;
+
+   // Read the first part of the file.
+   res = VG_(pread)(fd, hdr, len, 0);
+   if (res.isError) {
+      VG_(close)(fd);
+      return VKI_EACCES;
+   } else {
+      len = res.val;
+   }
+
+   vg_assert('#' == hdr[0] && '!' == hdr[1]);
+
+   end    = hdr + len;
    interp = hdr + 2;
-   while(interp < end && (*interp == ' ' || *interp == '\t'))
+   while (interp < end && VG_(isspace)(*interp))
       interp++;
 
-   if (*interp != '/')
-      return ENOEXEC;		/* absolute path only for interpreter */
+   vg_assert(*interp == '/');   /* absolute path only for interpreter */
 
    /* skip over interpreter name */
-   for(cp = interp; cp < end && *cp != ' ' && *cp != '\t' && *cp != '\n'; cp++)
+   for (cp = interp; cp < end && !VG_(isspace)(*cp); cp++)
       ;
 
    eol = (*cp == '\n');

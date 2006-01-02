@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Code redirections.                          pub_core_redir.h ---*/
+/*--- Function replacement and wrapping.          pub_core_redir.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -39,8 +39,6 @@
 //   functions are when they get loaded.
 // - function wrapping: add calls to code before and after client
 //   functions execute, for inspection and/or modification.
-//
-// It's possible that this should be two or three modules.
 //--------------------------------------------------------------------
 
 #include "pub_tool_redir.h"
@@ -68,7 +66,7 @@ typedef struct _CodeRedirect CodeRedirect;
 // before translating a basic block.
 extern Addr VG_(code_redirect) ( Addr orig );
 
-/* Set up some default redirects */
+/* Set up some default redirects. */
 extern void VG_(setup_code_redirect_table) ( void );
 
 extern void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si);
@@ -85,7 +83,7 @@ extern void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si);
    replacement.
 
    Functions named with this macro should be in client space, ie. in
-   vg_preload_<tool>.h or vg_preload_core.h. */
+   vgpreload_<tool>.h or vgpreload_core.h. */
 
 #define VG_NOTIFY_ON_LOAD(name)           _vgw_##name
 #define VG_NOTIFY_ON_LOAD_PREFIX          "_vgw_"

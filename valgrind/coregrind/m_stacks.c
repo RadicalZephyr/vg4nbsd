@@ -29,6 +29,7 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
@@ -95,52 +96,19 @@ static UWord next_id;  /* Next id we hand out to a newly registered stack */
  * stack pointer falls outside the range of the current stack, we search
  * the stacks list above for a matching stack.
  */
-static Addr current_stack_start;
-static Addr current_stack_end;
-static UWord current_stack_id;
-
-/* Search for a particular stack by id number. */
-static Bool find_stack_by_id(UWord id, Addr *start, Addr *end)
-{
-   Stack *i = stacks;
-   while(i) {
-      if(i->id == id) {
-         *start = i->start;
-         *end = i->end;
-         return True;
-      }
-      i = i->next;
-   }
-   return False;
-}
+static Stack *current_stack;
 
 /* Find what stack an address falls into. */
-static Bool find_stack_by_addr(Addr sp, Addr *start, Addr *end, UWord *id)
+static Stack* find_stack_by_addr(Addr sp)
 {
    Stack *i = stacks;
-   while(i) {
-      if(sp >= i->start && sp <= i->end) {
-         *start = i->start;
-         *end = i->end;
-         *id = i->id;
-         return True;
+   while (i) {
+      if (sp >= i->start && sp <= i->end) {
+         return i;
       }
       i = i->next;
    }
-   return False;
-}
-
-/* Change over to a new stack. */
-static Bool set_current_stack(UWord id)
-{
-   Addr start, end;
-   if (find_stack_by_id(id, &start, &end)) {
-      current_stack_id = id;
-      current_stack_start = start;
-      current_stack_end = end;
-      return True;
-   }
-   return False;
+   return NULL;
 }
 
 /*
@@ -151,6 +119,7 @@ static Bool set_current_stack(UWord id)
 UWord VG_(register_stack)(Addr start, Addr end)
 {
    Stack *i;
+
    if (start > end) {
       Addr t = end;
       end = start;
@@ -164,9 +133,12 @@ UWord VG_(register_stack)(Addr start, Addr end)
    i->next = stacks;
    stacks = i;
 
-   if(i->id == 0) {
-      set_current_stack(i->id);
+   if (i->id == 0) {
+      current_stack = i;
    }
+
+   VG_(debugLog)(2, "stacks", "register %p-%p as stack %lu\n",
+                    (void*)start, (void*)end, i->id);
 
    return i->id;
 }
@@ -180,8 +152,10 @@ void VG_(deregister_stack)(UWord id)
    Stack *i = stacks;
    Stack *prev = NULL;
 
-   if(current_stack_id == id) {
-      return;
+   VG_(debugLog)(2, "stacks", "deregister stack %lu\n", id);
+
+   if (current_stack->id == id) {
+      current_stack = NULL;
    }
 
    while(i) {
@@ -208,13 +182,11 @@ void VG_(change_stack)(UWord id, Addr start, Addr end)
 {
    Stack *i = stacks;
 
-   if (id == current_stack_id) {
-      current_stack_start = start;
-      current_stack_end = end;
-   }
-
-   while(i) {
+   while (i) {
       if (i->id == id) {
+         VG_(debugLog)(2, "stacks", "change stack %lu from %p-%p to %p-%p\n",
+                       id, (void*)i->start, (void*)i->end,
+                           (void*)start,    (void*)end);
          i->start = start;
          i->end = end;
          return;
@@ -234,14 +206,13 @@ void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
    Word delta  = (Word)new_SP - (Word)old_SP;
 
    /* Check if the stack pointer is still in the same stack as before. */
-   if (new_SP < current_stack_start || new_SP > current_stack_end) {
-      Addr start, end;
-      UWord new_id;
-      Bool found = find_stack_by_addr(new_SP, &start, &end, &new_id);
-      if (found && new_id != current_stack_id) {
+   if (current_stack == NULL ||
+       new_SP < current_stack->start || new_SP > current_stack->end) {
+      Stack* new_stack = find_stack_by_addr(new_SP);
+      if (new_stack && new_stack->id != current_stack->id) {
          /* The stack pointer is now in another stack.  Update the current
             stack information and return without doing anything else. */
-         set_current_stack(new_id);
+         current_stack = new_stack;
          return;
       }
    }

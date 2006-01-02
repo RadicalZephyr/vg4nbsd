@@ -29,7 +29,7 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_tool_basics_asm.h"
+#include "pub_core_basics_asm.h"
 #include "pub_core_dispatch_asm.h"
 #include "pub_core_transtab_asm.h"
 #include "libvex_guest_offsets.h"	/* for OFFSET_x86_EIP */
@@ -57,7 +57,7 @@ VG_(run_innerloop):
 
 	/* Set up the guest state pointer */
 	movl	28(%esp), %ebp
-
+	
 	/* fetch %EIP into %eax */
 	movl	OFFSET_x86_EIP(%ebp), %eax
 
@@ -71,7 +71,7 @@ VG_(run_innerloop):
 	
 	/* set host SSE control word to the default mode expected 
 	   by VEX-generated code. */
-	cmpl	$0, VG_(have_mxcsr_x86) /* nebsd jumps */
+	cmpl	$0, VG_(machine_x86_have_mxcsr) /* netbsd jumps */
 	jz	L1
 	pushl	$0x1F80
 	ldmxcsr	(%esp)
@@ -134,12 +134,15 @@ run_innerloop_exit:
 	/* We're leaving.  Check that nobody messed with
            %mxcsr or %fpucw.  We can't mess with %eax here as it
 	   holds the tentative return value, but any other is OK. */
+#if !defined(ENABLE_INNER)
+        /* This check fails for self-hosting, so skip in that case */
 	pushl	$0
 	fstcw	(%esp)
 	cmpl	$0x027F, (%esp)
 	popl	%esi /* get rid of the word without trashing %eflags */
 	jnz	invariant_violation
-	cmpl	$0, VG_(have_mxcsr_x86)
+#endif
+	cmpl	$0, VG_(machine_x86_have_mxcsr)
 	jz	L2
 	pushl	$0
 	stmxcsr	(%esp)
@@ -181,7 +184,7 @@ fast_lookup_failed:
 	/* %EIP is up to date here since dispatch_boring dominates */
 	addl	$1, VG_(dispatch_ctr)
 	movl	$VG_TRC_INNER_FASTMISS, %eax
-	jmp	run_innerloop_exit 
+	jmp	run_innerloop_exit
 
 counter_is_zero:
 	/* %EIP is up to date here since dispatch_boring dominates */

@@ -2877,7 +2877,7 @@ PRE(sys_truncate)
 }
 
 // XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux)  || defined (VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)  || defined (VGP_x86_netbsdelf2) || defined(VGP_ppc32_linux)
 PRE(sys_ftruncate64)
 {
 #if defined (VGP_x86_netbsdelf2)
@@ -3068,7 +3068,6 @@ POST(sys_getrlimit)
 
 PRE(sys_getrusage)
 {
-   /* int getrusage (int who, struct rusage *usage); */
    PRINT("sys_getrusage ( %d, %p )", ARG1,ARG2);
    PRE_REG_READ2(long, "getrusage", int, who, struct rusage *, usage);
    PRE_MEM_WRITE( "getrusage(usage)", ARG2, sizeof(struct vki_rusage) );
@@ -4563,7 +4562,6 @@ Bool ML_(do_sigkill)(Int pid, Int tgid)
 
 PRE(sys_kill)
 {
-   /* int kill(pid_t pid, int sig); */
    PRINT("sys_kill ( %d, %d )", ARG1,ARG2);
    PRE_REG_READ2(long, "kill", int, pid, int, sig);
    if (!ML_(client_signal_OK)(ARG2)) {
@@ -5345,7 +5343,6 @@ PRE(sys_sigsuspend)
 // XXX: x86-specific
 PRE(sys_sigaltstack)
 {
-   /* int sigaltstack(const stack_t *ss, stack_t *oss); */
    PRINT("sigaltstack ( %p, %p )",ARG1,ARG2);
    PRE_REG_READ2(int, "sigaltstack",
                  const vki_stack_t *, ss, vki_stack_t *, oss);

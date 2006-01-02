@@ -89,7 +89,6 @@ typedef
       Bool syscall_wrapper;
       Bool sanity_checks;
       Bool data_syms;
-      Bool shadow_memory;
       Bool malloc_replacement;
    } 
    VgNeeds;
@@ -105,7 +104,8 @@ typedef struct {
    // Basic functions
    void  (*tool_pre_clo_init) (void);
    void  (*tool_post_clo_init)(void);
-   IRBB* (*tool_instrument)   (IRBB*, VexGuestLayout*, Addr64, IRType, IRType);
+   IRBB* (*tool_instrument)   (IRBB*, VexGuestLayout*, 
+                               Addr64, VexGuestExtents*, IRType, IRType);
    void  (*tool_fini)         (Int);
 
    // VG_(needs).core_errors
@@ -122,7 +122,7 @@ typedef struct {
    void  (*tool_print_extra_suppression_info)(Error*);
 
    // VG_(needs).basic_block_discards
-   void (*tool_discard_basic_block_info)(Addr, SizeT);
+   void (*tool_discard_basic_block_info)(Addr64, VexGuestExtents);
 
    // VG_(needs).command_line_options
    Bool (*tool_process_cmd_line_option)(Char*);
@@ -158,7 +158,7 @@ typedef struct {
    void (*track_new_mem_brk)         (Addr, SizeT);
    void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool);
 
-   void (*track_copy_mem_remap)      (Addr, Addr, SizeT);
+   void (*track_copy_mem_remap)      (Addr src, Addr dst, SizeT);
    void (*track_change_mem_mprotect) (Addr, SizeT, Bool, Bool, Bool);
    void (*track_die_mem_stack_signal)(Addr, SizeT);
    void (*track_die_mem_brk)         (Addr, SizeT);
@@ -209,7 +209,7 @@ extern VgToolInterface VG_(tdict);
    Miscellaneous functions
    ------------------------------------------------------------------ */
 
-Bool VG_(sanity_check_needs) ( Bool non_zero_shadow_memory, Char** failmsg );
+Bool VG_(sanity_check_needs) ( Char** failmsg );
 
 #endif   // __PUB_CORE_TOOLIFACE_H
 

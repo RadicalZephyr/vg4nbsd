@@ -103,7 +103,7 @@ SysRes VG_(mk_SysRes_Success) ( UWord val ) {
 static UWord do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6,UWord a7
+          UWord a4, UWord a5, UWord a6
        );
 asm(
     /* its easier for us, we need syscall number in eax, and its
@@ -111,7 +111,8 @@ asm(
           stack, then the syscall number, then ..something , pop that
           something into ecx , pop the syscall number into eax. push
           back that something onto the stack and we are good to go */
-      
+
+    ".text\n"
     "do_syscall_WRK:\n"
     "popl %ecx\n"
     "popl %eax\n"
@@ -121,6 +122,7 @@ asm(
     "movl $-1,%eax\n"
     "1:\n"
     "ret\n"
+    ".previous"
     );
 /* there was a push %ecx\n after int 80h, i dont know why its there so its removed */
 /*
@@ -161,12 +163,13 @@ asm(
    clobbers, so we preserve all the callee-save regs (%esi, %edi, %ebx,
    %ebp).
 */
-static UWord do_syscall_WRK (
+extern UWord do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6,UWord a7
+          UWord a4, UWord a5, UWord a6
        );
 asm(
+".text\n"
 "do_syscall_WRK:\n"
 "	push	%esi\n"
 "	push	%edi\n"
@@ -185,13 +188,9 @@ asm(
 "	popl	%edi\n"
 "	popl	%esi\n"
 "	ret\n"
+".previous\n"
 );
 #elif defined(VGP_amd64_linux)
-static UWord do_syscall_WRK (
-          UWord syscall_no, 
-          UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6,UWord a7
-       );
 /* Incoming args (syscall number + up to 6 args) come in %rdi, %rsi,
    %rdx, %rcx, %r8, %r9, and the last one on the stack (ie. the C
    calling convention).
@@ -204,12 +203,13 @@ static UWord do_syscall_WRK (
    no matter, they are caller-save (the syscall clobbers no callee-save
    regs, so we don't have to do any register saving/restoring).
 */
-static UWord do_syscall_WRK (
+extern UWord do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6,UWord a7
+          UWord a4, UWord a5, UWord a6
        );
 asm(
+".text\n"
 "do_syscall_WRK:\n"
         /* Convert function calling convention --> syscall calling
            convention */
@@ -222,6 +222,7 @@ asm(
 "	movq    8(%rsp), %r9\n"	 /* last arg from stack */
 "	syscall\n"
 "	ret\n"
+".previous\n"
 );
 #elif defined(VGP_ppc32_linux)
 /* Incoming args (syscall number + up to 6 args) come in %r0, %r3:%r8
@@ -234,12 +235,13 @@ asm(
    We return a ULong, of which %r3 is the high word, and %r4 the low.
    No callee-save regs are clobbered, so no saving/restoring is needed.
 */
-static ULong do_syscall_WRK (
+extern ULong do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
           UWord a4, UWord a5, UWord a6
        );
 asm(
+".text\n"
 "do_syscall_WRK:\n"
 "        mr      0,3\n"
 "        mr      3,4\n"
@@ -252,16 +254,17 @@ asm(
 "        mfcr    4\n"           /* %cr -> low word of return var          */
 "        rlwinm  4,4,4,31,31\n" /* rotate flag bit so to lsb, and mask it */
 "        blr\n"                 /* and return                             */
+".previous\n"
 );
 #else
 #  error Unknown platform
 #endif
 
 SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
-                                      UWord a4, UWord a5, UWord a6,UWord a7 )
+                                      UWord a4, UWord a5, UWord a6 )
 {
 #if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
-  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6,a7);
+  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
   return VG_(mk_SysRes_x86_linux)( val );
 #elif defined(VGP_amd64_linux)
   UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
@@ -288,18 +291,19 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 const HChar* VG_(strerror) ( UWord errnum )
 {
    switch (errnum) {
-      case VKI_EPERM:       return "EPERM";
-      case VKI_ESRCH:       return "ESRCH";
-      case VKI_EINTR:       return "EINTR";
-      case VKI_EBADF:       return "EBADF";
-      case VKI_EAGAIN:      return "EAGAIN";
-      case VKI_ENOMEM:      return "ENOMEM";
-      case VKI_EACCES:      return "EACCES";
-      case VKI_EFAULT:      return "EFAULT";
-      case VKI_EEXIST:      return "EEXIST";
-      case VKI_EINVAL:      return "EINVAL";
-      case VKI_EMFILE:      return "EMFILE";
-      case VKI_ENOSYS:      return "ENOSYS";
+      case VKI_EPERM:       return "Operation not permitted";
+      case VKI_ENOENT:      return "No such file or directory";
+      case VKI_ESRCH:       return "No such process";
+      case VKI_EINTR:       return "Interrupted system call";
+      case VKI_EBADF:       return "Bad file number";
+      case VKI_EAGAIN:      return "Try again";
+      case VKI_ENOMEM:      return "Out of memory";
+      case VKI_EACCES:      return "Permission denied";
+      case VKI_EFAULT:      return "Bad address";
+      case VKI_EEXIST:      return "File exists";
+      case VKI_EINVAL:      return "Invalid argument";
+      case VKI_EMFILE:      return "Too many open files";
+      case VKI_ENOSYS:      return "Function not implemented";
       case VKI_ERESTARTSYS: return "ERESTARTSYS";
       default:              return "VG_(strerror): unknown error";
    }

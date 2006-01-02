@@ -40,7 +40,8 @@ VgToolInterface VG_(tdict);
 
 void VG_(basic_tool_funcs)(
    void(*post_clo_init)(void),
-   IRBB*(*instrument)(IRBB*, VexGuestLayout*, IRType, IRType ),
+   IRBB*(*instrument)(IRBB*, VexGuestLayout*, 
+                      Addr64, VexGuestExtents*, IRType, IRType ),
    void(*fini)(Int)
 )
 {
@@ -91,12 +92,11 @@ VgNeeds VG_(needs) = {
    .syscall_wrapper      = False,
    .sanity_checks        = False,
    .data_syms	         = False,
-   .shadow_memory        = False,
    .malloc_replacement   = False,
 };
 
 /* static */
-Bool VG_(sanity_check_needs)(Bool non_zero_shadow_memory, Char** failmsg)
+Bool VG_(sanity_check_needs)(Char** failmsg)
 {
 #define CHECK_NOT(var, value)                                  \
    if ((var)==(value)) {                                       \
@@ -137,12 +137,6 @@ Bool VG_(sanity_check_needs)(Bool non_zero_shadow_memory, Char** failmsg)
       return False;
    }
 
-   if (VG_(needs).shadow_memory != non_zero_shadow_memory) {
-      *failmsg = "Tool error: VG_(needs).shadow_memory doesn't match\n"
-                 "   the 'shadow_ratio' set in VG_DETERMINE_INTERFACE_VERSION\n";
-      return False;
-   }
-
    return True;
 
 #undef CHECK_NOT
@@ -159,10 +153,9 @@ Bool VG_(sanity_check_needs)(Bool non_zero_shadow_memory, Char** failmsg)
 NEEDS(libc_freeres)
 NEEDS(core_errors)
 NEEDS(data_syms)
-NEEDS(shadow_memory)
 
 void VG_(needs_basic_block_discards)(
-   void (*discard)(Addr, SizeT)
+   void (*discard)(Addr64, VexGuestExtents)
 )
 {
    VG_(needs).basic_block_discards = True;

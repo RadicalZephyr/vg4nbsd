@@ -31,7 +31,6 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -376,17 +375,16 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
    ThreadId tid = tst->tid;
-   Segment *stackseg = NULL;
+   NSegment *stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
-      stackseg = VG_(find_segment)(addr);
+      stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
 	 VG_(printf)("frame=%p seg=%p-%p\n",
-		     addr, stackseg->addr, stackseg->addr+stackseg->len);
+		     addr, stackseg->start, stackseg->end);
    }
 
-   if (stackseg == NULL 
-       || (stackseg->prot & (VKI_PROT_READ|VKI_PROT_WRITE)) == 0) {
+   if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
          "Can't extend stack to %p during signal delivery for thread %d:",
@@ -616,68 +614,6 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    /* tell the tools */
    VG_TRACK( post_deliver_signal, tid, sigNo );
 }
-
-//:: /*------------------------------------------------------------*/
-//:: /*--- Making coredumps                                     ---*/
-//:: /*------------------------------------------------------------*/
-//:: 
-//:: void VG_(fill_elfregs_from_tst)(struct vki_user_regs_struct* regs, 
-//::                                  const arch_thread_t* arch)
-//:: {
-//::    regs->rflags = arch->m_rflags;
-//::    regs->rsp    = arch->m_rsp;
-//::    regs->rip    = arch->m_rip;
-//::
-//::    regs->rbx    = arch->m_rbx;
-//::    regs->rcx    = arch->m_rcx;
-//::    regs->rdx    = arch->m_rdx;
-//::    regs->rsi    = arch->m_rsi;
-//::    regs->rdi    = arch->m_rdi;
-//::    regs->rbp    = arch->m_rbp;
-//::    regs->rax    = arch->m_rax;
-//::    regs->r8     = arch->m_r8;
-//::    regs->r9     = arch->m_r9;
-//::    regs->r10    = arch->m_r10;
-//::    regs->r11    = arch->m_r11;
-//::    regs->r12    = arch->m_r12;
-//::    regs->r13    = arch->m_r13;
-//::    regs->r14    = arch->m_r14;
-//::    regs->r15    = arch->m_r15;
-//:: 
-//::    regs->cs     = arch->m_cs;
-//::    regs->fs     = arch->m_fs;
-//::    regs->gs     = arch->m_gs;
-//:: }
-//:: 
-//:: static void fill_fpu(vki_elf_fpregset_t *fpu, const Char *from)
-//:: {
-//::    if (VG_(have_ssestate)) {
-//::       UShort *to;
-//::       Int i;
-//:: 
-//::       /* This is what the kernel does */
-//::       VG_(memcpy)(fpu, from, 7*sizeof(long));
-//::    
-//::       to = (UShort *)&fpu->st_space[0];
-//::       from += 18 * sizeof(UShort);
-//:: 
-//::       for (i = 0; i < 8; i++, to += 5, from += 8) 
-//:: 	 VG_(memcpy)(to, from, 5*sizeof(UShort));
-//::    } else
-//::       VG_(memcpy)(fpu, from, sizeof(*fpu));
-//:: }
-//:: 
-//:: void VG_(fill_elffpregs_from_tst)( vki_elf_fpregset_t* fpu,
-//::                                     const arch_thread_t* arch)
-//:: {
-//::    fill_fpu(fpu, (const Char *)&arch->m_sse);
-//:: }
-//:: 
-//:: void VG_(fill_elffpxregs_from_tst) ( vki_elf_fpxregset_t* xfpu,
-//::                                       const arch_thread_t* arch )
-//:: {
-//::    VG_(memcpy)(xfpu, arch->m_sse.state, sizeof(*xfpu));
-//:: }
 
 /*--------------------------------------------------------------------*/
 /*--- end                                   sigframe-amd64-linux.c ---*/

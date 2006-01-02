@@ -2409,8 +2409,7 @@ PRE(sys_execve)
 
    if (VG_(clo_trace_children)) {
       // Set VALGRIND_LIB in ARG3 (the environment)
-      VG_(env_setenv)( &envp, VALGRINDLIB, VG_(libdir));
-// XXX -NetBSD I set VALGRIND_LIB to VALGRINDLIB. could be a mistake - kailash
+      VG_(env_setenv)( &envp, VALGRIND_LIB, VG_(libdir));
    }
 
    // Set up the child's args.  If not tracing it, they are
@@ -2486,7 +2485,7 @@ PRE(sys_execve)
       vki_siginfo_t info;
       static const struct vki_timespec zero = { 0, 0 };
 
-      for(i = 1; i < VG_(max_signal); i++) {
+      for (i = 1; i < VG_(max_signal); i++) {
          struct vki_sigaction sa;
          VG_(do_sys_sigaction)(i, NULL, &sa);
          if (sa.ksa_handler == VKI_SIG_IGN)
@@ -2602,10 +2601,8 @@ PRE(sys_chmod)
    PRE_MEM_RASCIIZ( "chmod(path)", ARG1 );
 }
 
-
 PRE(sys_chown)
 {
-   /* int chown(const char *path, uid_t owner, gid_t group); */
    PRINT("sys_chown ( %p, 0x%x, 0x%x )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "chown",
                  const char *, path, vki_uid_t, owner, vki_gid_t, group);
@@ -2674,7 +2671,6 @@ PRE(sys_fchdir)
    PRE_REG_READ1(long, "fchdir", unsigned int, fd);
 }
 
-
 PRE(sys_fchown)
 {
    PRINT("sys_fchown ( %d, %d, %d )", ARG1,ARG2,ARG3);
@@ -2695,9 +2691,7 @@ PRE(sys_fcntl)
    case VKI_F_GETFD:
    case VKI_F_GETFL:
    case VKI_F_GETOWN:
-   case VKI_F_SETOWN:
    case VKI_F_GETSIG:
-   case VKI_F_SETSIG:
    case VKI_F_GETLEASE:
       PRINT("sys_fcntl ( %d, %d )", ARG1,ARG2);
       PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
@@ -2709,6 +2703,8 @@ PRE(sys_fcntl)
    case VKI_F_SETFL:
    case VKI_F_SETLEASE:
    case VKI_F_NOTIFY:
+   case VKI_F_SETOWN:
+   case VKI_F_SETSIG:
       PRINT("sys_fcntl[ARG3=='arg'] ( %d, %d, %d )", ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd, unsigned long, arg);
@@ -2939,7 +2935,6 @@ POST(sys_getdents64)
       POST_MEM_WRITE( ARG2, RES );
 }
 
-
 PRE(sys_getgroups)
 {
    PRINT("sys_getgroups ( %d, %p )", ARG1, ARG2);
@@ -2975,20 +2970,17 @@ POST(sys_getcwd)
       POST_MEM_WRITE( ARG1, RES );
 }
 
-
 PRE(sys_geteuid)
 {
    PRINT("sys_geteuid ( )");
    PRE_REG_READ0(long, "geteuid");
 }
 
-
 PRE(sys_getegid)
 {
    PRINT("sys_getegid ( )");
    PRE_REG_READ0(long, "getegid");
 }
-
 
 PRE(sys_getgid)
 {
@@ -3111,7 +3103,6 @@ PRE(sys_settimeofday)
       /* maybe should warn if tz->tz_dsttime is non-zero? */
    }
 }
-
 
 PRE(sys_getuid)
 {
@@ -3508,6 +3499,7 @@ PRE(sys_ioctl)
    case VKI_SNDCTL_DSP_SETSYNCRO:
    case VKI_SNDCTL_DSP_SETDUPLEX:
       break;
+
       /* linux/soundcard interface (ALSA) */
 #ifdef VGO_linux
    case VKI_SNDRV_PCM_IOCTL_HW_FREE:
@@ -4594,13 +4586,6 @@ PRE(sys_link)
    PRE_MEM_RASCIIZ( "link(newpath)", ARG2);
 }
 
-PRE(sys_lseek)
-{
-   PRINT("sys_lseek ( %d, %d, %d )", ARG1,ARG2,ARG3);
-   PRE_REG_READ3(vki_off_t, "lseek",
-                 unsigned int, fd, vki_off_t, offset, unsigned int, whence);
-}
-
 PRE(sys_newlstat)
 {
    PRINT("sys_newlstat ( %p(%s), %p )", ARG1,ARG1,ARG2);
@@ -4636,7 +4621,6 @@ PRE(sys_mprotect)
    } 
 #ifndef VGO_netbsdelf2
    else 
-
    if (ARG3 & (VKI_PROT_GROWSDOWN|VKI_PROT_GROWSUP)) {
       /* Deal with mprotects on growable stack areas.
 
@@ -5004,7 +4988,6 @@ PRE(sys_rmdir)
    PRE_MEM_RASCIIZ( "rmdir(pathname)", ARG1 );
 }
 
-
 PRE(sys_select)
 {
    *flags |= SfMayBlock;
@@ -5038,7 +5021,6 @@ PRE(sys_setsid)
    PRE_REG_READ0(long, "setsid");
 }
 
-
 PRE(sys_setgroups)
 {
    PRINT("setgroups ( %llu, %p )", (ULong)ARG1, ARG2);
@@ -5058,7 +5040,6 @@ PRE(sys_setregid)
    PRINT("sys_setregid ( %d, %d )", ARG1, ARG2);
    PRE_REG_READ2(long, "setregid", vki_gid_t, rgid, vki_gid_t, egid);
 }
-
 
 PRE(sys_setreuid)
 {
@@ -5105,7 +5086,6 @@ PRE(sys_setrlimit)
       }
    }
 }
-
 
 PRE(sys_setuid)
 {
@@ -5220,16 +5200,6 @@ POST(sys_newuname)
       POST_MEM_WRITE( ARG1, sizeof(struct vki_new_utsname) );
    }
 }
-
-/* PRE(sys_utime) */
-/* { */
-/*    *flags |= SfMayBlock; */
-/*    PRINT("sys_utime ( %p, %p )", ARG1,ARG2); */
-/*    PRE_REG_READ2(long, "utime", char *, filename, struct utimbuf *, buf); */
-/*    PRE_MEM_RASCIIZ( "utime(filename)", ARG1 ); */
-/*    if (ARG2 != 0) */
-/*       PRE_MEM_READ( "utime(buf)", ARG2, sizeof(struct vki_utimbuf) ); */
-/* } */
 
 PRE(sys_waitpid)
 {

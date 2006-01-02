@@ -1187,21 +1187,24 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
 {
    Int			sigNo;
-   SCSS_Per_Signal	*handler = &scss.scss_per_sig[sigNo];
+   SCSS_Per_Signal	*handler;
    void			*handler_fn;
    ThreadState		*tst = VG_(get_ThreadState)(tid);
 
-   if (VG_(clo_trace_signals))
 #if defined (VGO_netbsdelf2)
-	   sigNo = info->_info._signo;
+   sigNo = info->_info._signo;
+   if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,"delivering signal %d (%s):%d to thread %d",
 		   sigNo, signame(sigNo), info->_info._code, tid );
 #else
-      sigNo=info->si_signo;
+   sigNo=info->si_signo;
+   if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,"delivering signal %d (%s):%d to thread %d",
 		   sigNo, signame(sigNo), info->si_code, tid );
 #endif
 
+   handler = &scss.scss_per_sig[sigNo];
+   
    if (sigNo == VG_SIGVGKILL) {
       /* If this is a SIGVGKILL, we're expecting it to interrupt any
 	 blocked syscall.  It doesn't matter whether the VCPU state is
@@ -1418,17 +1421,20 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
    
    idx = sq->next;
    do {
-      if (0)
-	 VG_(printf)("idx=%d si_signo=%d inset=%d\n", idx,
-		     sq->sigs[idx].si_signo, VG_(sigismember)(set, sq->sigs[idx].si_signo));
 
 #if defined(VGO_netbsdelf2)
+      if (0)
+	 VG_(printf)("idx=%d si_signo=%d inset=%d\n", idx,
+		     sq->sigs[idx]._info.signo, VG_(sigismember)(set, sq->sigs[idx]._info.signo));
       if (sq->sigs[idx]._info._signo != 0 && VG_(sigismember)(set, sq->sigs[idx]._info._signo)) {
 	 if (VG_(clo_trace_signals))
 		 VG_(message)(Vg_DebugMsg, "Returning queued signal %d (idx %d) for thread %d", sq->sigs[idx]._info._signo, idx, tid);
 	 ret = &sq->sigs[idx];
 	 goto out;
 #else
+      if (0)
+	 VG_(printf)("idx=%d si_signo=%d inset=%d\n", idx,
+		     sq->sigs[idx].si_signo, VG_(sigismember)(set, sq->sigs[idx].si_signo));
       if (sq->sigs[idx].si_signo != 0 && VG_(sigismember)(set, sq->sigs[idx].si_signo)) {
 	 if (VG_(clo_trace_signals))
 	    VG_(message)(Vg_DebugMsg, "Returning queued signal %d (idx %d) for thread %d",

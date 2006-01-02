@@ -511,6 +511,7 @@ Addr setup_client_stack( void*  init_sp,
          case AT_PHENT:
          case AT_PAGESZ:
          case AT_FLAGS:
+#if defined(VGO_linux)
          case AT_NOTELF:
          case AT_UID:
          case AT_EUID:
@@ -518,6 +519,7 @@ Addr setup_client_stack( void*  init_sp,
          case AT_EGID:
          case AT_CLKTCK:
          case AT_FPUCW:
+#endif
             /* All these are pointerless, so we don't need to do
                anything about them. */
             break;
@@ -540,17 +542,21 @@ Addr setup_client_stack( void*  init_sp,
             auxv->u.a_val = info->interp_base;
             break;
 
+#if defined(VGO_linux)
          case AT_PLATFORM:
             /* points to a platform description string */
             auxv->u.a_ptr = copy_str(&strtab, orig_auxv->u.a_ptr);
             break;
+#endif
 
          case AT_ENTRY:
             auxv->u.a_val = info->entry;
             break;
 
+#if defined(VGO_linux)
          case AT_HWCAP:
             break;
+#endif
 
          case AT_DCACHEBSIZE:
          case AT_ICACHEBSIZE:
@@ -2323,7 +2329,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
       /* do "jump *$eip" to skip this in gdb (x86) */
       //VG_(do_syscall0)(__NR_pause);
 
-#     if defined(VGP_x86_linux)
+#     if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
       iters = 5;
 #     elif defined(VGP_amd64_linux)
       iters = 10;
@@ -2788,7 +2794,7 @@ void* memset(void *s, int c, size_t n) {
 /* The kernel hands control to _start, which extracts the initial
    stack pointer and calls onwards to _start_in_C.  This also switches
    the new stack.  */
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)  /* XXX correct?! */
 asm("\n"
     ".text\n"
     "\t.globl _start\n"

@@ -101,7 +101,7 @@ UInt VG_(get_StackTrace2) ( Addr* ips, UInt n_ips,
       to merge the x86, amd64 and ppc32 logic into a single piece of
       code is just too confusing and difficult to performance-tune.  */
 
-#  if defined(VGP_x86_linux) || if defined (VGP_x86_netbsdelf2)
+#  if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
 
    /*--------------------- x86 ---------------------*/
 

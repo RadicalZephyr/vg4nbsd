@@ -427,7 +427,7 @@ Int VG_(getgroups)( Int size, UInt* list )
    if (sres.isError)
       return -1;
    return sres.val;
-#elif defined (VGP_netbsdelf2)
+#elif defined (VGP_x86_netbsdelf2)
    SysRes sres;
    sres = VG_(do_syscall2)(__NR_getgroups,size,(Addr)list);
    if(sres.isError)

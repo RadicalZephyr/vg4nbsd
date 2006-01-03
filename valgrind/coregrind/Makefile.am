@@ -227,6 +227,10 @@ libreplacemalloc_toolpreload_ppc32_linux_a_SOURCES = m_replacemalloc/vg_replace_
 libreplacemalloc_toolpreload_ppc32_linux_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_LINUX)
 libreplacemalloc_toolpreload_ppc32_linux_a_CFLAGS = $(AM_CFLAGS_PPC32_LINUX) -fpic -fno-omit-frame-pointer
 
+libreplacemalloc_toolpreload_x86_netbsd_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
+libreplacemalloc_toolpreload_x86_netbsd_a_CPPFLAGS = $(AM_CPPFLAGS_X86_NETBSD)
+libreplacemalloc_toolpreload_x86_netbsd_a_CFLAGS = $(AM_CFLAGS_X86_NETBSD) -fpic -fno-omit-frame-pointer
+
 COREGRIND_NETBSD_SOURCE = \
 	m_coredump/coredump-elf.c \
 	m_syswrap/syswrap-netbsdelf2.c

@@ -54,6 +54,13 @@
 #ifndef NT_PRXFPREG
 #define NT_PRXFPREG     0x46e62b7f      /* copied from gdb5.1/include/elf/common.h */
 #endif /* NT_PRXFPREG */
+#ifndef NT_PRSTATUS
+#define NT_PRSTATUS     1               /* Contains copy of prstatus struct */
+#endif /* NT_PRSTATUS */
+#ifndef NT_FPREGSET 
+#define NT_FPREGSET     2               /* Contains copy of fpregset struct */
+#endif /* NT_FPREGSET */
+
 
 #if	VG_WORDSIZE == 8
 #define ESZ(x)	Elf64_##x
@@ -201,7 +208,7 @@ static void write_note(Int fd, const struct note *n)
 {
    VG_(write)(fd, &n->note, note_size(n));
 }
-
+#ifndef VGO_netbsdelf2
 static void fill_prpsinfo(const ThreadState *tst, struct vki_elf_prpsinfo *prpsinfo)
 {
    static Char name[VKI_PATH_MAX];
@@ -268,7 +275,7 @@ static void fill_prstatus(const ThreadState *tst,
 
    ML_(fill_elfregs_from_tst)(regs, &tst->arch);
 }
-
+#endif
 static void fill_fpu(const ThreadState *tst, vki_elf_fpregset_t *fpu)
 {
    ML_(fill_elffpregs_from_tst)(fpu, &tst->arch);
@@ -297,8 +304,10 @@ void make_elf_coredump(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
    UInt off;
    struct note *notelist, *note;
    UInt notesz;
+#ifndef VGO_netbsdelf2  /* XXX - we cant do this yet  kailash */
    struct vki_elf_prpsinfo prpsinfo;
    struct vki_elf_prstatus prstatus;
+#endif
    Addr *seg_starts;
    Int n_seg_starts;
 
@@ -365,14 +374,15 @@ void make_elf_coredump(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
 
       fill_fpu(&VG_(threads)[i], &fpu);
       add_note(&notelist, "CORE", NT_FPREGSET, &fpu, sizeof(fpu));
-
+#ifndef VGO_netbsdelf2
       fill_prstatus(&VG_(threads)[i], &prstatus, si);
       add_note(&notelist, "CORE", NT_PRSTATUS, &prstatus, sizeof(prstatus));
+#endif
    }
-
+#ifndef VGO_netbsdelf2
    fill_prpsinfo(&VG_(threads)[tid], &prpsinfo);
    add_note(&notelist, "CORE", NT_PRPSINFO, &prpsinfo, sizeof(prpsinfo));
-
+#endif
    for(note = notelist, notesz = 0; note != NULL; note = note->next)
       notesz += note_size(note);
 

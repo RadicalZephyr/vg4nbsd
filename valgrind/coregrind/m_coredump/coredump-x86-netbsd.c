@@ -43,24 +43,24 @@
 void ML_(fill_elfregs_from_tst)(struct vki_user_regs_struct* regs, 
                                 const ThreadArchState* arch)
 {
-   regs->eflags = LibVEX_GuestX86_get_eflags( &((ThreadArchState*)arch)->vex );
-   regs->esp    = arch->vex.guest_ESP;
-   regs->eip    = arch->vex.guest_EIP;
+   regs->r_eflags = LibVEX_GuestX86_get_eflags( &((ThreadArchState*)arch)->vex );
+   regs->r_esp    = arch->vex.guest_ESP;
+   regs->r_eip    = arch->vex.guest_EIP;
 
-   regs->ebx    = arch->vex.guest_EBX;
-   regs->ecx    = arch->vex.guest_ECX;
-   regs->edx    = arch->vex.guest_EDX;
-   regs->esi    = arch->vex.guest_ESI;
-   regs->edi    = arch->vex.guest_EDI;
-   regs->ebp    = arch->vex.guest_EBP;
-   regs->eax    = arch->vex.guest_EAX;
+   regs->r_ebx    = arch->vex.guest_EBX;
+   regs->r_ecx    = arch->vex.guest_ECX;
+   regs->r_edx    = arch->vex.guest_EDX;
+   regs->r_esi    = arch->vex.guest_ESI;
+   regs->r_edi    = arch->vex.guest_EDI;
+   regs->r_ebp    = arch->vex.guest_EBP;
+   regs->r_eax    = arch->vex.guest_EAX;
 
-   regs->cs     = arch->vex.guest_CS;
-   regs->ds     = arch->vex.guest_DS;
-   regs->ss     = arch->vex.guest_SS;
-   regs->es     = arch->vex.guest_ES;
-   regs->fs     = arch->vex.guest_FS;
-   regs->gs     = arch->vex.guest_GS;
+   regs->r_cs     = arch->vex.guest_CS;
+   regs->r_ds     = arch->vex.guest_DS;
+   regs->r_ss     = arch->vex.guest_SS;
+   regs->r_es     = arch->vex.guest_ES;
+   regs->r_fs     = arch->vex.guest_FS;
+   regs->r_gs     = arch->vex.guest_GS;
 }
 
 //:: static void fill_fpu(vki_elf_fpregset_t *fpu, const Char *from)

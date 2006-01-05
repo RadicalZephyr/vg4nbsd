@@ -32,6 +32,7 @@
    and so it doesn't have to conform to Valgrind's arcane rules on
    no-glibc-usage etc. */
 
+#include <sys/param.h> /* so its netbsd specific */
 #include <assert.h>
 #include <ctype.h>
 #include <elf.h>

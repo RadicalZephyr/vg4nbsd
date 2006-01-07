@@ -43,10 +43,10 @@
 static void micro_ops_warn(Int actual_size, Int used_size, Int line_size)
 {
     VG_(message)(Vg_DebugMsg, 
-       "warning: Pentium with %d K micro-op instruction trace cache", 
+       "warning: Pentium 4 with %d KB micro-op instruction trace cache", 
        actual_size);
     VG_(message)(Vg_DebugMsg, 
-       "         Simulating a %d KB cache with %d B lines", 
+       "         Simulating a %d KB I-cache with %d B lines", 
        used_size, line_size);
 }
 
@@ -108,8 +108,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
          VG_(tool_panic)("IA-64 cache detected?!");
 
       case 0x22: case 0x23: case 0x25: case 0x29: 
-          VG_(message)(Vg_DebugMsg, 
-             "warning: L3 cache detected but ignored\n");
+          VG_(message)(Vg_DebugMsg, "warning: L3 cache detected but ignored");
           break;
 
       /* These are sectored, whatever that means */

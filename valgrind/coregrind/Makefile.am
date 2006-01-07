@@ -121,7 +121,7 @@ valgrind_SOURCES = \
 	m_debuglog.c
 # BIG HACK SIR 
 if VG_X86_NETBSD
-valgrind_CPPFLAGS = $(add_includes_x86_netbsdelf2)
+valgrind_CPPFLAGS = $(AM_CPPFLAGS_X86_NETBSD)
 endif
 COREGRIND_SOURCES_COMMON = \
 	m_commandline.c \

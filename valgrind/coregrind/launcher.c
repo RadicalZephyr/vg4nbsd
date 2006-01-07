@@ -32,6 +32,11 @@
    and so it doesn't have to conform to Valgrind's arcane rules on
    no-glibc-usage etc. */
 
+
+#include "pub_core_debuglog.h"
+#include "pub_core_libcproc.h"  // For VALGRIND_LIB, VALGRIND_LAUNCHER
+#include "pub_core_ume.h"
+
 #include <sys/param.h> /* so its netbsd specific */
 #include <assert.h>
 #include <ctype.h>
@@ -46,15 +51,11 @@
 #include <sys/user.h>
 #include <unistd.h>
 
-#include "pub_core_debuglog.h"
-#include "pub_core_libcproc.h"  // For VALGRIND_LIB, VALGRIND_LAUNCHER
-#include "pub_core_ume.h"
 
-
-
+#ifndef PATH_MAX
 #define PATH_MAX 4096 /* POSIX refers to this a lot but I dunno
                          where it is defined */
-
+#endif 
 /* Report fatal errors */
 static void barf ( const char *format, ... )
 {
@@ -142,7 +143,7 @@ static const char *select_platform(const char *clientname)
       if (ehdr->e_machine == EM_386 &&
           ehdr->e_ident[EI_OSABI] == ELFOSABI_SYSV) {
 #ifdef NetBSD 
-	      platform ="x86-netbsdelf2"
+	      platform ="x86-netbsdelf2";
 #else
          platform = "x86-linux";
 #endif

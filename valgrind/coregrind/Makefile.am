@@ -119,7 +119,7 @@ CLEANFILES =
 valgrind_SOURCES = \
 	launcher.c \
 	m_debuglog.c
-
+valgrind_CPPFLAGS =-I$(top_srcdir)/include -I$(top_srcdir)/VEX/pub 
 COREGRIND_SOURCES_COMMON = \
 	m_commandline.c \
 	m_cpuid.S \

@@ -141,7 +141,11 @@ static const char *select_platform(const char *clientname)
 
       if (ehdr->e_machine == EM_386 &&
           ehdr->e_ident[EI_OSABI] == ELFOSABI_SYSV) {
+#ifdef NetBSD 
+	      platform ="x86-netbsdelf2"
+#else
          platform = "x86-linux";
+#endif
       } else if (ehdr->e_machine == EM_PPC &&
                  ehdr->e_ident[EI_OSABI] == ELFOSABI_SYSV) {
          platform = "ppc32-linux";

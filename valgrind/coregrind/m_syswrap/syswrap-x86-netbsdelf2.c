@@ -43,7 +43,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
-/* #include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)() */
+/* #include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)()el */
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"

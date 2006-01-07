@@ -56,7 +56,7 @@
 // (eg. in pub_core_threadstate.h).
 #if defined(VGO_linux)
 #  include "vki-linux.h"
-#elif defined(VGO_netbsdelf2)
+#elif defined (VGO_netbsdelf2)
 #include "vki-netbsd.h"
 #else  
 #  error Unknown OS

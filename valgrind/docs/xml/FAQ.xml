@@ -4,19 +4,20 @@
 [ <!ENTITY % vg-entities SYSTEM "vg-entities.xml"> %vg-entities; ]>
 
 <book id="FAQ" xreflabel="Valgrind FAQ">
-<title>Valgrind FAQ</title>
+
 <bookinfo>
+  <title>Valgrind FAQ</title>
   <subtitle>Valgrind Frequently Asked Questions</subtitle>
-  <releaseinfo>August 2005</releaseinfo>
-  <author>
-    <surname>
-      <ulink url="http://www.valgrind.org/www/developers.html">Valgrind Developers</ulink>
-    </surname>
-    <affiliation><orgname>
-      <ulink url="mailto:&vg-vemail;">&vg-vemail;</ulink>
-    </orgname></affiliation>
-  </author>
+  <releaseinfo>&rel-type; &rel-version; &rel-date;</releaseinfo>
+ <copyright>
+  <year>&vg-lifespan;</year>
+  <holder><ulink url="&vg-developers;">Valgrind Developers</ulink></holder>
+ </copyright>
+ <legalnotice>
+  <para>Email: <ulink url="mailto:&vg-vemail;">&vg-vemail;</ulink></para>
+ </legalnotice>
 </bookinfo>
+
 
 <sect1 id="faq.background" xreflabel="Background">
 <title>Background</title>
@@ -102,23 +103,10 @@
 <qandaentry id="faq.exit_errors">
  <question>
   <para>Programs run OK on Valgrind, but at exit produce a bunch
-  of errors a bit like this:</para>
+  of errors involving <literal>__libc_freeres()</literal>
+  and then die with a segmentation fault.</para>
  </question>
- <answer><para>
-<programlisting>
-==20755== Invalid read of size 4
-==20755==    at 0x40281C8A: _nl_unload_locale (loadlocale.c:238)
-==20755==    by 0x4028179D: free_mem (findlocale.c:257)
-==20755==    by 0x402E0962: __libc_freeres (set-freeres.c:34)
-==20755==    by 0x40048DCC: vgPlain___libc_freeres_wrapper (vg_clientfuncs.c:585)
-==20755==    Address 0x40CC304C is 8 bytes inside a block of size 380 free'd
-==20755==    at 0x400484C9: free (vg_clientfuncs.c:180)
-==20755==    by 0x40281CBA: _nl_unload_locale (loadlocale.c:246)
-==20755==    by 0x40281218: free_mem (setlocale.c:461)
-==20755==    by 0x402E0962: __libc_freeres (set-freeres.c:34)
-</programlisting>
-
- and then die with a segmentation fault.</para>
+ <answer>
  <para>When the program exits, Valgrind runs the procedure
  <literal>__libc_freeres()</literal> in glibc.  This is a hook
  for memory debuggers, so they can ask glibc to free up any
@@ -138,12 +126,12 @@
 <qandaentry id="faq.bugdeath">
  <question>
   <para>My (buggy) program dies like this:</para>
- </question>
- <answer>
   <screen>
 % valgrind: vg_malloc2.c:442 (bszW_to_pszW): Assertion 'pszW >= 0' failed.
 </screen>
 
+ </question>
+ <answer>
   <para>If Memcheck (the memory checker) shows any invalid reads,
   invalid writes and invalid frees in your program, the above may
   happen.  Reason is that your program may trash Valgrind's
@@ -158,12 +146,12 @@
  <question>
   <para>My program dies, printing a message like this along the
     way:</para>
- </question>
- <answer>
 <screen>
 % disInstr: unhandled instruction bytes: 0x66 0xF 0x2E 0x5
 </screen>
 
+ </question>
+ <answer>
   <para>Older versions did not support some x86 instructions,
   particularly SSE/SSE2 instructions.  Try a newer Valgrind; we
   now support almost all instructions.  If it still happens with
@@ -181,6 +169,39 @@
  </answer>
 </qandaentry>
 
+<qandaentry id="faq.java">
+ <question>
+  <para>I tried running a Java program (or another program that uses a
+    just-in-time compiler) under Valgrind but something went wrong.
+    Does Valgrind handle such programs?
+    </para>
+ </question>
+ <answer>
+  <para>Valgrind can handle dynamically generated code, so long as none
+    of the generated code is later overwritten by other generated code.
+    If this happens, though, things will go wrong as Valgrind will continue
+    running its translations of the old code (this is true on x86 and AMD64,
+    on PPC32 there are explicit cache flush instructions which Valgrind
+    detects).  You should try running with
+    <computeroutput>--smc-check=all</computeroutput> in this case;  Valgrind
+    will run much more slowly, but should detect the use of the out-of-date
+    code.</para>
+  <para>Alternativaly, if you have the source code to the JIT compiler you
+    can insert calls to the
+    <computeroutput>VALGRIND_DISCARD_TRANSLATIONS</computeroutput> client
+    request to mark out-of-date code, saving you from using
+    <computeroutput>--smc-check=all</computeroutput>.</para>
+  <para>Apart from this, in theory Valgrind can run any Java program just
+    fine, even those that use JNI and are partially implemented in other
+    languages like C and C++.  In practice, Java implementations tend to do
+    nasty things that most programs do not, and Valgrind sometimes falls
+    over these corner cases.</para>
+  <para>If your Java programs do not run under Valgrind, even with
+    <computeroutput>--smc-check=all</computeroutput>, please file a bug
+    report and hopefully we'll be able to fix the problem.</para>
+ </answer>
+</qandaentry>
+
 </qandaset>
 </sect1>
 
@@ -189,30 +210,6 @@
        xreflabel="Valgrind behaves unexpectedly">
 <title>Valgrind behaves unexpectedly</title>
 <qandaset id="qset.unexpected">
-
-<qandaentry id="faq.slowthread">
- <question>
-  <para>My threaded server process runs unbelievably slowly on
-  Valgrind.  So slowly, in fact, that at first I thought it had
-  completely locked up.</para>
- </question>
- <answer>
-  <para>We are not completely sure about this, but one
-  possibility is that laptops with power management fool
-  Valgrind's timekeeping mechanism, which is (somewhat in error)
-  based on the x86 RDTSC instruction.  A "fix" which is claimed
-  to work is to run some other cpu-intensive process at the same
-  time, so that the laptop's power-management clock-slowing does
-  not kick in.  We would be interested in hearing more feedback
-  on this.</para>
-
-  <para>Another possible cause is that versions prior to 1.9.6
-  did not support threading on glibc 2.3.X systems well.
-  Hopefully the situation is much improved with 1.9.6 and later
-  versions.</para>
- </answer>
-</qandaentry>
-
 
 <qandaentry id="faq.reports">
  <question>
@@ -305,21 +302,27 @@
 
   <para>Some example sub-traces:</para>
 
-  <para>With debug information and unstripped (best):</para>
+   <itemizedlist>
+     <listitem>
+       <para>With debug information and unstripped (best):</para>
 <programlisting>
 Invalid write of size 1
    at 0x80483BF: really (malloc1.c:20)
    by 0x8048370: main (malloc1.c:9)
 </programlisting>
+     </listitem>
 
-  <para>With no debug information, unstripped:</para>
+     <listitem>
+       <para>With no debug information, unstripped:</para>
 <programlisting>
 Invalid write of size 1
    at 0x80483BF: really (in /auto/homes/njn25/grind/head5/a.out)
    by 0x8048370: main (in /auto/homes/njn25/grind/head5/a.out)
 </programlisting>
+     </listitem>
 
-  <para>With no debug information, stripped:</para>
+     <listitem>
+       <para>With no debug information, stripped:</para>
 <programlisting>
 Invalid write of size 1
    at 0x80483BF: (within /auto/homes/njn25/grind/head5/a.out)
@@ -327,17 +330,20 @@ Invalid write of size 1
    by 0x42015703: __libc_start_main (in /lib/tls/libc-2.3.2.so)
    by 0x80482CC: (within /auto/homes/njn25/grind/head5/a.out)
 </programlisting>
+     </listitem>
 
-  <para>With debug information and -fomit-frame-pointer:</para>
+     <listitem>
+       <para>With debug information and -fomit-frame-pointer:</para>
 <programlisting>
 Invalid write of size 1
    at 0x80483C4: really (malloc1.c:20)
    by 0x42015703: __libc_start_main (in /lib/tls/libc-2.3.2.so)
    by 0x80482CC: ??? (start.S:81)
 </programlisting>
+     </listitem>
 
-  <para>A leak error message involving an unloaded shared object:</para>
-
+     <listitem>
+      <para>A leak error message involving an unloaded shared object:</para>
 <programlisting>
 84 bytes in 1 blocks are possibly lost in loss record 488 of 713
    at 0x1B9036DA: operator new(unsigned) (vg_replace_malloc.c:132)
@@ -346,6 +352,8 @@ Invalid write of size 1
    by 0x1D65E007: ???
    by 0x8049EE6: main (main.cpp:24)
 </programlisting>
+     </listitem>
+   </itemizedlist>
 
  </answer>
 </qandaentry>
@@ -404,7 +412,7 @@ valgrind-listener 12345
 </programlisting>
 
   <para>Obviously you have to start the listener process first.
-  See the Manual: <ulink url="http://www.valgrind.org/docs/bookset/manual-core.out2file.html">Directing output to file</ulink> for more details.</para>
+  See the manual for more details.</para>
 
   <para>Second, if your program is statically linked, most Valgrind tools
   won't work as well, because they won't be able to replace certain
@@ -422,8 +430,6 @@ statically linking your program.</para>
 <qandaentry id="faq.overruns">
  <question>
   <para>Why doesn't Memcheck find the array overruns in this program?</para>
- </question>
- <answer>
 <programlisting>
 int static[5];
 
@@ -437,6 +443,8 @@ int main(void)
   return 0;
 }
 </programlisting>
+ </question>
+ <answer>
   <para>Unfortunately, Memcheck doesn't do bounds checking on
   static or stack arrays.  We'd like to, but it's just not
   possible to do in a reasonable way that fits with how Memcheck
@@ -481,8 +489,7 @@ int main(void)
   "still reachable", and "suppressed"?</para>
  </question>
  <answer>
-  <para>The details are in the Manual: 
-   <ulink url="http://www.valgrind.org/docs/bookset/mc-manual.leaks.html">Memory leak detection</ulink>.</para>
+  <para>The details are in the Memcheck section of the user manual.</para>
 
   <para>In short:</para>
    <itemizedlist>

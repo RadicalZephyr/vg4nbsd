@@ -31,7 +31,7 @@ noinst_LIBRARIES += libcoregrind_x86_netbsd.a libreplacemalloc_toolpreload_x86_n
 endif
 
 bin_PROGRAMS = \
-	valgrind
+valgrind
 
 noinst_PROGRAMS =
 if VG_X86_LINUX
@@ -119,7 +119,10 @@ CLEANFILES =
 valgrind_SOURCES = \
 	launcher.c \
 	m_debuglog.c
-valgrind_CPPFLAGS =-I$(top_srcdir)/include -I$(top_srcdir)/VEX/pub 
+# BIG HACK SIR 
+if VG_X86_NETBSD
+valgrind_CPPFLAGS = $(add_includes_x86_netbsdelf2)
+endif
 COREGRIND_SOURCES_COMMON = \
 	m_commandline.c \
 	m_cpuid.S \

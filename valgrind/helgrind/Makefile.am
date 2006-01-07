@@ -1,6 +1,9 @@
 include $(top_srcdir)/Makefile.tool.am
 
 noinst_PROGRAMS = 
+if VG_X86_NETBSD
+noinst_PROGRAMS += helgrind-x86-netbsd vgpreload_helgrind-x86-netbsd.so
+endif
 if VG_X86_LINUX
 noinst_PROGRAMS += helgrind-x86-linux vgpreload_helgrind-x86-linux.so
 endif
@@ -10,6 +13,14 @@ endif
 if VG_PPC32_LINUX
 noinst_PROGRAMS += helgrind-ppc32-linux vgpreload_helgrind-ppc32-linux.so
 endif
+
+vgpreload_helgrind_x86_netbsd_so_SOURCES      = 
+vgpreload_helgrind_x86_netbsd_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
+vgpreload_helgrind_x86_netbsd_so_CFLAGS       = $(AM_CFLAGS_X86_NETBSD) $(AM_CFLAGS_PIC)
+vgpreload_helgrind_x86_netbsd_so_DEPENDENCIES = $(LIBREPLACEMALLOC_X86_NETBSD)
+vgpreload_helgrind_x86_netbsd_so_LDFLAGS      = \
+	$(PRELOAD_LDFLAGS_X86_NETBSD) \
+	$(LIBREPLACEMALLOC_LDFLAGS_X86_NETBSD)
 
 vgpreload_helgrind_x86_linux_so_SOURCES      = 
 vgpreload_helgrind_x86_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
@@ -36,6 +47,13 @@ vgpreload_helgrind_ppc32_linux_so_LDFLAGS      = \
 	$(LIBREPLACEMALLOC_LDFLAGS_PPC32_LINUX)
 
 HELGRIND_SOURCES_COMMON = hg_main.c
+
+helgrind_x86_netbsd_SOURCES      = $(HELGRIND_SOURCES_COMMON)
+helgrind_x86_netbsd_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
+helgrind_x86_netbsd_CFLAGS       = $(AM_CFLAGS_X86_NETBSD)
+helgrind_x86_netbsd_DEPENDENCIES = $(COREGRIND_LIBS_X86_NETBSD)
+helgrind_x86_netbsd_LDADD        = $(TOOL_LDADD_X86_NETBSD)
+helgrind_x86_netbsd_LDFLAGS      = $(TOOL_LDFLAGS_X86_NETBSD)
 
 helgrind_x86_linux_SOURCES      = $(HELGRIND_SOURCES_COMMON)
 helgrind_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)

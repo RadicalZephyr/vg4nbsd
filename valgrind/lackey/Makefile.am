@@ -1,6 +1,9 @@
 include $(top_srcdir)/Makefile.tool.am
 
 noinst_PROGRAMS = 
+if VG_X86_NETBSD
+noinst_PROGRAMS += lackey-x86-netbsd
+endif
 if VG_X86_LINUX
 noinst_PROGRAMS += lackey-x86-linux
 endif
@@ -12,6 +15,13 @@ noinst_PROGRAMS += lackey-ppc32-linux
 endif
 
 LACKEY_SOURCES_COMMON = lk_main.c
+
+lackey_x86_netbsd_SOURCES      = $(LACKEY_SOURCES_COMMON)
+lackey_x86_netbsd_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
+lackey_x86_netbsd_CFLAGS       = $(AM_CFLAGS_X86_NETBSD)
+lackey_x86_netbsd_DEPENDENCIES = $(COREGRIND_LIBS_X86_NETBSD)
+lackey_x86_netbsd_LDADD        = $(TOOL_LDADD_X86_NETBSD)
+lackey_x86_netbsd_LDFLAGS      = $(TOOL_LDFLAGS_X86_NETBSD)
 
 lackey_x86_linux_SOURCES      = $(LACKEY_SOURCES_COMMON)
 lackey_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)

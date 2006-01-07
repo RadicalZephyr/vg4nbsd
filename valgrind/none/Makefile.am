@@ -1,6 +1,9 @@
 include $(top_srcdir)/Makefile.tool.am
 
 noinst_PROGRAMS = 
+if VG_X86_NETBSD
+noinst_PROGRAMS += none-x86-netbsd
+endif
 if VG_X86_LINUX
 noinst_PROGRAMS += none-x86-linux
 endif
@@ -12,6 +15,12 @@ noinst_PROGRAMS += none-ppc32-linux
 endif
 
 NONE_SOURCES_COMMON = nl_main.c
+none_x86_netbsd_SOURCES      = $(NONE_SOURCES_COMMON)
+none_x86_netbsd_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
+none_x86_netbsd_CFLAGS       = $(AM_CFLAGS_X86_NETBSD)
+none_x86_netbsd_DEPENDENCIES = $(COREGRIND_LIBS_X86_NETBSD)
+none_x86_netbsd_LDADD        = $(TOOL_LDADD_X86_NETBSD)
+none_x86_netbsd_LDFLAGS      = $(TOOL_LDFLAGS_X86_NETBSD)
 
 none_x86_linux_SOURCES      = $(NONE_SOURCES_COMMON)
 none_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)

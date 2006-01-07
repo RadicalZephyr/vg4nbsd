@@ -14,7 +14,7 @@
 // PRE_MEM_READ/PRE_MEM_WRITE calls.  (Note that Memcheck and Addrcheck will
 // always issue an error message immediately before these seg faults occur).
 
-#include <asm/ipc.h>
+//#include <asm/ipc.h>
 #include <sched.h>
 #include <signal.h>
 
@@ -268,8 +268,10 @@ int main(void)
    SY(__NR_fcntl, x0-1, x0+F_DUPFD, x0); FAILx(EBADF);
 
    // For F_GETLK the 3rd arg is 'lock'
+   // on x86, this fails with EBADF.  But on amd64 in 32-bit mode
+   // it fails with EFAULT.
    GO(__NR_fcntl, "(GETLK) 1s 0m");
-   SY(__NR_fcntl, x0-1, x0+F_GETLK, x0); FAILx(EBADF);
+   SY(__NR_fcntl, x0-1, x0+F_GETLK, x0); FAIL; //FAILx(EBADF);
 
    // __NR_mpx 56
    GO(__NR_mpx, "ni");
@@ -316,7 +318,7 @@ int main(void)
    SY(__NR_setsid); SUCC_OR_FAIL;
 
    // __NR_sigaction 67
-   GO(__NR_sigaction, "3s 2m");
+   GO(__NR_sigaction, "3s 4m");
    SY(__NR_sigaction, x0, x0+&px[1], x0+&px[1]); FAIL;
 
    // __NR_sgetmask 68 sys_sgetmask()
@@ -762,8 +764,8 @@ int main(void)
  //SY(__NR_rt_sigreturn); // (Not yet handled by Valgrind) FAIL;
 
    // __NR_rt_sigaction 174
-   GO(__NR_rt_sigaction, "4s 2m");
-   SY(__NR_rt_sigaction, x0, x0+1, x0+1, x0); FAIL;
+   GO(__NR_rt_sigaction, "4s 4m");
+   SY(__NR_rt_sigaction, x0, x0+&px[2], x0+&px[2], x0); FAIL;
 
    // __NR_rt_sigprocmask 175
    GO(__NR_rt_sigprocmask, "4s 2m");
@@ -975,8 +977,10 @@ int main(void)
    SY(__NR_fcntl64, x0-1, x0+F_DUPFD, x0); FAILx(EBADF);
 
    // For F_GETLK the 3rd arg is 'lock'
+   // on x86, this fails with EBADF.  But on amd64 in 32-bit mode
+   // it fails with EFAULT.
    GO(__NR_fcntl64, "(GETLK) 1s 0m");
-   SY(__NR_fcntl64, x0-1, x0+F_GETLK, x0); FAILx(EBADF);
+   SY(__NR_fcntl64, x0-1, x0+F_GETLK, x0); FAIL; //FAILx(EBADF);
 
    // 222
    GO(222, "ni");

@@ -44,9 +44,8 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-/* When instrumenting, omit some checks if tell-tale literals for
-   inlined strlen() are visible in the basic block.  default: YES */
-extern Bool MC_(clo_avoid_strlen_errors);
+/* There are no memcheck-specific ones, only mac-specific
+   ones (those shared by both memcheck and addrcheck). */
 
 
 /*------------------------------------------------------------*/
@@ -79,9 +78,10 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV1)   ( Addr );
 extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
 
 /* Functions defined in mc_translate.c */
-extern IRBB* MC_(instrument) ( IRBB* bb_in, VexGuestLayout* layout,
-                               IRType gWordTy, IRType hWordTy );
-
+extern
+IRBB* MC_(instrument) ( IRBB* bb_in, VexGuestLayout* layout, 
+                        Addr64 orig_addr_noredir, VexGuestExtents* vge,
+                        IRType gWordTy, IRType hWordTy );
 
 #endif /* ndef __MC_INCLUDE_H */
 

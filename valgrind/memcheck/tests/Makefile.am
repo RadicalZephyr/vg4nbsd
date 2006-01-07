@@ -1,4 +1,14 @@
-SUBDIRS      = ${VG_ARCH}     .
+SUBDIRS = .
+if VG_X86_LINUX
+SUBDIRS += x86
+endif
+if VG_AMD64_LINUX
+SUBDIRS += amd64
+endif
+if VG_PPC32_LINUX
+SUBDIRS += ppc32
+endif
+
 DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
 noinst_SCRIPTS = filter_allocs filter_leak_check_size \
@@ -30,7 +40,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	execve.stderr.exp execve.stderr.exp2 execve.vgtest \
 	execve2.stderr.exp execve2.stderr.exp2 execve2.vgtest \
 	fprw.stderr.exp fprw.vgtest \
-	fwrite.stderr.exp fwrite.stderr.exp2 fwrite.stdout.exp fwrite.vgtest \
+	fwrite.stderr.exp fwrite.stderr.exp2 fwrite.vgtest \
 	inits.stderr.exp inits.vgtest \
 	inline.stderr.exp inline.stdout.exp inline.vgtest \
 	leak-0.vgtest leak-0.stderr.exp \
@@ -39,6 +49,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	leak-tree.stderr.exp2 leak-tree.stderr.exp64 \
 	leak-regroot.vgtest leak-regroot.stderr.exp \
 	leakotron.vgtest leakotron.stdout.exp leakotron.stderr.exp \
+	malloc_usable.stderr.exp malloc_usable.vgtest \
 	malloc1.stderr.exp malloc1.vgtest \
 	malloc2.stderr.exp malloc2.vgtest \
 	malloc3.stderr.exp malloc3.stdout.exp malloc3.vgtest \
@@ -59,8 +70,12 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	new_override.stderr.exp new_override.stdout.exp new_override.vgtest \
 	null_socket.stderr.exp null_socket.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
+	oset_test.stderr.exp oset_test.stdout.exp oset_test.vgtest \
 	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
 	partiallydefinedeq.stdout.exp \
+	partial_load_ok.vgtest partial_load_ok.stderr.exp partial_load_ok.stderr.exp64 \
+	partial_load_dflt.vgtest partial_load_dflt.stderr.exp partial_load_dflt.stderr.exp64 \
+	pipe.stderr.exp pipe.vgtest \
 	pointer-trace.vgtest \
 	pointer-trace.stderr.exp pointer-trace.stderr.exp64 \
 	post-syscall.stderr.exp post-syscall.stdout.exp post-syscall.vgtest \
@@ -68,27 +83,30 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	realloc2.stderr.exp realloc2.vgtest \
 	realloc3.stderr.exp realloc3.vgtest \
 	sigaltstack.stderr.exp sigaltstack.vgtest \
-	sigkill.stderr.exp sigkill.stderr.exp2 sigkill.vgtest \
+	sigkill.stderr.exp sigkill.stderr.exp2 sigkill.stderr.exp3 sigkill.vgtest \
 	signal2.stderr.exp signal2.stdout.exp signal2.vgtest \
-	sigprocmask.stderr.exp sigprocmask.vgtest \
+	sigprocmask.stderr.exp sigprocmask.stderr.exp2 sigprocmask.vgtest \
 	stack_changes.stderr.exp stack_changes.stdout.exp stack_changes.vgtest \
-	strchr.stderr.exp strchr.vgtest \
+	stack_switch.stderr.exp stack_switch.vgtest \
+	strchr.stderr.exp strchr.stderr.exp2 strchr.vgtest \
 	str_tester.stderr.exp str_tester.vgtest \
+	supp_unknown.stderr.exp supp_unknown.vgtest supp_unknown.supp \
 	supp1.stderr.exp supp1.vgtest \
 	supp2.stderr.exp supp2.vgtest \
 	supp.supp \
 	suppfree.stderr.exp suppfree.vgtest \
 	toobig-allocs.stderr.exp toobig-allocs.vgtest \
 	trivialleak.stderr.exp trivialleak.vgtest \
-	weirdioctl.stderr.exp weirdioctl.stdout.exp weirdioctl.vgtest \
 	metadata.stderr.exp metadata.stdout.exp metadata.vgtest-HIDING \
-	vgtest_ume.stderr.exp vgtest_ume.vgtest \
+	vgtest_ume.stderr.exp vgtest_ume.disabled \
 	writev.stderr.exp writev.stderr.exp2 writev.stderr.exp3 writev.vgtest \
-	xml1.stderr.exp xml1.stderr.exp2 xml1.stderr.exp64 xml1.stdout.exp \
+	xml1.stderr.exp xml1.stderr.exp2 xml1.stderr.exp3 \
+	xml1.stderr.exp64 xml1.stderr.exp64_2 xml1.stdout.exp \
 	xml1.vgtest \
 	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.stdout.exp \
 	zeropage.vgtest
 
+# vgtest_ume is not working
 check_PROGRAMS = \
 	addressable \
 	badaddrvalue badfree badjump badjump2 \
@@ -98,32 +116,37 @@ check_PROGRAMS = \
 	doublefree error_counts errs1 exitprog execve execve2 erringfds \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-tree leak-regroot leakotron \
-	malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
+	malloc_usable malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
 	match-overrun \
 	memalign_test memalign2 memcmptest mempool mmaptest \
 	nanoleak new_nothrow \
-	null_socket overlap \
+	null_socket oset_test overlap \
 	partiallydefinedeq \
-	pointer-trace \
+	partial_load \
+	pipe pointer-trace \
 	post-syscall \
 	realloc1 realloc2 realloc3 \
 	sigaltstack signal2 sigprocmask sigkill \
-	stack_changes strchr str_tester supp1 supp2 suppfree \
-	trivialleak weirdioctl	\
+	stack_changes stack_switch strchr str_tester \
+	supp_unknown supp1 supp2 suppfree \
+	trivialleak \
 	mismatches new_override metadata \
-	vgtest_ume xml1 \
+	xml1 \
 	writev zeropage
 
 
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include -I@VEX_DIR@/pub
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_srcdir)/coregrind -I$(top_builddir)/include -I@VEX_DIR@/pub
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g 
 AM_CXXFLAGS = $(AM_CFLAGS)
 
 # Extra stuff for C tests
 memcmptest_CFLAGS	= $(AM_CFLAGS) -fno-builtin-memcmp
+oset_test_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS) -DVGP_$(VG_PLATFORM)
 # Don't allow GCC to inline memcpy(), because then we can't intercept it
 overlap_CFLAGS		= $(AM_CFLAGS) -fno-builtin-memcpy
+stack_switch_LDADD      = -lpthread
 str_tester_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
+supp_unknown_SOURCES	= badjump.c
 supp1_SOURCES		= supp.c
 supp2_SOURCES		= supp.c
 
@@ -133,10 +156,11 @@ new_nothrow_SOURCES 	= new_nothrow.cpp
 new_override_SOURCES 	= new_override.cpp
 
 # Valgrind unit self-tests
-hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
-			  -Wl,-T,$(top_srcdir)/valt_load_address.lds
-hello_DEPENDENCIES 	= $(top_srcdir)/valt_load_address.lds
+#hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
+#			  -Wl,-T,$(top_builddir)/valt_load_address.lds
+#hello_DEPENDENCIES 	= $(top_builddir)/valt_load_address.lds
 
-vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS)
-vgtest_ume_LDADD	= ../../coregrind/m_ume.o
+# vgtest_ume is not working
+#vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS)
+#vgtest_ume_LDADD	= ../../coregrind/m_ume.o
 

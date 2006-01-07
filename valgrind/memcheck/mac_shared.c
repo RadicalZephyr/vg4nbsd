@@ -58,8 +58,8 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-Bool          MAC_(clo_partial_loads_ok)       = True;
-Int           MAC_(clo_freelist_vol)           = 1000000;
+Bool          MAC_(clo_partial_loads_ok)       = False;
+Int           MAC_(clo_freelist_vol)           = 5000000;
 LeakCheckMode MAC_(clo_leak_check)             = LC_Summary;
 VgRes         MAC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MAC_(clo_show_reachable)         = False;
@@ -100,8 +100,8 @@ void MAC_(print_common_usage)(void)
 "    --leak-check=no|summary|full     search for memory leaks at exit?  [summary]\n"
 "    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
 "    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
-"    --partial-loads-ok=no|yes        too hard to explain here; see manual [yes]\n"
-"    --freelist-vol=<number>          volume of freed blocks queue [1000000]\n"
+"    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
+"    --freelist-vol=<number>          volume of freed blocks queue [5000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
    );
    VG_(replacement_malloc_print_usage)();
@@ -279,9 +279,9 @@ void MAC_(pp_AddrInfo) ( Addr a, AddrInfo* ai )
             relative = "inside";
          }
          VG_(message)(Vg_UserMsg, 
-            "%sAddress 0x%llx is %llu bytes %s a %s of size %d %s%s",
+            "%sAddress 0x%lx is %,lu bytes %s a %s of size %,lu %s%s",
             xpre,
-            (ULong)a, (ULong)delta, relative, kind,
+            a, delta, relative, kind,
             ai->blksize,
             ai->akind==Mallocd ? "alloc'd" 
                : ai->akind==Freed ? "free'd" 
@@ -410,35 +410,26 @@ void MAC_(pp_shared_Error) ( Error* err )
    MemCheck for user blocks, which Addrcheck doesn't support. */
 Bool (*MAC_(describe_addr_supp)) ( Addr a, AddrInfo* ai ) = NULL;
 
-/* Callback for searching thread stacks */
-static Bool addr_is_in_bounds(Addr stack_min, Addr stack_max, void *ap)
+/* Function used when searching MAC_Chunk lists */
+static Bool addr_is_in_MAC_Chunk(MAC_Chunk* mc, Addr a)
 {
-   Addr a = *(Addr *)ap;
-  
-   return (stack_min <= a && a <= stack_max);
-}
-
-/* Callback for searching free'd list */
-static Bool addr_is_in_MAC_Chunk(MAC_Chunk* mc, void *ap)
-{
-   Addr a = *(Addr *)ap;
-  
+   // Nb: this is not quite right!  It assumes that the heap block has
+   // a redzone of size MAC_MALLOC_REDZONE_SZB.  That's true for malloc'd
+   // blocks, but not necessarily true for custom-alloc'd blocks.  So
+   // in some cases this could result in an incorrect description (eg.
+   // saying "12 bytes after block A" when really it's within block B.
+   // Fixing would require adding redzone size to MAC_Chunks, though.
    return VG_(addr_is_in_block)( a, mc->data, mc->size,
                                  MAC_MALLOC_REDZONE_SZB );
-}
-
-/* Callback for searching malloc'd lists */
-static Bool addr_is_in_HashNode(VgHashNode* sh_ch, void *ap)
-{
-   return addr_is_in_MAC_Chunk( (MAC_Chunk*)sh_ch, ap );
 }
 
 /* Describe an address as best you can, for error messages,
    putting the result in ai. */
 static void describe_addr ( Addr a, AddrInfo* ai )
 {
-   MAC_Chunk* sc;
+   MAC_Chunk* mc;
    ThreadId   tid;
+   Addr       stack_min, stack_max;
 
    /* Perhaps it's a user-def'd block ?  (only check if requested, though) */
    if (NULL != MAC_(describe_addr_supp)) {
@@ -446,29 +437,36 @@ static void describe_addr ( Addr a, AddrInfo* ai )
          return;
    }
    /* Perhaps it's on a thread's stack? */
-   tid = VG_(first_matching_thread_stack)(addr_is_in_bounds, &a);
-   if (tid != VG_INVALID_THREADID) {
-      ai->akind     = Stack;
-      ai->stack_tid = tid;
-      return;
+   VG_(thread_stack_reset_iter)();
+   while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+      if (stack_min <= a && a <= stack_max) {
+         ai->akind     = Stack;
+         ai->stack_tid = tid;
+         return;
+      }
    }
    /* Search for a recently freed block which might bracket it. */
-   sc = MAC_(first_matching_freed_MAC_Chunk)(addr_is_in_MAC_Chunk, &a);
-   if (NULL != sc) {
-      ai->akind      = Freed;
-      ai->blksize    = sc->size;
-      ai->rwoffset   = (Int)a - (Int)sc->data;
-      ai->lastchange = sc->where;
-      return;
+   mc = MAC_(get_freed_list_head)();
+   while (mc) {
+      if (addr_is_in_MAC_Chunk(mc, a)) {
+         ai->akind      = Freed;
+         ai->blksize    = mc->size;
+         ai->rwoffset   = (Int)a - (Int)mc->data;
+         ai->lastchange = mc->where;
+         return;
+      }
+      mc = mc->next; 
    }
    /* Search for a currently malloc'd block which might bracket it. */
-   sc = (MAC_Chunk*)VG_(HT_first_match)(MAC_(malloc_list), addr_is_in_HashNode, &a);
-   if (NULL != sc) {
-      ai->akind      = Mallocd;
-      ai->blksize    = sc->size;
-      ai->rwoffset   = (Int)(a) - (Int)sc->data;
-      ai->lastchange = sc->where;
-      return;
+   VG_(HT_ResetIter)(MAC_(malloc_list));
+   while ( (mc = VG_(HT_Next)(MAC_(malloc_list))) ) {
+      if (addr_is_in_MAC_Chunk(mc, a)) {
+         ai->akind      = Mallocd;
+         ai->blksize    = mc->size;
+         ai->rwoffset   = (Int)(a) - (Int)mc->data;
+         ai->lastchange = mc->where;
+         return;
+      }
    }
    /* Clueless ... */
    ai->akind = Unknown;
@@ -571,13 +569,18 @@ void MAC_(record_illegal_mempool_error) ( ThreadId tid, Addr a )
    VG_(maybe_record_error)( tid, IllegalMempoolErr, a, /*s*/NULL, &err_extra );
 }
 
-void MAC_(record_freemismatch_error) ( ThreadId tid, Addr a )
+void MAC_(record_freemismatch_error) ( ThreadId tid, Addr a, MAC_Chunk* mc )
 {
    MAC_Error err_extra;
+   AddrInfo* ai;
 
    tl_assert(VG_INVALID_THREADID != tid);
    MAC_(clear_MAC_Error)( &err_extra );
-   err_extra.addrinfo.akind = Undescribed;
+   ai = &err_extra.addrinfo;
+   ai->akind      = Mallocd;     // Nb: not 'Freed'
+   ai->blksize    = mc->size;
+   ai->rwoffset   = (Int)a - (Int)mc->data;
+   ai->lastchange = mc->where;
    VG_(maybe_record_error)( tid, FreeMismatchErr, a, /*s*/NULL, &err_extra );
 }
 
@@ -593,24 +596,56 @@ void MAC_(record_overlap_error) ( ThreadId tid,
 UInt MAC_(update_extra)( Error* err )
 {
    switch (VG_(get_error_kind)(err)) {
-   case ValueErr:
+   // These two don't have addresses associated with them, and so don't
+   // need any updating.
    case CoreMemErr:
-   case AddrErr: 
-   case ParamErr:
-   case UserErr:
-   case FreeErr:
-   case IllegalMempoolErr:
-   case FreeMismatchErr: {
+   case ValueErr: {
       MAC_Error* extra = VG_(get_error_extra)(err);
-      if (extra != NULL && Undescribed == extra->addrinfo.akind) {
-         describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
-      }
+      tl_assert(Unknown == extra->addrinfo.akind);
       return sizeof(MAC_Error);
    }
-   /* Don't need to return the correct size -- LeakErrs are always shown with
-      VG_(unique_error)() so they're not copied anyway. */
+
+   // ParamErrs sometimes involve a memory address; call describe_addr() in
+   // this case.
+   case ParamErr: {
+      MAC_Error* extra = VG_(get_error_extra)(err);
+      tl_assert(Undescribed == extra->addrinfo.akind ||
+                Register    == extra->addrinfo.akind);
+      if (Undescribed == extra->addrinfo.akind)
+         describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
+      return sizeof(MAC_Error);
+   }
+
+   // These four always involve a memory address.
+   case AddrErr: 
+   case UserErr:
+   case FreeErr:
+   case IllegalMempoolErr: {
+      MAC_Error* extra = VG_(get_error_extra)(err);
+      tl_assert(Undescribed == extra->addrinfo.akind);
+      describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
+      return sizeof(MAC_Error);
+   }
+
+   // FreeMismatchErrs have already had their address described;  this is
+   // possible because we have the MAC_Chunk on hand when the error is
+   // detected.  However, the address may be part of a user block, and if so
+   // we override the pre-determined description with a user block one.
+   case FreeMismatchErr: {
+      MAC_Error* extra = VG_(get_error_extra)(err);
+      tl_assert(extra && Mallocd == extra->addrinfo.akind);
+      if (NULL != MAC_(describe_addr_supp))
+         (void)MAC_(describe_addr_supp)( VG_(get_error_address)(err), 
+                                         &(extra->addrinfo) );
+      return sizeof(MAC_Error);
+   }
+
+   // No memory address involved with these ones.  Nb:  for LeakErrs the
+   // returned size does not matter -- LeakErrs are always shown with
+   // VG_(unique_error)() so they're not copied.
    case LeakErr:     return 0;
    case OverlapErr:  return sizeof(OverlapExtra);
+
    default: VG_(tool_panic)("update_extra: bad errkind");
    }
 }
@@ -928,13 +963,6 @@ void MAC_(common_fini)(void (*leak_check)(ThreadId tid, LeakCheckMode mode))
 
 Bool MAC_(handle_common_client_requests)(ThreadId tid, UWord* arg, UWord* ret )
 {
-   Char* err  = 
-         "The client requests VALGRIND_MALLOCLIKE_BLOCK and\n"
-      "   VALGRIND_FREELIKE_BLOCK have moved.  Please recompile your\n"
-      "   program to incorporate the updates in the Valgrind header files.\n"
-      "   You shouldn't need to change the text of your program at all.\n"
-      "   Everything should then work as before.  Sorry for the bother.\n";
-   
    switch (arg[0]) {
    case VG_USERREQ__COUNT_LEAKS: { /* count leaked bytes */
       UWord** argp = (UWord**)arg;
@@ -950,10 +978,6 @@ Bool MAC_(handle_common_client_requests)(ThreadId tid, UWord* arg, UWord* ret )
       *ret = 0;
       return True;
    }
-   case VG_USERREQ__MALLOCLIKE_BLOCK__OLD_DO_NOT_USE:
-   case VG_USERREQ__FREELIKE_BLOCK__OLD_DO_NOT_USE:
-      VG_(tool_panic)(err);
-
    case VG_USERREQ__MALLOCLIKE_BLOCK: {
       Addr p         = (Addr)arg[1];
       SizeT sizeB    =       arg[2];

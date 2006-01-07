@@ -2,7 +2,7 @@
 
 <valgrindoutput>
 
-<protocolversion>1</protocolversion>
+<protocolversion>2</protocolversion>
 
 <preamble>
   <line>...</line>
@@ -24,7 +24,10 @@
   </argv>
 </args>
 
-<status> <state>RUNNING</state> <time>...</time> </status>
+<status>
+  <state>RUNNING</state>
+  <time>...</time>
+</status>
 
 <error>
   <unique>0x........</unique>
@@ -350,23 +353,40 @@
       <obj>...</obj>
       <fn>__libc_start_main</fn>
     </frame>
-    <frame>
-      <ip>0x........</ip>
-      <obj>...</obj>
-    </frame>
   </stack>
 </error>
 
 <errorcounts>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
-  <pair> <count>...</count> <unique>0x........</unique> </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
+  <pair>
+    <count>...</count>
+    <unique>0x........</unique>
+  </pair>
 </errorcounts>
 
-<status> <state>FINISHED</state> <time>...</time> </status>
+<status>
+  <state>FINISHED</state>
+  <time>...</time>
+</status>
 
 <suppcounts>...</suppcounts>
 

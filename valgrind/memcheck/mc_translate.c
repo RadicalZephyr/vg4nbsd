@@ -38,6 +38,20 @@
 #include "mc_include.h"
 
 
+/* This file implements the Memcheck instrumentation, and in
+   particular contains the core of its undefined value detection
+   machinery.  For a comprehensive background of the terminology,
+   algorithms and rationale used herein, read:
+
+     Using Valgrind to detect undefined value errors with
+     bit-precision
+
+     Julian Seward and Nicholas Nethercote
+
+     2005 USENIX Annual Technical Conference (General Track),
+     Anaheim, CA, USA, April 10-15, 2005.
+*/
+
 /*------------------------------------------------------------*/
 /*--- Forward decls                                        ---*/
 /*------------------------------------------------------------*/
@@ -174,9 +188,9 @@ static Bool isShadowAtom ( MCEnv* mce, IRAtom* a1 )
    are identically-kinded. */
 static Bool sameKindedAtoms ( IRAtom* a1, IRAtom* a2 )
 {
-   if (a1->tag == Iex_Tmp && a1->tag == Iex_Tmp)
+   if (a1->tag == Iex_Tmp && a2->tag == Iex_Tmp)
       return True;
-   if (a1->tag == Iex_Const && a1->tag == Iex_Const)
+   if (a1->tag == Iex_Const && a2->tag == Iex_Const)
       return True;
    return False;
 }
@@ -658,6 +672,97 @@ static IRAtom* expensiveCmpEQorNE ( MCEnv*  mce,
 }
 
 
+/* --------- Semi-accurate interpretation of CmpORD. --------- */
+
+/* CmpORD32{S,U} does PowerPC-style 3-way comparisons:
+
+      CmpORD32S(x,y) = 1<<3   if  x <s y
+                     = 1<<2   if  x >s y
+                     = 1<<1   if  x == y
+
+   and similarly the unsigned variant.  The default interpretation is:
+
+      CmpORD32{S,U}#(x,y,x#,y#) = PCast(x# `UifU` y#)  
+                                  &  (7<<1)
+
+   The "& (7<<1)" reflects the fact that all result bits except 3,2,1
+   are zero and therefore defined (viz, zero).
+
+   Also deal with a special case better:
+
+      CmpORD32S(x,0)
+
+   Here, bit 3 (LT) of the result is a copy of the top bit of x and
+   will be defined even if the rest of x isn't.  In which case we do:
+
+      CmpORD32S#(x,x#,0,{impliedly 0}#)
+         = PCast(x#) & (3<<1)      -- standard interp for GT,EQ
+           | (x# >> 31) << 3       -- LT = x#[31]
+
+*/
+static Bool isZeroU32 ( IRAtom* e )
+{
+   return
+      toBool( e->tag == Iex_Const
+              && e->Iex.Const.con->tag == Ico_U32
+              && e->Iex.Const.con->Ico.U32 == 0 );
+}
+
+static IRAtom* doCmpORD32 ( MCEnv*  mce,
+                            IROp    cmp_op,
+                            IRAtom* xxhash, IRAtom* yyhash, 
+                            IRAtom* xx,     IRAtom* yy )
+{
+   tl_assert(isShadowAtom(mce,xxhash));
+   tl_assert(isShadowAtom(mce,yyhash));
+   tl_assert(isOriginalAtom(mce,xx));
+   tl_assert(isOriginalAtom(mce,yy));
+   tl_assert(sameKindedAtoms(xxhash,xx));
+   tl_assert(sameKindedAtoms(yyhash,yy));
+   tl_assert(cmp_op == Iop_CmpORD32S || cmp_op == Iop_CmpORD32U);
+
+   if (0) {
+      ppIROp(cmp_op); VG_(printf)(" "); 
+      ppIRExpr(xx); VG_(printf)(" "); ppIRExpr( yy ); VG_(printf)("\n");
+   }
+
+   if (isZeroU32(yy)) {
+      /* fancy interpretation */
+      /* if yy is zero, then it must be fully defined (zero#). */
+      tl_assert(isZeroU32(yyhash));
+      return
+         binop(
+            Iop_Or32,
+            assignNew(
+               mce,Ity_I32,
+               binop(
+                  Iop_And32,
+                  mkPCastTo(mce,Ity_I32, xxhash), 
+                  mkU32(3<<1)
+               )),
+            assignNew(
+               mce,Ity_I32,
+               binop(
+                  Iop_Shl32,
+                  assignNew(
+                     mce,Ity_I32,
+                     binop(Iop_Shr32, xxhash, mkU8(31))),
+                  mkU8(3)
+               ))
+	 );
+   } else {
+      /* standard interpretation */
+      return 
+         binop( 
+            Iop_And32, 
+            mkPCastTo( mce,Ity_I32,
+                       mkUifU32(mce, xxhash,yyhash)),
+            mkU32(7<<1)
+         );
+   }
+}
+
+
 /*------------------------------------------------------------*/
 /*--- Emit a test and complaint if something is undefined. ---*/
 /*------------------------------------------------------------*/
@@ -1095,7 +1200,53 @@ IRAtom* expensiveAddSub ( MCEnv*  mce,
 
 
 /*------------------------------------------------------------*/
-/*--- Helpers for dealing with vector primops.            ---*/
+/*--- Scalar shifts.                                       ---*/
+/*------------------------------------------------------------*/
+
+/* Produce an interpretation for (aa << bb) (or >>s, >>u).  The basic
+   idea is to shift the definedness bits by the original shift amount.
+   This introduces 0s ("defined") in new positions for left shifts and
+   unsigned right shifts, and copies the top definedness bit for
+   signed right shifts.  So, conveniently, applying the original shift
+   operator to the definedness bits for the left arg is exactly the
+   right thing to do:
+
+      (qaa << bb)
+
+   However if the shift amount is undefined then the whole result
+   is undefined.  Hence need:
+
+      (qaa << bb) `UifU` PCast(qbb)
+
+   If the shift amount bb is a literal than qbb will say 'all defined'
+   and the UifU and PCast will get folded out by post-instrumentation
+   optimisation.
+*/
+static IRAtom* scalarShift ( MCEnv*  mce,
+                             IRType  ty,
+                             IROp    original_op,
+                             IRAtom* qaa, IRAtom* qbb, 
+                             IRAtom* aa,  IRAtom* bb )
+{
+   tl_assert(isShadowAtom(mce,qaa));
+   tl_assert(isShadowAtom(mce,qbb));
+   tl_assert(isOriginalAtom(mce,aa));
+   tl_assert(isOriginalAtom(mce,bb));
+   tl_assert(sameKindedAtoms(qaa,aa));
+   tl_assert(sameKindedAtoms(qbb,bb));
+   return 
+      assignNew(
+         mce, ty,
+         mkUifU( mce, ty,
+                 assignNew(mce, ty, binop(original_op, qaa, bb)),
+                 mkPCastTo(mce, ty, qbb)
+         )
+   );
+}
+
+
+/*------------------------------------------------------------*/
+/*--- Helpers for dealing with vector primops.             ---*/
 /*------------------------------------------------------------*/
 
 /* Vector pessimisation -- pessimise within each lane individually. */
@@ -1298,6 +1449,7 @@ IRAtom* vectorNarrowV128 ( MCEnv* mce, IROp narrow_op,
    IRAtom* (*pcast)( MCEnv*, IRAtom* );
    switch (narrow_op) {
       case Iop_QNarrow32Sx4: pcast = mkPCast32x4; break;
+      case Iop_QNarrow32Ux4: pcast = mkPCast32x4; break;
       case Iop_QNarrow16Sx8: pcast = mkPCast16x8; break;
       case Iop_QNarrow16Ux8: pcast = mkPCast16x8; break;
       default: VG_(tool_panic)("vectorNarrowV128");
@@ -1499,18 +1651,54 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_ShlN16x8:
       case Iop_ShlN32x4:
       case Iop_ShlN64x2:
-         /* Same scheme as with all other shifts. */
+      case Iop_ShlN8x16:
+      case Iop_SarN8x16:
+         /* Same scheme as with all other shifts.  Note: 22 Oct 05:
+            this is wrong now, scalar shifts are done properly lazily.
+            Vector shifts should be fixed too. */
          complainIfUndefined(mce, atom2);
          return assignNew(mce, Ity_V128, binop(op, vatom1, atom2));
+
+      /* V x V shifts/rotates are done using the standard lazy scheme. */
+      case Iop_Shl8x16:
+      case Iop_Shr8x16:
+      case Iop_Sar8x16:
+      case Iop_Rol8x16:
+         return mkUifUV128(mce,
+                   assignNew(mce, Ity_V128, binop(op, vatom1, atom2)),
+                   mkPCast8x16(mce,vatom2)
+                );
+
+      case Iop_Shl16x8:
+      case Iop_Shr16x8:
+      case Iop_Sar16x8:
+      case Iop_Rol16x8:
+         return mkUifUV128(mce,
+                   assignNew(mce, Ity_V128, binop(op, vatom1, atom2)),
+                   mkPCast16x8(mce,vatom2)
+                );
+
+      case Iop_Shl32x4:
+      case Iop_Shr32x4:
+      case Iop_Sar32x4:
+      case Iop_Rol32x4:
+         return mkUifUV128(mce,
+                   assignNew(mce, Ity_V128, binop(op, vatom1, atom2)),
+                   mkPCast32x4(mce,vatom2)
+                );
 
       case Iop_QSub8Ux16:
       case Iop_QSub8Sx16:
       case Iop_Sub8x16:
       case Iop_Min8Ux16:
+      case Iop_Min8Sx16:
       case Iop_Max8Ux16:
+      case Iop_Max8Sx16:
       case Iop_CmpGT8Sx16:
+      case Iop_CmpGT8Ux16:
       case Iop_CmpEQ8x16:
       case Iop_Avg8Ux16:
+      case Iop_Avg8Sx16:
       case Iop_QAdd8Ux16:
       case Iop_QAdd8Sx16:
       case Iop_Add8x16:
@@ -1523,10 +1711,14 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_MulHi16Sx8:
       case Iop_MulHi16Ux8:
       case Iop_Min16Sx8:
+      case Iop_Min16Ux8:
       case Iop_Max16Sx8:
+      case Iop_Max16Ux8:
       case Iop_CmpGT16Sx8:
+      case Iop_CmpGT16Ux8:
       case Iop_CmpEQ16x8:
       case Iop_Avg16Ux8:
+      case Iop_Avg16Sx8:
       case Iop_QAdd16Ux8:
       case Iop_QAdd16Sx8:
       case Iop_Add16x8:
@@ -1534,8 +1726,19 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       case Iop_Sub32x4:
       case Iop_CmpGT32Sx4:
+      case Iop_CmpGT32Ux4:
       case Iop_CmpEQ32x4:
+      case Iop_QAdd32Sx4:
+      case Iop_QAdd32Ux4:
+      case Iop_QSub32Sx4:
+      case Iop_QSub32Ux4:
+      case Iop_Avg32Ux4:
+      case Iop_Avg32Sx4:
       case Iop_Add32x4:
+      case Iop_Max32Ux4:
+      case Iop_Max32Sx4:
+      case Iop_Min32Ux4:
+      case Iop_Min32Sx4:
          return binary32Ix4(mce, vatom1, vatom2);
 
       case Iop_Sub64x2:
@@ -1543,6 +1746,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
          return binary64Ix2(mce, vatom1, vatom2);
 
       case Iop_QNarrow32Sx4:
+      case Iop_QNarrow32Ux4:
       case Iop_QNarrow16Sx8:
       case Iop_QNarrow16Ux8:
          return vectorNarrowV128(mce, op, vatom1, vatom2);
@@ -1555,6 +1759,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_CmpLT64Fx2:
       case Iop_CmpLE64Fx2:
       case Iop_CmpEQ64Fx2:
+      case Iop_CmpUN64Fx2:
       case Iop_Add64Fx2:
          return binary64Fx2(mce, vatom1, vatom2);      
 
@@ -1566,6 +1771,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_CmpLT64F0x2:
       case Iop_CmpLE64F0x2:
       case Iop_CmpEQ64F0x2:
+      case Iop_CmpUN64F0x2:
       case Iop_Add64F0x2:
          return binary64F0x2(mce, vatom1, vatom2);      
 
@@ -1577,6 +1783,9 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_CmpLT32Fx4:
       case Iop_CmpLE32Fx4:
       case Iop_CmpEQ32Fx4:
+      case Iop_CmpUN32Fx4:
+      case Iop_CmpGT32Fx4:
+      case Iop_CmpGE32Fx4:
       case Iop_Add32Fx4:
          return binary32Fx4(mce, vatom1, vatom2);      
 
@@ -1588,6 +1797,7 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_CmpLT32F0x4:
       case Iop_CmpLE32F0x4:
       case Iop_CmpEQ32F0x4:
+      case Iop_CmpUN32F0x4:
       case Iop_Add32F0x4:
          return binary32F0x4(mce, vatom1, vatom2);      
 
@@ -1604,6 +1814,60 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_InterleaveHI16x8:
       case Iop_InterleaveHI8x16:
          return assignNew(mce, Ity_V128, binop(op, vatom1, vatom2));
+ 
+     /* Perm8x16: rearrange values in left arg using steering values
+        from right arg.  So rearrange the vbits in the same way but
+        pessimise wrt steering values. */
+      case Iop_Perm8x16:
+         return mkUifUV128(
+                   mce,
+                   assignNew(mce, Ity_V128, binop(op, vatom1, atom2)),
+                   mkPCast8x16(mce, vatom2)
+                );
+
+     /* These two take the lower half of each 16-bit lane, sign/zero
+        extend it to 32, and multiply together, producing a 32x4
+        result (and implicitly ignoring half the operand bits).  So
+        treat it as a bunch of independent 16x8 operations, but then
+        do 32-bit shifts left-right to copy the lower half results
+        (which are all 0s or all 1s due to PCasting in binary16Ix8)
+        into the upper half of each result lane. */
+      case Iop_MullEven16Ux8:
+      case Iop_MullEven16Sx8: {
+         IRAtom* at;
+         at = binary16Ix8(mce,vatom1,vatom2);
+         at = assignNew(mce, Ity_V128, binop(Iop_ShlN32x4, at, mkU8(16)));
+         at = assignNew(mce, Ity_V128, binop(Iop_SarN32x4, at, mkU8(16)));
+	 return at;
+      }
+
+      /* Same deal as Iop_MullEven16{S,U}x8 */
+      case Iop_MullEven8Ux16:
+      case Iop_MullEven8Sx16: {
+         IRAtom* at;
+         at = binary8Ix16(mce,vatom1,vatom2);
+         at = assignNew(mce, Ity_V128, binop(Iop_ShlN16x8, at, mkU8(8)));
+         at = assignNew(mce, Ity_V128, binop(Iop_SarN16x8, at, mkU8(8)));
+	 return at;
+      }
+
+      /* narrow 2xV128 into 1xV128, hi half from left arg, in a 2 x
+         32x4 -> 16x8 laneage, discarding the upper half of each lane.
+         Simply apply same op to the V bits, since this really no more
+         than a data steering operation. */
+      case Iop_Narrow32x4: 
+      case Iop_Narrow16x8: 
+         return assignNew(mce, Ity_V128, 
+                               binop(op, vatom1, vatom2));
+
+      case Iop_ShrV128:
+      case Iop_ShlV128:
+         /* Same scheme as with all other shifts.  Note: 10 Nov 05:
+            this is wrong now, scalar shifts are done properly lazily.
+            Vector shifts should be fixed too. */
+         complainIfUndefined(mce, atom2);
+         return assignNew(mce, Ity_V128, binop(op, vatom1, atom2));
+
 
       /* I128-bit data-steering */
       case Iop_64HLto128:
@@ -1706,9 +1970,11 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       cheap_AddSub32:
       case Iop_Mul32:
+         return mkLeft32(mce, mkUifU32(mce, vatom1,vatom2));
+
       case Iop_CmpORD32S:
       case Iop_CmpORD32U:
-         return mkLeft32(mce, mkUifU32(mce, vatom1,vatom2));
+         return doCmpORD32(mce, op, vatom1,vatom2, atom1,atom2);
 
       case Iop_Add64:
          if (mce->bogusLiterals)
@@ -1764,26 +2030,17 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_CmpEQ8: case Iop_CmpNE8:
          return mkPCastTo(mce, Ity_I1, mkUifU8(mce, vatom1,vatom2));
 
+      case Iop_Shl64: case Iop_Shr64: case Iop_Sar64:
+         return scalarShift( mce, Ity_I64, op, vatom1,vatom2, atom1,atom2 );
+
       case Iop_Shl32: case Iop_Shr32: case Iop_Sar32:
-         /* Complain if the shift amount is undefined.  Then simply
-            shift the first arg's V bits by the real shift amount. */
-         complainIfUndefined(mce, atom2);
-         return assignNew(mce, Ity_I32, binop(op, vatom1, atom2));
+         return scalarShift( mce, Ity_I32, op, vatom1,vatom2, atom1,atom2 );
 
       case Iop_Shl16: case Iop_Shr16: case Iop_Sar16:
-         /* Same scheme as with 32-bit shifts. */
-         complainIfUndefined(mce, atom2);
-         return assignNew(mce, Ity_I16, binop(op, vatom1, atom2));
+         return scalarShift( mce, Ity_I16, op, vatom1,vatom2, atom1,atom2 );
 
       case Iop_Shl8: case Iop_Shr8:
-         /* Same scheme as with 32-bit shifts. */
-         complainIfUndefined(mce, atom2);
-         return assignNew(mce, Ity_I8, binop(op, vatom1, atom2));
-
-      case Iop_Shl64: case Iop_Shr64: case Iop_Sar64:
-         /* Same scheme as with 32-bit shifts. */
-         complainIfUndefined(mce, atom2);
-         return assignNew(mce, Ity_I64, binop(op, vatom1, atom2));
+         return scalarShift( mce, Ity_I8, op, vatom1,vatom2, atom1,atom2 );
 
       case Iop_AndV128:
          uifu = mkUifUV128; difd = mkDifDV128; 
@@ -1860,6 +2117,14 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
       case Iop_Sqrt32Fx4:
       case Iop_RSqrt32Fx4:
       case Iop_Recip32Fx4:
+      case Iop_I32UtoFx4:
+      case Iop_I32StoFx4:
+      case Iop_QFtoI32Ux4_RZ:
+      case Iop_QFtoI32Sx4_RZ:
+      case Iop_RoundF32x4_RM:
+      case Iop_RoundF32x4_RP:
+      case Iop_RoundF32x4_RN:
+      case Iop_RoundF32x4_RZ:
          return unary32Fx4(mce, vatom);
 
       case Iop_Sqrt32F0x4:
@@ -1869,6 +2134,9 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
 
       case Iop_32UtoV128:
       case Iop_64UtoV128:
+      case Iop_Dup8x16:
+      case Iop_Dup16x8:
+      case Iop_Dup32x4:
          return assignNew(mce, Ity_V128, unop(op, vatom));
 
       case Iop_F32toF64: 
@@ -1909,6 +2177,7 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
       case Iop_16Uto32:
       case Iop_16Sto32:
       case Iop_8Sto32:
+      case Iop_V128to32:
          return assignNew(mce, Ity_I32, unop(op, vatom));
 
       case Iop_8Sto16:
@@ -2665,6 +2934,7 @@ static Bool checkForBogusLiterals ( /*FLAT*/ IRStmt* st )
 
 
 IRBB* MC_(instrument) ( IRBB* bb_in, VexGuestLayout* layout, 
+                        Addr64 orig_addr_noredir, VexGuestExtents* vge,
                         IRType gWordTy, IRType hWordTy )
 {
    Bool    verboze = False; //True; 

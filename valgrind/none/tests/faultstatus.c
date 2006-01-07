@@ -95,39 +95,6 @@ static void test4()
 	(void)v;
 }
 
-#ifdef __i386__
-extern char test5_ill;
-static void test5()
-{
-	asm volatile("test5_ill: ud2");
-}
-
-static void test6()
-{
-	asm volatile ("int3");
-}
-
-static void test7()
-{
-	asm volatile ("int $0x10");
-}
-
-static void test8()
-{
-	volatile int a;
-	asm volatile ("add $1, %0;"/* set OF */
-		      "into"
-		      : "=a" (a) : "0" (0x7fffffff) : "cc");
-}
-
-static void test9()
-{
-	static int limit[2] = { 0, 10 };
-
-	asm volatile ("bound %0, %1" : : "r" (11), "m" (limit[0]));
-}
-#endif	/* __i386__ */
-
 int main()
 {
 	int fd, i;
@@ -159,18 +126,6 @@ int main()
 			T(2, SIGSEGV,	SEGV_ACCERR,	mapping),
 			T(3, SIGBUS,	BUS_ADRERR,	&mapping[FILESIZE+10]),
 			T(4, SIGFPE,	FPE_INTDIV,	0),
-#ifdef __i386__
-			T(5, SIGILL,	ILL_ILLOPN,     &test5_ill),
-
-			T(6, SIGTRAP,	128,		0), /* TRAP_BRKPT? */
-			T(7, SIGSEGV,	128,		0),
-			T(8, SIGSEGV,   128,		0),
-
-			/* This is an expected failure - Valgrind
-			   doesn't implement the BOUND instruction,
-			   and so issues a SIGILL instead. */
-			T(9, SIGSEGV,   128,		0),
-#endif	/* __i386__ */
 #undef T
 		};
 

@@ -36,8 +36,10 @@ static void nl_post_clo_init(void)
 {
 }
 
-static IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout, 
-                           IRType gWordTy, IRType hWordTy)
+static
+IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout, 
+                    Addr64 orig_addr_noredir, VexGuestExtents* vge,
+                    IRType gWordTy, IRType hWordTy)
 {
     return bb;
 }
@@ -62,7 +64,7 @@ static void nl_pre_clo_init(void)
    /* No needs, no core events to track */
 }
 
-VG_DETERMINE_INTERFACE_VERSION(nl_pre_clo_init, 0)
+VG_DETERMINE_INTERFACE_VERSION(nl_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

@@ -1,18 +1,28 @@
-SUBDIRS      = ${VG_ARCH}     .
+SUBDIRS = .
+if VG_X86_LINUX
+SUBDIRS += x86
+endif
+if VG_AMD64_LINUX
+SUBDIRS += amd64
+endif
+if VG_PPC32_LINUX
+SUBDIRS += ppc32
+endif
+
 DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
 noinst_SCRIPTS = \
-	filter_as_mmap filter_fdleak filter_none_discards filter_stderr
+	filter_cmdline0 filter_linenos \
+	filter_fdleak filter_none_discards filter_stderr
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	ansi.stderr.exp ansi.vgtest \
 	args.stderr.exp args.stdout.exp args.vgtest \
-	as_mmap.stderr.exp as_mmap.stderr.exp2 as_mmap.vgtest \
-	as_shm.stderr.exp as_shm.stdout.exp as_shm.vgtest \
 	async-sigs.stderr.exp async-sigs.stdout.exp async-sigs.vgtest \
 	bitfield1.stderr.exp bitfield1.vgtest \
 	blockfault.vgtest blockfault.stderr.exp blockfault.stdout.exp \
 	closeall.stderr.exp closeall.vgtest \
+	cmdline0.stderr.exp cmdline0.stdout.exp cmdline0.vgtest \
 	cmdline1.stderr.exp cmdline1.stdout.exp cmdline1.vgtest \
 	cmdline2.stderr.exp cmdline2.stdout.exp cmdline2.vgtest \
 	cmdline3.stderr.exp cmdline3.vgtest \
@@ -25,7 +35,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	discard.stderr.exp discard.stdout.exp \
 	discard.vgtest \
 	exec-sigmask.vgtest exec-sigmask.stdout.exp \
-	exec-sigmask.stdout.exp2 exec-sigmask.stderr.exp \
+	exec-sigmask.stdout.exp2 exec-sigmask.stdout.exp3 exec-sigmask.stderr.exp \
 	execve.vgtest execve.stdout.exp execve.stderr.exp \
 	faultstatus.vgtest faultstatus.stderr.exp \
 	fcntl_setown.vgtest fcntl_setown.stdout.exp fcntl_setown.stderr.exp \
@@ -56,6 +66,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	map_unmap.stderr.exp map_unmap.stdout.exp map_unmap.vgtest \
 	mq.stderr.exp mq.vgtest \
 	mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
+	mremap2.stderr.exp mremap2.stdout.exp mremap2.vgtest \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
 	nestedfns.stderr.exp nestedfns.stdout.exp nestedfns.vgtest \
 	pending.stdout.exp pending.stderr.exp pending.vgtest \
@@ -83,6 +94,16 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	selfrun.stderr.exp selfrun.stdout.exp selfrun.vgtest \
 	sem.stderr.exp sem.stdout.exp sem.vgtest \
 	semlimit.stderr.exp semlimit.stdout.exp semlimit.vgtest \
+	shell shell.vgtest shell.stderr.exp shell.stdout.exp \
+	shell_badinterp shell_badinterp.vgtest shell_badinterp.stderr.exp \
+	shell_binaryfile shell_binaryfile.vgtest shell_binaryfile.stderr.exp \
+	shell_dir.vgtest shell_dir.stderr.exp \
+	shell_nonexec.vgtest shell_nonexec.stderr.exp \
+	shell_nosuchfile.vgtest shell_nosuchfile.stderr.exp \
+	shell_valid1 shell_valid1.vgtest shell_valid1.stderr.exp \
+	shell_valid2 shell_valid2.vgtest shell_valid2.stderr.exp \
+	shell_valid3 shell_valid3.vgtest shell_valid3.stderr.exp \
+	shell_zerolength shell_zerolength.vgtest shell_zerolength.stderr.exp \
 	susphello.stdout.exp susphello.stderr.exp susphello.vgtest \
 	sha1_test.stderr.exp sha1_test.vgtest \
 	shortpush.stderr.exp shortpush.vgtest \
@@ -100,14 +121,14 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	vgprintf.stderr.exp vgprintf.stdout.exp vgprintf.vgtest
 
 check_PROGRAMS = \
-	ansi args as_mmap as_shm \
+	ansi args \
 	async-sigs bitfield1 blockfault closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
 	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
 	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip manythreads \
-	munmap_exe map_unaligned map_unmap mq mremap \
+	munmap_exe map_unaligned map_unmap mq mremap mremap2 \
 	nestedfns \
 	pending \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \

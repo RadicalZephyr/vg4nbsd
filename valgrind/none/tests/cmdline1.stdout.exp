@@ -1,4 +1,4 @@
-usage: valgrind --tool=<toolname> [options] prog-and-args
+usage: valgrind [options] prog-and-args
 
   common user options for all Valgrind tools, with defaults in [ ]:
     --tool=<name>             use the Valgrind tool named <name> [memcheck]
@@ -11,24 +11,26 @@ usage: valgrind --tool=<toolname> [options] prog-and-args
     --track-fds=no|yes        track open file descriptors? [no]
     --time-stamp=no|yes       add timestamps to log messages? [no]
     --log-fd=<number>         log messages to file descriptor [2=stderr]
-    --log-file=<file>         log messages to <file>.pid<pid>
+    --log-file=<file>         log messages to <file>.<pid>
     --log-file-exactly=<file> log messages to <file>
     --log-file-qualifier=<VAR> incorporate $VAR in logfile name [none]
     --log-socket=ipaddr:port  log messages to socket ipaddr:port
 
   uncommon user options for all Valgrind tools:
     --run-libc-freeres=no|yes free up glibc memory at exit? [yes]
-    --weird-hacks=hack1,hack2,...  recognised hacks: lax-ioctls,ioctl-mmap [none]
-    --pointercheck=no|yes     enforce client address space limits [yes]
+    --sim-hints=hint1,hint2,...  known hints:
+                                 lax-ioctls, enable-outer [none]
     --show-emwarns=no|yes     show warnings about emulation limits? [no]
     --smc-check=none|stack|all  checks for self-modifying code: none,
                               only for code found in stacks, or all [stack]
+    --kernel-variant=variant1,variant2,...  known variants: bproc [none]
+                              handle non-standard kernel variants
 
   user options for Valgrind tools that report errors:
     --xml=yes                 all output is in XML (Memcheck/Nulgrind only)
     --xml-user-comment=STR    copy STR verbatim to XML output
     --demangle=no|yes         automatically demangle C++ names? [yes]
-    --num-callers=<number>    show <num> callers in stack traces [12]
+    --num-callers=<number>    show <number> callers in stack traces [12]
     --error-limit=no|yes      stop showing new errors if too many? [yes]
     --show-below-main=no|yes  continue stack traces below main() [no]
     --suppressions=<filename> suppress errors described in <filename>

@@ -42,6 +42,7 @@
 #include "mac_shared.h"
 #include "memcheck.h"
 
+#if 0
 
 /*------------------------------------------------------------*/
 /*--- Comparing and printing errors                        ---*/
@@ -706,6 +707,7 @@ static __inline__ void ac_helperc_ACCESS4 ( Addr a, Bool isWrite )
    abits >>= (a & 4);
    abits &= 15;
    PROF_EVENT(66, "");
+   // XXX: Should this be "if (!is_distinguished_sm(sm) && abits == VGM_NIBBLE_VALID)"?
    if (abits == VGM_NIBBLE_VALID) {
       /* Handle common case quickly: a is suitably aligned, is mapped,
          and is addressible.  So just return. */
@@ -726,6 +728,7 @@ static __inline__ void ac_helperc_ACCESS2 ( Addr a, Bool isWrite )
    AcSecMap* sm     = primary_map[sec_no];
    UInt    a_off  = (SM_OFF(a)) >> 3;
    PROF_EVENT(67, "");
+   // XXX: Should this be "if (!is_distinguished_sm(sm) && sm->abits[a_off] == VGM_BYTE_VALID)"?
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
       /* Handle common case quickly. */
       return;
@@ -745,6 +748,7 @@ static __inline__ void ac_helperc_ACCESS1 ( Addr a, Bool isWrite )
    AcSecMap* sm   = primary_map[sec_no];
    UInt    a_off  = (SM_OFF(a)) >> 3;
    PROF_EVENT(68, "");
+   // XXX: Should this be "if (!is_distinguished_sm(sm) && sm->abits[a_off] == VGM_BYTE_VALID)"?
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
       /* Handle common case quickly. */
       return;
@@ -1306,11 +1310,18 @@ static void ac_print_debug_usage(void)
 {  
    MAC_(print_common_debug_usage)();
 }
-
+#endif
 
 /*------------------------------------------------------------*/
 /*--- Setup and finalisation                               ---*/
 /*------------------------------------------------------------*/
+
+// dummy instrument() function
+static IRBB* ac_instrument(IRBB* bb_in, VexGuestLayout* layout, 
+                           IRType gWordTy, IRType hWordTy )
+{
+   tl_assert(0);
+}
 
 static void ac_post_clo_init ( void )
 {
@@ -1318,7 +1329,10 @@ static void ac_post_clo_init ( void )
 
 static void ac_fini ( Int exitcode )
 {
+   tl_assert(0);     // turn leak checking back on
+#if 0
    MAC_(common_fini)( ac_detect_memory_leaks );
+#endif
 }
 
 static void ac_pre_clo_init(void)
@@ -1335,6 +1349,18 @@ static void ac_pre_clo_init(void)
                                    ac_instrument,
                                    ac_fini);
 
+
+   VG_(printf)(
+"\n"
+"Addrcheck is currently not working, because:\n"
+" (a) it is not yet ready to handle the Vex IR and the use with 64-bit\n"
+"     platforms introduced in Valgrind 3.0.0\n"
+"\n"
+"Sorry for the inconvenience.  Let us know if this is a problem for you.\n");
+   VG_(exit)(1);
+
+
+#if 0
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (MAC_(eq_Error),
                                    ac_pp_Error,
@@ -1351,7 +1377,6 @@ static void ac_pre_clo_init(void)
    VG_(needs_client_requests)     (ac_handle_client_request);
    VG_(needs_sanity_checks)       (ac_cheap_sanity_check,
                                    ac_expensive_sanity_check);
-   VG_(needs_shadow_memory)       ();
 
    VG_(needs_malloc_replacement)  (MAC_(malloc),
                                    MAC_(__builtin_new),
@@ -1408,11 +1433,12 @@ static void ac_pre_clo_init(void)
 
    init_shadow_memory();
    MAC_(common_pre_clo_init)();
+#endif
 }
 
 VG_DETERMINE_INTERFACE_VERSION(ac_pre_clo_init, 1./8)
 
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                ac_main.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

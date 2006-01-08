@@ -303,7 +303,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &blockall, &savedmask);
 
    /* Create the new thread */
-   eax = do_syscall_clone_x86_netbsdelf2(
+   eax = do_syscall_clone_x86_netbsd(
             ML_(start_thread_NORETURN), stack, flags, &VG_(threads)[ctid],
             child_tidptr, parent_tidptr, NULL
          );

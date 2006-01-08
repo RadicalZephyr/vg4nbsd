@@ -454,7 +454,7 @@ AC_CACHE_CHECK([for TLS support], vg_cv_tls,
                                [vg_cv_tls=yes],
                                [vg_cv_tls=no])])])
 
-if test "$vg_cv_tls" = yes; then
+if test "$vg_cv_tls" = yes; theny
 AC_DEFINE([HAVE_TLS], 1, [can use __thread to define thread-local variables])
 fi
 

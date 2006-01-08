@@ -1315,8 +1315,7 @@ ML_(generic_PRE_sys_setsockopt) ( ThreadId tid,
 }
 
 /* ------ */
-
-void 
+void
 ML_(generic_PRE_sys_getsockopt) ( ThreadId tid, 
                                   UWord arg0, UWord arg1, UWord arg2,
                                   UWord arg3, UWord arg4 )
@@ -1462,6 +1461,41 @@ ML_(generic_POST_sys_recvmsg) ( ThreadId tid,
    struct vki_msghdr *msg = (struct vki_msghdr *)arg1;
    msghdr_foreachfield( tid, msg, post_mem_write_recvmsg );
    check_cmsg_for_fds( tid, msg );
+}
+/* dummy msg* macros */
+void
+ML_(generic_PRE_sys_msgsnd) ( ThreadId tid,
+                            UWord arg0, UWord arg1, UWord arg2, UWord arg3 )
+{
+	I_die_here;
+}
+void
+ML_(generic_PRE_sys_msgrcv) ( ThreadId tid,
+                            UWord arg0, UWord arg1, UWord arg2,
+                            UWord arg3, UWord arg4 )
+{ 
+	I_die_here;
+}
+void
+ML_(generic_POST_sys_msgrcv) ( ThreadId tid,
+                             UWord res,
+                             UWord arg0, UWord arg1, UWord arg2,
+                             UWord arg3, UWord arg4 )
+{  
+	I_die_here;
+}
+void
+ML_(generic_PRE_sys_msgctl) ( ThreadId tid,
+                            UWord arg0, UWord arg1, UWord arg2 )
+{  
+	I_die_here;
+}
+void
+ML_(generic_POST_sys_msgctl) ( ThreadId tid,
+                             UWord res,
+                             UWord arg0, UWord arg1, UWord arg2 )
+{  
+	I_die_here;
 }
 
 
@@ -1947,7 +1981,9 @@ PRE(sys_ni_syscall)
    PRE_REG_READ0(long, "ni_syscall");
    SET_STATUS_Failure( VKI_ENOSYS );
 }
-
+POST (sys_ni_syscall) {
+/* empty */
+}
 PRE(sys_iopl)
 {
    PRINT("sys_iopl ( %d )", ARG1);

@@ -187,7 +187,7 @@ ThreadId VG_(alloc_ThreadState) ( void )
    structures and the CPU.  Up until we get the sema, we must not
    touch any shared state.
 
-   When this returns, we'll actually be runninlsg.
+   When this returns, we'll actually be running.
  */
 void VG_(set_running)(ThreadId tid)
 {
@@ -434,12 +434,10 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    vg_assert(VG_(my_fault));
    VG_(my_fault) = False;
-
    VG_(printf)("doing schedsetjmp\n");
-   vg_assert(tst);
-   vg_assert(&tst->arch.vex);
-      SCHEDSETJMP(tid, jumped, 
-	       trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
+
+   SCHEDSETJMP(tid, jumped, 
+                    trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
 
    //nextEIP = tst->arch.m_eip;
    //if (nextEIP >= VG_(client_end))
@@ -824,7 +822,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          VG_(discard_translations)(
             (Addr64)VG_(threads)[tid].arch.vex.guest_TISTART,
             VG_(threads)[tid].arch.vex.guest_TILEN,
-            "scheduler(VEX_TRC_JMP_TINVAL)"	    
+            "scheduler(VEX_TRC_JMP_TINVAL)"
          );
          if (0)
             VG_(printf)("dump translations done.\n");

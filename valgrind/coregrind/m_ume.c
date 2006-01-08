@@ -372,7 +372,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       VG_(printf)("p_type = %p\n",ph->p_type);
       switch(ph->p_type) {
       case PT_PHDR:
-      printf("in pt_hdr\n");
+     VG_(printf)("in pt_hdr\n");
 	 info->phdr = ph->p_vaddr + ebase;
 	 VG_(printf)("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
 	 break;
@@ -447,7 +447,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       }
    }
 
-   printf("interp_addr = %p\n", interp_addr);
+  VG_( printf)("interp_addr = %p\n", interp_addr);
    if (info->phdr == 0)
       info->phdr = minaddr + ebase + e->e.e_phoff;
 

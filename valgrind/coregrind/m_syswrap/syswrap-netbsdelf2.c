@@ -99,21 +99,22 @@ static void run_a_thread_NORETURN ( Word tidW )
 {
 	VG_(printf)("in run a thread_noreturn\n");
    ThreadId tid = (ThreadId)tidW;
-
+   VgSchedReturnCode src;
+Int c;
    VG_(debugLog)(1, "syswrap-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) called\n",
+                       "ML_(thread_wrapper_NORETURN) called\n",
                        (ULong)tidW);
 
    /* Run the thread all the way through. */
-   VgSchedReturnCode src = ML_(thread_wrapper)(tid);  
+src = thread_wrapper(tid);
 
    VG_(debugLog)(1, "syswrap-netbsd", 
                     "run_a_thread_NORETURN(tid=%lld): "
                        "ML_(thread_wrapper) done\n",
                        (ULong)tidW);
 
-   Int c = VG_(count_living_threads)();
+   c = VG_(count_living_threads)();
    vg_assert(c >= 1); /* stay sane */
 
    if (c == 1) {
@@ -250,6 +251,11 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 }
 
 
+SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
+                            Int* parent_tidptr, Int* child_tidptr )
+{
+	I_die_here;
+}
 
 /* ---------------------------------------------------------------------
    PRE/POST wrappers for arch-specific, NetBSD-specific syscalls

@@ -289,11 +289,13 @@ VG_(trampoline_stuff_end):
 .global VG_(trampoline_stuff_start)
 VG_(trampoline_stuff_start):
 
+.global 
 .global VG_(x86_netbsdelf2_SUBST_FOR_sigreturn)
 VG_(x86_netbsdelf2_SUBST_FOR_sigreturn):
 	int	$0x80
 	ret
-
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
 
 /*---------------- unknown ----------------*/
 #else

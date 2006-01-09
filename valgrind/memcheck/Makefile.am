@@ -51,6 +51,15 @@ vgpreload_memcheck_ppc32_linux_so_LDFLAGS      = \
 	$(PRELOAD_LDFLAGS_PPC32_LINUX) \
 	$(LIBREPLACEMALLOC_LDFLAGS_PPC32_LINUX)
 
+vgpreload_memcheck_x86_netbsd_so_SOURCES      = $(VGPRELOAD_MEMCHECK_SOURCES_COMMON)
+vgpreload_memcheck_x86_netbsd_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
+vgpreload_memcheck_x86_netbsd_so_CFLAGS       = $(AM_CFLAGS_X86_NETBSD) $(AM_CFLAGS_PIC) -O2
+vgpreload_memcheck_x86_netbsd_so_CCASFLAGS    = $(AM_CCASFLAGS_X86_NETBSD)
+vgpreload_memcheck_x86_netbsd_so_DEPENDENCIES = $(LIBREPLACEMALLOC_X86_NETBSD)
+vgpreload_memcheck_x86_netbsd_so_LDFLAGS      = \
+	$(PRELOAD_LDFLAGS_X86_NETBSD) \
+	$(LIBREPLACEMALLOC_LDFLAGS_X86_NETBSD)
+
 MEMCHECK_SOURCES_COMMON = \
 	mac_leakcheck.c \
 	mac_malloc_wrappers.c \

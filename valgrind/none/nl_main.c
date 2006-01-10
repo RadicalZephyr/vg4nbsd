@@ -32,6 +32,18 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_tooliface.h"
 
+#if defined (VGO_netbsdelf2)
+asm(
+"        .section \".note.netbsd.ident\", \"a\"\n"
+"        .long   2f-1f\n"
+"        .long   4f-3f\n"
+"        .long   1\n"
+"1:      .asciz \"NetBSD\"\n"
+"2:      .p2align 2\n"
+"3:      .long   200000\n"
+"4:      .p2align 2\n"
+	);
+#endif /* PT_Note section */
 static void nl_post_clo_init(void)
 {
 }

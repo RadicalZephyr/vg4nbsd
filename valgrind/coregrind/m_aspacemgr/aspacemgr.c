@@ -447,10 +447,14 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
 #  if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    res = VG_(do_syscall6)(__NR_mmap2, (UWord)start, length,
                           prot, flags, fd, offset / VKI_PAGE_SIZE);
-// XXX Is this correct? - sjamaan
+// XXX Is this correct? - sjamaan. netbsd uses 7 param mmap call -kailash
 #  elif defined(VGP_amd64_linux) || defined(VGP_x86_netbsdelf2)
    res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
                          prot, flags, fd, offset);
+# elif defined(VGP_x86_netbsdelf2)
+   res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
+                          prot, flags, fd,0, offset / VKI_PAGE_SIZE);
+
 #  else
 #    error Unknown platform
 #  endif

@@ -229,6 +229,12 @@ int main(int argc, char** argv, char** envp)
    /* Figure out the name of this executable (viz, the launcher), so
       we can tell stage2.  stage2 will use the name for recursive
       invokations of valgrind on child processes. */
+/* #if defined VGO_netbsdelf2 */
+/* // ok /proc/self/exe is not a symlink for us, that means we ust put */
+/* // that as the laungher name and see how it goes.  -XXX this may be */
+/* // broken */
+/*    snprintf(launcher_name,PATH_MAX,"%s","/proc/self/exe"); */
+/* #else */
    memset(launcher_name, 0, PATH_MAX+1);
    r = readlink("/proc/self/exe", launcher_name, PATH_MAX);
    if (r == -1) {
@@ -241,6 +247,7 @@ int main(int argc, char** argv, char** envp)
       fprintf(stderr, "valgrind: continuing, however --trace-children=yes "
                       "will not work.\n");
    }
+/* #endif */
 
    /* tediously augment the env: VALGRIND_LAUNCHER=launcher_name */
    new_line = malloc(strlen(VALGRIND_LAUNCHER) + 1 
@@ -253,10 +260,11 @@ int main(int argc, char** argv, char** envp)
 
    for (j = 0; envp[j]; j++)
       ;
-   new_env = malloc((j+2) * sizeof(char*));
+   new_env = malloc((j+2) * sizeof(char*)); // allocate space for the ptrs
    if (new_env == NULL)
       barf("malloc of new_env failed.");
-   for (i = 0; i < j; i++)
+   printf("envp[0] is %s\n",envp[0]);
+   for (i = 0; i < j; i++) // envp[0] is what?!
       new_env[i] = envp[i];
    new_env[i++] = new_line;
    new_env[i++] = NULL;
@@ -275,7 +283,8 @@ int main(int argc, char** argv, char** envp)
    sprintf(toolfile, "%s/%s/%s", valgrind_lib, platform, toolname);
 
    VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);
-
+// error here
+   printf("toolfile : %s \n argv: %s \n valgrind_launcher %s \n new_env: %s \n",toolfile, *argv,VALGRIND_LAUNCHER,  new_env[j]); 
    execve(toolfile, argv, new_env);
 
    fprintf(stderr, "valgrind: failed to start tool '%s' for platform '%s': %s\n",

@@ -635,7 +635,7 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
 
    buf.n = 0;
    buf.buf[0] = 0;
-   pid = local_sys_getpid();
+   pid = 0;//local_sys_getpid();
 
    // Print one '>' in front of the messages for each level of self-hosting
    // being performed.

@@ -235,6 +235,7 @@ libreplacemalloc_toolpreload_x86_netbsd_a_CPPFLAGS = $(AM_CPPFLAGS_X86_NETBSD)
 libreplacemalloc_toolpreload_x86_netbsd_a_CFLAGS = $(AM_CFLAGS_X86_NETBSD) -fpic -fno-omit-frame-pointer
 
 COREGRIND_NETBSD_SOURCE = \
+ 	netbsd-ident.S \
 	m_coredump/coredump-elf.c \
 	m_syswrap/syswrap-netbsdelf2.c
 

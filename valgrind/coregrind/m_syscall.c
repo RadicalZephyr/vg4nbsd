@@ -103,7 +103,7 @@ SysRes VG_(mk_SysRes_Success) ( UWord val ) {
 static UWord do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6
+          UWord a4, UWord a5, UWord a6, UWord a7
        );
 asm(
     /* its easier for us, we need syscall number in eax, and its
@@ -259,11 +259,15 @@ asm(
 #else
 #  error Unknown platform
 #endif
-
+#ifndef VGP_x86_netbsdelf2
 SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
                                       UWord a4, UWord a5, UWord a6 )
+#else
+SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
+                                      UWord a4, UWord a5, UWord a6,UWord a7 )
+#endif
 {
-#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)
   UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
   return VG_(mk_SysRes_x86_linux)( val );
 #elif defined(VGP_amd64_linux)
@@ -274,6 +278,9 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
   UInt  val     = (UInt)(ret>>32);
   UInt  errflag = (UInt)(ret);
   return VG_(mk_SysRes_ppc32_linux)( val, errflag );
+#elif defined(VGP_x86_netbsdelf2)
+  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6,a7);
+  return VG_(mk_SysRes_x86_netbsdelf2)( val );
 #else
 #  error Unknown platform
 #endif

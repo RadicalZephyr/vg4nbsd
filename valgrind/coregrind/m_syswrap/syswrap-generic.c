@@ -2342,6 +2342,7 @@ void VG_(reap_threads)(ThreadId self)
 // but it seems to work nonetheless...
 PRE(sys_execve)
 {
+	VG_(printf)("IN SYS EXECVE\n");
    Char*        path = NULL;       /* path to executable */
    Char**       envp = NULL;
    Char**       argv = NULL;

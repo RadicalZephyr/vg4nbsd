@@ -1931,7 +1931,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Once that's done, we can relax a bit.
    //
    //============================================================
-   
    /* This is needed to make VG_(getenv) usable early. */
    VG_(client_envp) = (Char**)envp;
 
@@ -2295,6 +2294,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //                                 are shown after the preamble]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
+   VG_(printf)("Post clo init!m_main\n");
    VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
@@ -2303,6 +2303,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: tl_pre_clo_init [for 'VG_(details).avg_translation_sizeB']
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+   VG_(printf)("init tt_cc\n");
    VG_(init_tt_tc)();
 
    //--------------------------------------------------------------
@@ -2627,6 +2628,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
    VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
 
    if (VG_(clo_xml)) {
+
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "</valgrindoutput>");
       VG_(message)(Vg_UserMsg, "");
@@ -2797,9 +2799,11 @@ void* memset(void *s, int c, size_t n) {
 #if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)  /* XXX correct?! */
 asm("\n"
     ".text\n"
-    "\t.globl _start\n"
+    "\t.globl _start\n" 
+    "\t.globl __start\n" 
     "\t.type _start,@function\n"
-    "_start:\n"
+    "_start:\n" 
+    "__start:\n" 
     /* set up the new stack in %eax */
     "\tmovl  $vgPlain_interim_stack, %eax\n"
     "\taddl  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %eax\n"

@@ -14,8 +14,8 @@ if VG_PPC32_LINUX
 noinst_PROGRAMS += none-ppc32-linux
 endif
 
-NONE_SOURCES_COMMON = nl_main.c
-none_x86_netbsd_SOURCES      = $(NONE_SOURCES_COMMON)
+NONE_SOURCES_COMMON = nl_main.c 
+none_x86_netbsd_SOURCES      = $(NONE_SOURCES_COMMON) ../coregrind/netbsd-ident.S
 none_x86_netbsd_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
 none_x86_netbsd_CFLAGS       = $(AM_CFLAGS_X86_NETBSD)
 none_x86_netbsd_DEPENDENCIES = $(COREGRIND_LIBS_X86_NETBSD)

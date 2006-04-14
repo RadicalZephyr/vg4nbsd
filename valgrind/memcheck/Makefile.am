@@ -59,7 +59,7 @@ MEMCHECK_SOURCES_COMMON = \
 	mac_shared.c \
 	mc_translate.c
 
-memcheck_x86_netbsd_SOURCES      = $(MEMCHECK_SOURCES_COMMON)
+memcheck_x86_netbsd_SOURCES      = $(MEMCHECK_SOURCES_COMMON) ../coregrind/netbsd-ident.S
 memcheck_x86_netbsd_CPPFLAGS     = $(AM_CPPFLAGS_X86_NETBSD)
 memcheck_x86_netbsd_CFLAGS       = $(AM_CFLAGS_X86_NETBSD) -O2
 memcheck_x86_netbsd_CCASFLAGS    = $(AM_CCASFLAGS_X86_NETBSD)

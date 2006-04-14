@@ -31,21 +31,12 @@
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_tooliface.h"
+#include "pub_tool_libcprint.h"
+static int nl_gcount =0;
 
-#if defined (VGO_netbsdelf2)
-asm(
-"        .section \".note.netbsd.ident\", \"a\"\n"
-"        .long   2f-1f\n"
-"        .long   4f-3f\n"
-"        .long   1\n"
-"1:      .asciz \"NetBSD\"\n"
-"2:      .p2align 2\n"
-"3:      .long   200000\n"
-"4:      .p2align 2\n"
-	);
-#endif /* PT_Note section */
 static void nl_post_clo_init(void)
 {
+  
 }
 
 static
@@ -53,6 +44,8 @@ IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout,
                     Addr64 orig_addr_noredir, VexGuestExtents* vge,
                     IRType gWordTy, IRType hWordTy)
 {
+	nl_gcount++;
+	VG_(printf)("what!%d,\n",nl_gcount);
     return bb;
 }
 
@@ -60,7 +53,7 @@ static void nl_fini(Int exitcode)
 {
 }
 
-static void nl_pre_clo_init(void)
+ static void nl_pre_clo_init(void)
 {
    VG_(details_name)            ("Nulgrind");
    VG_(details_version)         (NULL);
@@ -68,10 +61,11 @@ static void nl_pre_clo_init(void)
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2005, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
-
+   VG_(printf)("\nHello world!\n");
    VG_(basic_tool_funcs)        (nl_post_clo_init,
                                  nl_instrument,
                                  nl_fini);
+   VG_(printf)("\nGoodbye world!\n");
 
    /* No needs, no core events to track */
 }

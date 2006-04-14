@@ -4,14 +4,10 @@ AUTOMAKE_OPTIONS = foreign 1.6 dist-bzip2
 include $(top_srcdir)/Makefile.all.am 
 
 ## addrcheck must come after memcheck, for mac_*.o
-TOOLS =		memcheck \
-		cachegrind \
-		massif \
-		lackey \
-		none
+TOOLS =		none
 
 ##		addrcheck \
-
+##		memcheck
 # Temporary: we want to compile Helgrind, but not regtest it.
 # And we want to include Addrcheck in the distro, but not compile/test it.
 # Put docs last because building the HTML is slow and we want to get
@@ -51,8 +47,8 @@ BUILT_SOURCES += valt_load_address_ppc32_linux.lds
 CLEANFILES += valt_load_address_ppc32_linux.lds
 endif
 if VG_X86_NETBSD
-#BUILT_SOURCES += valt_load_address.lds
-#CLEANFILES += valt_load_address.lds
+BUILT_SOURCES += valt_load_address_x86_netbsd.lds
+CLEANFILES += valt_load_address_x86_netbsd.lds
 # XXX sjamaan: We're using valt_load_address.lds now
 #BUILT_SOURCES += valt_load_address_x86_netbsd.lds
 #CLEANFILES += valt_load_address_x86_netbsd.lds
@@ -205,6 +201,13 @@ VEX_PRIMARY_SOURCES = \
 #		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
 #	|| rm -f $@
 #
+valt_load_address_x86_netbsd.lds: Makefile
+	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | gsed \
+		-e '1,/^=====\+$$/d' \
+		-e '/^=====\+$$/d' \
+		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+	|| rm -f $@
+
 #valt_load_address_x86_netbsd.lds: Makefile
 #	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | sed \
 #		-e '1,/^=====\+$$/d' \

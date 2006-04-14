@@ -51,10 +51,10 @@ COREGRIND_LIBS_X86_NETBSD = \
 @VEX_DIR@/priv/main/vex_svnversion.h:
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" version
 
-TOOL_LDADD_COMMON = -lgcc
+TOOL_LDADD_COMMON =  /usr/lib/libgcc.a
 TOOL_LDFLAGS_COMMON = -static \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
-	-nodefaultlibs -nostartfiles -u _start
+	-nodefaultlibs -nostartfiles -u _start -u __start 
 
 TOOL_LDADD_X86_LINUX = $(COREGRIND_LIBS_X86_LINUX) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_X86_LINUX = \
@@ -71,10 +71,10 @@ TOOL_LDFLAGS_PPC32_LINUX = \
 	$(TOOL_LDFLAGS_COMMON) \
 	-Wl,-T,$(top_builddir)/valt_load_address_ppc32_linux.lds
 
-TOOL_LDADD_X86_NETBSD = $(COREGRIND_LIBS_X86_NETBSD) $(TOOL_LDADD_COMMON)
+TOOL_LDADD_X86_NETBSD =  $(COREGRIND_LIBS_X86_NETBSD) $(TOOL_LDADD_COMMON)
 TOOL_LDFLAGS_X86_NETBSD = \
 	$(TOOL_LDFLAGS_COMMON) @FLAG_M32@ \
-	-Wl,-T,$(top_builddir)/valt_load_address.lds
+	-Wl,-T,$(top_builddir)/valt_load_address_x86_netbsd.lds
 # XXX sjamaan: We're using valt_load_address.lds now
 #TOOL_LDFLAGS_X86_NETBSD = \
 #	$(TOOL_LDFLAGS_COMMON) @FLAG_M32@ \

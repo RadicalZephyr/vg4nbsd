@@ -117,8 +117,8 @@ case "${host_cpu}" in
      i?86) 
 	AC_MSG_RESULT([ok (${host_cpu})])
         VG_ARCH="x86"
-        valt_load_address_normal="0xb0000000"
-        valt_load_address_inner="0xa0000000"
+        valt_load_address_normal="0x70000000"
+        valt_load_address_inner="0x60000000"
         ;;
 
      x86_64) 

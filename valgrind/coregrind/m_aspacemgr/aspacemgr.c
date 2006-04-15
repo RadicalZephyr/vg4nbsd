@@ -533,16 +533,16 @@ static Int aspacem_fstat64( Int fd, struct vki_stat64* buf )
 
 static void aspacem_exit( Int status )
 {
-#if !defined(VGP_x86_netbsdelf2)
+  /* exit_group is Linux-only */
+#if defined(VGO_linux)
    (void)VG_(do_syscall1)(__NR_exit_group, status );
+#endif
    (void)VG_(do_syscall1)(__NR_exit, status );
    /* Why are we still alive here? */
    /*NOTREACHED*/
    *(volatile Int *)0 = 'x';
    aspacem_assert(2+2 == 5);
-#else
    I_die_here;
-#endif
 }
 
 static SysRes aspacem_open ( const Char* pathname, Int flags, Int mode )

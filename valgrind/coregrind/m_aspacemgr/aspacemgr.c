@@ -542,7 +542,6 @@ static void aspacem_exit( Int status )
    /*NOTREACHED*/
    *(volatile Int *)0 = 'x';
    aspacem_assert(2+2 == 5);
-   I_die_here;
 }
 
 static SysRes aspacem_open ( const Char* pathname, Int flags, Int mode )
@@ -586,6 +585,8 @@ Bool get_inode_for_fd ( Int fd, /*OUT*/UWord* dev,
       return True;
    }
 #endif
+ VG_(debugLog)(0,"aspacem","fstat on fd %d\n", fd);
+
    r = aspacem_fstat(fd, &buf);
    if (r == 0) {
       *dev = buf.st_dev;
@@ -928,14 +929,17 @@ static Bool sane_NSegment ( NSegment* s )
 
    /* .mark is used for admin purposes only. */
    if (s->mark) return False;
-
+  VG_(debugLog)(0, "aspacem", "mark is alright\n");
    /* require page alignment */
    if (!VG_IS_PAGE_ALIGNED(s->start)) return False;
+  VG_(debugLog)(0, "aspacem", "start page aligned\n");
    if (!VG_IS_PAGE_ALIGNED(s->end+1)) return False;
+  VG_(debugLog)(0, "aspacem", "end page is aligned\n");
 
    switch (s->kind) {
 
       case SkFree:
+  VG_(debugLog)(0, "aspacem", "SkFree\n");
          return 
             s->smode == SmFixed
             && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
@@ -943,17 +947,20 @@ static Bool sane_NSegment ( NSegment* s )
             && !s->isCH;
 
       case SkAnonC: case SkAnonV: case SkShmC:
+  VG_(debugLog)(0, "aspacem", "Anon\n");
          return 
             s->smode == SmFixed 
-            && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1
+	    &&  s->dev == 0  && s->ino == 0 && s->offset == 0 && s->fnIdx == -1
             && (s->kind==SkAnonC ? True : !s->isCH);
 
       case SkFileC: case SkFileV:
+  VG_(debugLog)(0, "aspacem", "FileC/V\n");
          return 
             s->smode == SmFixed
             && !s->isCH;
 
       case SkResvn: 
+  VG_(debugLog)(0, "aspacem", "Resvn\n");
          return 
             s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
             && !s->hasR && !s->hasW && !s->hasX && !s->hasT
@@ -1635,13 +1642,15 @@ static void add_segment ( NSegment* seg )
    Addr sEnd   = seg->end;
 
    aspacem_assert(sStart <= sEnd);
+  VG_(debugLog)(0, "aspacem", "after  assertion sStart < sEnd\n");
    aspacem_assert(VG_IS_PAGE_ALIGNED(sStart));
+  VG_(debugLog)(0, "aspacem", "start is page is aligned\n");
    aspacem_assert(VG_IS_PAGE_ALIGNED(sEnd+1));
-
+  VG_(debugLog)(0, "aspacem", "end is page aligned\n");
    segment_is_sane = sane_NSegment(seg);
    if (!segment_is_sane) show_nsegment_full(0,seg);
    aspacem_assert(segment_is_sane);
-
+   VG_(debugLog)(0, "aspacem", "after segment assertion\n");
    split_nsegments_lo_and_hi( sStart, sEnd, &iLo, &iHi );
 
    /* Now iLo .. iHi inclusive is the range of segment indices which
@@ -1658,7 +1667,7 @@ static void add_segment ( NSegment* seg )
    nsegments[iLo] = *seg;
 
    (void)preen_nsegments();
-   if (0) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
+   if (1) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
 }
 
 

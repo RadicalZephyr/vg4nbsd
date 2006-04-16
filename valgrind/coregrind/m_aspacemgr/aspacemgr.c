@@ -1729,7 +1729,12 @@ static void read_maps_callback ( Addr addr, SizeT len, UInt prot,
       seg.kind  = SkFileV;
       seg.fnIdx = allocate_segname( filename );
    }
-
+#if defined (VGO_netbsdelf2)
+   if(seg.ino) {
+	   seg.kind = SkFileV;
+	   seg.fnIdx = -1;
+	}
+#endif
    if (0) show_nsegment( 2,0, &seg );
    add_segment( &seg );
 }

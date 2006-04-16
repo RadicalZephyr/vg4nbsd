@@ -287,7 +287,9 @@ int main(int argc, char** argv, char** envp)
    printf("toolfile : %s \n argv: %s \n valgrind_launcher %s \n new_env: %s \n",toolfile, *argv,VALGRIND_LAUNCHER,  new_env[j]); 
    execve(toolfile, argv, new_env);
 
-   fprintf(stderr, "valgrind: failed to start tool '%s' for platform '%s': %s\n",
+   fprintf(stderr, "valgrind: failed to start tool '%s' for platform '%s': %s\n"
+	   "Please set the VALGRIND_LIB environment variable to point to the\n"
+	   ".in_place directory under valgrind toplevel sourcedir for now\n",
                    toolname, platform, strerror(errno));
 
    exit(1);

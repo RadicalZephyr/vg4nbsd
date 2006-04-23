@@ -450,9 +450,11 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
 #  elif defined(VGP_amd64_linux)
    res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
                          prot, flags, fd, offset);
+// XXX Is this correct? - sjamaan. netbsd uses 7 param mmap call -kailash
 # elif defined(VGP_x86_netbsdelf2)
+	VG_(debugLog)(3, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d ",offset,offset/VKI_PAGE_SIZE); 
    res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
-                          prot, flags, fd,0, offset / VKI_PAGE_SIZE);
+                          prot, flags, fd,0, offset /VKI_PAGE_SIZE );
 
 #  else
 #    error Unknown platform
@@ -928,17 +930,17 @@ static Bool sane_NSegment ( NSegment* s )
 
    /* .mark is used for admin purposes only. */
    if (s->mark) return False;
-  VG_(debugLog)(0, "aspacem", "mark is alright\n");
+  VG_(debugLog)(3, "aspacem", "mark is alright\n");
    /* require page alignment */
    if (!VG_IS_PAGE_ALIGNED(s->start)) return False;
-  VG_(debugLog)(0, "aspacem", "start page aligned\n");
+  VG_(debugLog)(3, "aspacem", "start page aligned\n");
    if (!VG_IS_PAGE_ALIGNED(s->end+1)) return False;
-  VG_(debugLog)(0, "aspacem", "end page is aligned\n");
+  VG_(debugLog)(3, "aspacem", "end page is aligned\n");
 
    switch (s->kind) {
 
       case SkFree:
-  VG_(debugLog)(0, "aspacem", "SkFree\n");
+  VG_(debugLog)(3, "aspacem", "SkFree\n");
          return 
             s->smode == SmFixed
             && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
@@ -946,20 +948,20 @@ static Bool sane_NSegment ( NSegment* s )
             && !s->isCH;
 
       case SkAnonC: case SkAnonV: case SkShmC:
-  VG_(debugLog)(0, "aspacem", "Anon\n");
+  VG_(debugLog)(3, "aspacem", "Anon\n");
          return 
             s->smode == SmFixed 
 	    &&  s->dev == 0  && s->ino == 0 && s->offset == 0 && s->fnIdx == -1
             && (s->kind==SkAnonC ? True : !s->isCH);
 
       case SkFileC: case SkFileV:
-  VG_(debugLog)(0, "aspacem", "FileC/V\n");
+  VG_(debugLog)(3, "aspacem", "FileC/V\n");
          return 
             s->smode == SmFixed
             && !s->isCH;
 
       case SkResvn: 
-  VG_(debugLog)(0, "aspacem", "Resvn\n");
+  VG_(debugLog)(3, "aspacem", "Resvn\n");
          return 
             s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
             && !s->hasR && !s->hasW && !s->hasX && !s->hasT
@@ -1641,15 +1643,15 @@ static void add_segment ( NSegment* seg )
    Addr sEnd   = seg->end;
 
    aspacem_assert(sStart <= sEnd);
-  VG_(debugLog)(0, "aspacem", "after  assertion sStart < sEnd\n");
+  VG_(debugLog)(3, "aspacem", "after  assertion sStart < sEnd\n");
    aspacem_assert(VG_IS_PAGE_ALIGNED(sStart));
-  VG_(debugLog)(0, "aspacem", "start is page is aligned\n");
+  VG_(debugLog)(3, "aspacem", "start is page is aligned\n");
    aspacem_assert(VG_IS_PAGE_ALIGNED(sEnd+1));
-  VG_(debugLog)(0, "aspacem", "end is page aligned\n");
+  VG_(debugLog)(3, "aspacem", "end is page aligned\n");
    segment_is_sane = sane_NSegment(seg);
    if (!segment_is_sane) show_nsegment_full(0,seg);
    aspacem_assert(segment_is_sane);
-   VG_(debugLog)(0, "aspacem", "after segment assertion\n");
+   VG_(debugLog)(3, "aspacem", "after segment assertion\n");
    split_nsegments_lo_and_hi( sStart, sEnd, &iLo, &iHi );
 
    /* Now iLo .. iHi inclusive is the range of segment indices which
@@ -1666,7 +1668,7 @@ static void add_segment ( NSegment* seg )
    nsegments[iLo] = *seg;
 
    (void)preen_nsegments();
-   if (1) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
+   if (0) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
 }
 
 
@@ -2304,17 +2306,22 @@ SysRes VG_(am_mmap_file_fixed_client)
    req.start = start;
    req.len   = length;
    advised = VG_(am_get_advisory)( &req, True/*client*/, &ok );
-   if (!ok || advised != start)
+   if (!ok || advised != start) {
+	   VG_(debugLog)(1,"aspacemgr","returning due to not ok\n");
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
+   }
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
+
+
+	VG_(debugLog)(1, "aspacemgr", "offset = %d\n ",offset); 
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
              fd, offset 
           );
+
    if (sres.isError)
       return sres;
 
@@ -2376,11 +2383,19 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-   sres = VG_(am_do_mmap_NO_NOTIFY)( 
+#ifdef VGO_netbsdelf2
+  sres = VG_(am_do_mmap_NO_NOTIFY)( 
+             start, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             -1, 0 
+          );
+#else
+  sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              0, 0 
           );
+#endif
    if (sres.isError)
       return sres;
 
@@ -2433,11 +2448,19 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
    /* We have been advised that the mapping is allowable at the
       advised address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
+#ifdef VGO_netbsdelf2
+   sres = VG_(am_do_mmap_NO_NOTIFY)( 
+             advised, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             -1, 0 
+          );
+#else
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              advised, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              0, 0 
           );
+#endif
    if (sres.isError)
       return sres;
 
@@ -2491,12 +2514,23 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
+#if defined (VGO_netbsdelf2)
+   sres = VG_(am_do_mmap_NO_NOTIFY)( 
+             advised, length, 
+             VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             -1, 0 
+          );
+
+#else
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              advised, length, 
              VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              0, 0 
           );
+#endif
+
    if (sres.isError)
       return sres;
 
@@ -2830,12 +2864,21 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
         return False;
         
       /* Extend the kernel's mapping. */
+#ifdef VGO_netbsdelf2
+      sres = VG_(am_do_mmap_NO_NOTIFY)( 
+                nsegments[segR].start, delta,
+                prot,
+                VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+                -1, 0 
+             );
+#else
       sres = VG_(am_do_mmap_NO_NOTIFY)( 
                 nsegments[segR].start, delta,
                 prot,
                 VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
                 0, 0 
              );
+#endif
       if (sres.isError)
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segR].start) {
@@ -2865,12 +2908,21 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
         return False;
         
       /* Extend the kernel's mapping. */
+#ifdef VGO_netbsdelf2
+      sres = VG_(am_do_mmap_NO_NOTIFY)( 
+                nsegments[segA].start-delta, delta,
+                prot,
+                VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+                -1, 0 
+             );
+#else
       sres = VG_(am_do_mmap_NO_NOTIFY)( 
                 nsegments[segA].start-delta, delta,
                 prot,
                 VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
                 0, 0 
              );
+#endif
       if (sres.isError)
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segA].start-delta) {

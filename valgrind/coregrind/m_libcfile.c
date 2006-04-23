@@ -241,7 +241,9 @@ Int VG_(getdents) (UInt fd, struct vki_dirent *dirp, UInt count)
    nonzero otherwise. */
 Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 {
-#if defined(VGO_linux)
+#if defined(VGO_linux) || defined(VGO_netbsdelf2) 
+/* I have verified that the numbers are the same for netbsd - kailash
+ * vg4nbsd */ 
    /* Very annoyingly, I cannot find any definition for R_OK et al in
       the kernel interfaces.  Therefore I reluctantly resort to
       hardwiring in these magic numbers that I determined by

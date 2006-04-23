@@ -211,7 +211,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       if (brkaddr > elfbrk)
 	 elfbrk = brkaddr;
    }
-
+       	VG_(debugLog)(1, "m_ume mapelf", "e_phnum = %d\n", e->e.e_phnum); 
    for(i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, bss, brkaddr;
@@ -227,6 +227,8 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE;
       if (ph->p_flags & PF_R) prot |= VKI_PROT_READ;
 
+
+
       addr    = ph->p_vaddr+base;
       off     = ph->p_offset;
       filesz  = ph->p_filesz;
@@ -241,14 +243,14 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       //
       // The condition handles the case of a zero-length segment.
       if (VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr) > 0) {
-         if (0) VG_(debugLog)(0,"ume","mmap_file_fixed_client #1\n");
+         if (1) VG_(debugLog)(0,"ume","mmap_file_fixed_client i is %d #1\n",i);
          res = VG_(am_mmap_file_fixed_client)(
                   VG_PGROUNDDN(addr),
                   VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
-                  prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
-                  e->fd, VG_PGROUNDDN(off)
+                  prot , /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
+                  e->fd,   VG_PGROUNDDN(off)  
                );
-         if (0) VG_(am_show_nsegments)(0,"after #1");
+         if (1) VG_(am_show_nsegments)(0,"after #1");
          check_mmap(res, VG_PGROUNDDN(addr),
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
@@ -259,7 +261,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
-            if (0) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
+            if (1) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
 	    res = VG_(am_mmap_anon_fixed_client)(
                      VG_PGROUNDUP(bss), bytes,
 		     prot
@@ -271,10 +273,10 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 bytes = bss & (VKI_PAGE_SIZE - 1);
 
          // The 'prot' condition allows for a read-only bss
-     /*     if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {  - XXXX KAILASH for now */ 
-/* 	    bytes = VKI_PAGE_SIZE - bytes; */
-/* 	    VG_(memset)((char *)bss, 0, bytes); */
-/* 	 } */
+         if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {  
+	    bytes = VKI_PAGE_SIZE - bytes;
+	    VG_(memset)((char *)bss, 0, bytes);
+	 }
       }
    }
 
@@ -350,7 +352,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 #endif
 
    e = readelf(fd, name);
-
+       	VG_(debugLog)(1, "m_ume", "in load_elf after call to readelf "); 
    if (e == NULL)
       return VKI_ENOEXEC;
 
@@ -395,7 +397,9 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 break;
 			
       case PT_INTERP: {
+         VG_(printf) ("in pt_interp\n");
 	 char *buf = VG_(malloc)(ph->p_filesz+1);
+         VG_(printf) ("in pt_interp post malloc\n");
 	 Int j;
 	 Int intfd;
 	 Int baseaddr_set;
@@ -468,8 +472,9 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       valid for linux, for example it assumes stack on top i think ,
       this warrants more investigation. 
        */
+       	VG_(debugLog)(1, "m_ume", "calling mapelf "); 
    info->brkbase = mapelf(e, ebase);	/* map the executable */
-
+       	VG_(debugLog)(1, "m_ume", "after mapelf "); 
    if (info->brkbase == 0)
       return VKI_ENOMEM;
 
@@ -684,7 +689,6 @@ SysRes VG_(pre_exec_check)(const Char* exe_name, Int* out_fd)
    } else { 
       VG_(close)(fd);
    }
-
    return res;
 }
 
@@ -700,6 +704,7 @@ static Int do_exec_inner(const char *exe, struct exeinfo *info)
    Int ret;
 
    res = VG_(pre_exec_check)(exe, &fd);
+       	VG_(debugLog)(1, "m_ume", "after pre exec check "); 
    if (res.isError)
       return res.val;
 
@@ -710,6 +715,7 @@ static Int do_exec_inner(const char *exe, struct exeinfo *info)
       vg_assert2(0, "unrecognised VG_EXE_FORMAT value\n");
    }
 
+       	VG_(debugLog)(1, "m_ume", "after load_elf "); 
    VG_(close)(fd);
 
    return ret;

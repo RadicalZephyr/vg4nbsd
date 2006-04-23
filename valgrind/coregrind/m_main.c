@@ -836,13 +836,15 @@ static void load_client ( /*OUT*/struct exeinfo* info,
       VG_(printf)("valgrind: %s: command not found\n", VG_(args_the_exename));
       VG_(exit)(127);      // 127 is Posix NOTFOUND
    }
+   VG_(debugLog)(1, "load_client", "into memset\n"); 
+                            
 
    VG_(memset)(info, 0, sizeof(*info));
    info->exe_base = VG_(client_base);
    info->exe_end  = VG_(client_end);
-
+   VG_(debugLog)(1, "load_client", "do_exec\n"); 
    ret = VG_(do_exec)(exe_name, info);
-
+   VG_(debugLog)(1, "load_client", "client loaded!\n"); 
    // The client was successfully loaded!  Continue.
 
    /* Get hold of a file descriptor which refers to the client
@@ -850,10 +852,11 @@ static void load_client ( /*OUT*/struct exeinfo* info,
    res = VG_(open)(exe_name, VKI_O_RDONLY, VKI_S_IRUSR);
    if (!res.isError)
       VG_(cl_exec_fd) = res.val;
-
+   VG_(debugLog)(1, "load_client", "after open\n"); 
    /* Copy necessary bits of 'info' that were filled in */
    *client_eip = info->init_eip;
    VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase);
+   VG_(debugLog)(1, "load_client", "finished load_client\n"); 
 }
 
 

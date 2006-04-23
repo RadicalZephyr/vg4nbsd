@@ -118,6 +118,7 @@ asm(
     "popl %eax\n"
     "push %ecx\n"
     "int $0x80\n"
+"push %ecx\n" 
     "jae 1f\n"
     "movl $-1,%eax\n"
     "1:\n"

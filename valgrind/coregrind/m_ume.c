@@ -193,6 +193,12 @@ static
 ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 {
    Int    i;
+#ifdef VGO_netbsdelf2
+   ESZ(Phdr) *segs[2]; /* array of 2 phdr  pointers of course */
+   int loadseg_count=0;;
+	int nsegs=0;
+
+#endif
    SysRes res;
    ESZ(Addr) elfbrk = 0;
 
@@ -212,30 +218,60 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 elfbrk = brkaddr;
    }
        	VG_(debugLog)(1, "m_ume mapelf", "e_phnum = %d\n", e->e.e_phnum); 
-   for(i = 0; i < e->e.e_phnum; i++) {
+/* For netbsd, the first mapping shall be a full mapping, with the subsequent
+   being overlays. So First stab at this : we establish a load_count.
+   Map to the full segment on the first entry */
+/* NetBSD linker relies on there being 2 LOAD segments. text and data
+ * in the order, hence there is no reason we cant rnely on this as well
+      */ 
+/* In order to establish an overlay, we need to get info from the 2nd
+   dat asegment for the first mmap, so we do a loop here. We should
+	 refacctor this function but this way we can hopefully
+	 maintain compatibility.
+*/
+#ifdef VGO_netbsdelf2
+	for(i=0; i < e->e.e_phnum;i++){
+		ESZ(Phdr) *ph = &e->p[i]; /* grab the Phdr */
+		if(ph->p_type != PT_LOAD)
+			continue;  /* not what we want */
+		if(nsegs < 2) { 
+			segs[nsegs] = ph;
+			++nsegs;
+		}
+	}
+	if(nsegs!=2){
+		VG_(debugLog)(1,"mapelf","nsegs >2 wtf\n");
+	}
+#endif
+	for(i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, bss, brkaddr;
       ESZ(Off) off;
       ESZ(Word) filesz;
       ESZ(Word) memsz;
-      unsigned prot = 0;
+      int prot = 0;
 
       if (ph->p_type != PT_LOAD)
 	 continue;
-
       if (ph->p_flags & PF_X) prot |= VKI_PROT_EXEC;
-      if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE;
+      if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE; 
       if (ph->p_flags & PF_R) prot |= VKI_PROT_READ;
-
-
-
-      addr    = ph->p_vaddr+base;
+      
+      addr    = ph->p_vaddr+base ;
       off     = ph->p_offset;
       filesz  = ph->p_filesz;
       bss     = addr+filesz;
       memsz   = ph->p_memsz;
       brkaddr = addr+memsz;
-
+#ifdef VGO_netbsdelf2
+      VG_(debugLog)(0,"mapelf", "The alignment is %d\n" , ph->p_align);
+      if(loadseg_count==0){
+	      bss = VG_PGROUNDUP((segs[1]->p_memsz + segs[1]->p_vaddr +base)) ; 
+/* bytes the data segment occupies  + where its loaded = where bss
+   starts */
+	      loadseg_count++;
+      }
+#endif
       // Tom says: In the following, do what the Linux kernel does and only
       // map the pages that are required instead of rounding everything to
       // the specified alignment (ph->p_align).  (AMD64 doesn't work if you
@@ -247,6 +283,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
          res = VG_(am_mmap_file_fixed_client)(
                   VG_PGROUNDDN(addr),
                   VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
+/* where bss starts - where this segment starts  starts */
                   prot , /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
                   e->fd,   VG_PGROUNDDN(off)  
                );
@@ -254,7 +291,10 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
          check_mmap(res, VG_PGROUNDDN(addr),
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
-
+#ifdef VGO_netbsdelf
+      bss     = addr+filesz;
+#endif
+#if 0
       // if memsz > filesz, fill the remainder with zeroed pages
       if (memsz > filesz) {
 	 UInt bytes;
@@ -277,7 +317,9 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	    bytes = VKI_PAGE_SIZE - bytes;
 	    VG_(memset)((char *)bss, 0, bytes);
 	 }
+
       }
+#endif
    }
 
    return elfbrk;

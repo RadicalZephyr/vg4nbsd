@@ -100,10 +100,10 @@ SysRes VG_(mk_SysRes_Success) ( UWord val ) {
    ------------------------------------------------------------------ */
 
 #if defined(VGP_x86_netbsdelf2)
-static UWord do_syscall_WRK (
+extern UWord do_syscall_WRK (
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6, UWord a7
+          UWord a4, UWord a5, UWord a6, ULong a7
        );
 asm(
     /* its easier for us, we need syscall number in eax, and its
@@ -111,14 +111,13 @@ asm(
           stack, then the syscall number, then ..something , pop that
           something into ecx , pop the syscall number into eax. push
           back that something onto the stack and we are good to go */
-
-    ".text\n"
+	".text\n"
     "do_syscall_WRK:\n"
     "popl %ecx\n"
     "popl %eax\n"
     "push %ecx\n"
     "int $0x80\n"
-"push %ecx\n" 
+    "push %ecx\n" /* see /usr/src/lib/libc/arch/i386/sys/__syscall.S */
     "jae 1f\n"
     "movl $-1,%eax\n"
     "1:\n"
@@ -264,8 +263,8 @@ asm(
 SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
                                       UWord a4, UWord a5, UWord a6 )
 #else
-SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
-                                      UWord a4, UWord a5, UWord a6,UWord a7 )
+ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3, 
+                                      UWord a4, UWord a5, UWord a6,ULong a7 )
 #endif
 {
 #if defined(VGP_x86_linux)
@@ -286,6 +285,7 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 #  error Unknown platform
 #endif
 }
+
 
 /* ---------------------------------------------------------------------
    Names of errors.

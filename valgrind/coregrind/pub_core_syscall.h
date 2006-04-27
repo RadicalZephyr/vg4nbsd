@@ -63,9 +63,8 @@ extern SysRes VG_(do_syscall) ( UWord sysno,
                                                            (c),(d),(e),(f))
 
 #else
-extern SysRes VG_(do_syscall) ( UWord sysno, 
-                                UWord, UWord, UWord, 
-                                UWord, UWord, UWord,UWord );
+extern  SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3, 
+				 UWord a4, UWord a5, UWord a6,ULong a7 );
 
 #define vgPlain_do_syscall0(s)             VG_(do_syscall)((s),0,0,0,0,0,0,0)
 #define vgPlain_do_syscall1(s,a)           VG_(do_syscall)((s),(a),0,0,0,0,0,0)

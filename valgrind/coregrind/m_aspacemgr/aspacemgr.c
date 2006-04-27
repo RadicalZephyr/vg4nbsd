@@ -454,7 +454,7 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
 # elif defined(VGP_x86_netbsdelf2)
 	VG_(debugLog)(3, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d ",offset,offset/VKI_PAGE_SIZE); 
    res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
-                          prot, flags, fd,0, offset /VKI_PAGE_SIZE );
+                          prot, flags, fd,0,  offset  );
 
 #  else
 #    error Unknown platform
@@ -607,9 +607,12 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
    Int   i;
    HChar tmp[64];
 
+#ifdef VGO_netbsdelf2
+   return False;
+#endif
+
    aspacem_sprintf(tmp, "/proc/self/fd/%d", fd);
    for (i = 0; i < nbuf; i++) buf[i] = 0;
-   
    if (aspacem_readlink(tmp, buf, nbuf) > 0 && buf[0] == '/')
       return True;
    else
@@ -2318,8 +2321,8 @@ SysRes VG_(am_mmap_file_fixed_client)
 	VG_(debugLog)(1, "aspacemgr", "offset = %d\n ",offset); 
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
-             VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
-             fd, offset 
+	     VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
+             fd, offset
           );
 
    if (sres.isError)

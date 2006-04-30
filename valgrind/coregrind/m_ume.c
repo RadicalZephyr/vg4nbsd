@@ -209,7 +209,15 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
       if (ph->p_type != PT_LOAD)
 	 continue;
-
+#ifdef VGO_netbsdelf2
+      if(nsegs < 2) { 
+	      segs[nsegs] = ph;
+	      ++nsegs;
+      } 
+      if(nsegs!=2){
+	   VG_(debugLog)(1,"mapelf","nsegs >2 wtf\n");
+   }
+#endif
       addr    = ph->p_vaddr+base;
       memsz   = ph->p_memsz;
       brkaddr = addr+memsz;
@@ -229,21 +237,8 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 refacctor this function but this way we can hopefully
 	 maintain compatibility.
 */
-#ifdef VGO_netbsdelf2
-	for(i=0; i < e->e.e_phnum;i++){
-		ESZ(Phdr) *ph = &e->p[i]; /* grab the Phdr */
-		if(ph->p_type != PT_LOAD)
-			continue;  /* not what we want */
-		if(nsegs < 2) { 
-			segs[nsegs] = ph;
-			++nsegs;
-		}
-	}
-	if(nsegs!=2){
-		VG_(debugLog)(1,"mapelf","nsegs >2 wtf\n");
-	}
-#endif
-	for(i = 0; i < e->e.e_phnum; i++) {
+
+for(i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, bss, brkaddr;
       ESZ(Off) off;
@@ -294,7 +289,6 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 #ifdef VGO_netbsdelf
       bss     = addr+filesz;
 #endif
-#if 0
       // if memsz > filesz, fill the remainder with zeroed pages
       if (memsz > filesz) {
 	 UInt bytes;
@@ -319,7 +313,6 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 }
 
       }
-#endif
    }
 
    return elfbrk;
@@ -451,13 +444,15 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 buf[ph->p_filesz] = '\0';
 
 	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
+	 VG_(debugLog)(1,"m_ume","Managed to open interp\n");
          if (sres.isError) {
 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
 	    VG_(exit)(1);
 	 }
          intfd = sres.val;
 
-	 interp = readelf(intfd, buf);
+	 interp = readelf(intfd, buf); 
+	 VG_(debugLog)(1,"m_ume","Reading the interpreter\n");
 	 if (interp == NULL) {
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
 	    return 1;

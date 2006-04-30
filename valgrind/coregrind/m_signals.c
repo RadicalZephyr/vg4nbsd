@@ -813,12 +813,12 @@ static void restore_all_host_signals ( /* IN */ vki_sigset_t* saved_mask )
 
 void VG_(clear_out_queued_signals)( ThreadId tid, vki_sigset_t* saved_mask )
 {
-   block_all_host_signals(saved_mask);
+       block_all_host_signals(saved_mask);
    if (VG_(threads)[tid].sig_queue != NULL) {
       VG_(arena_free)(VG_AR_CORE, VG_(threads)[tid].sig_queue);
       VG_(threads)[tid].sig_queue = NULL;
    }
-   restore_all_host_signals(saved_mask);
+   restore_all_host_signals(saved_mask); 
 }
 
 /* ---------------------------------------------------------------------

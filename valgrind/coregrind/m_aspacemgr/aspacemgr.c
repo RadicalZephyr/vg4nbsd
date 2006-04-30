@@ -1801,7 +1801,9 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
 #  ifdef ENABLE_INNER
    aspacem_vStart -= 0x10000000; // 256M
 #  endif
-
+#ifdef VGO_netbsdelf2  /* XXX HACK PLEASE FIGURE OUT CODE TO COMPUTER THIS -kailash */
+   aspacem_maxAddr = 0x1fffffff;
+#endif
    suggested_clstack_top = aspacem_maxAddr - 16*1024*1024ULL
                                            + VKI_PAGE_SIZE;
 
@@ -2798,10 +2800,10 @@ Bool VG_(am_create_reservation) ( Addr start, SizeT length,
       should ensure that. */
    if (startI != endI)
       return False;
-
-   if (nsegments[startI].kind != SkFree)
+   VG_(debugLog)(1,"aspacemgr", "StartI and EndI in seg no %d\n",startI);
+   if (nsegments[startI].kind !=  SkFree)
       return False;
-
+   VG_(debugLog)(1,"aspacemgr", "but its not free!\n");
    /* Looks good - make the reservation. */
    aspacem_assert(nsegments[startI].start <= start2);
    aspacem_assert(end2 <= nsegments[startI].end);
@@ -2813,7 +2815,7 @@ Bool VG_(am_create_reservation) ( Addr start, SizeT length,
    seg.end   = end1;
    seg.smode = smode;
    add_segment( &seg );
-
+   VG_(debugLog)(1,"aspacemgr", "segment initialised and added\n");
    AM_SANITY_CHECK;
    return True;
 }

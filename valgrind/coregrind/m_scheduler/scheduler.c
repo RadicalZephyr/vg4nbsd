@@ -491,19 +491,20 @@ void mostly_clear_thread_record ( ThreadId tid )
    /* Leave the thread in Zombie, so that it doesn't get reallocated
       until the caller is finally done with the thread stack. */
    VG_(threads)[tid].status               = VgTs_Zombie;
-
+   VG_(debugLog)(1,"scheduler","about to do sigemptyset\n");
    VG_(sigemptyset)(&VG_(threads)[tid].sig_mask);
+   VG_(debugLog)(1,"scheduler","after first  sigemptyset\n");
    VG_(sigemptyset)(&VG_(threads)[tid].tmp_sig_mask);
-
+   VG_(debugLog)(1,"scheduler","after second  sigemptyset\n");
    os_state_clear(&VG_(threads)[tid]);
 
    /* start with no altstack */
    VG_(threads)[tid].altstack.ss_sp = (void *)0xdeadbeef;
    VG_(threads)[tid].altstack.ss_size = 0;
    VG_(threads)[tid].altstack.ss_flags = VKI_SS_DISABLE;
-
+   VG_(debugLog)(1,"scheduler","clearout \n");
    VG_(clear_out_queued_signals)(tid, &savedmask);
-
+   VG_(debugLog)(1,"scheduler","post clearout\n");
    VG_(threads)[tid].sched_jmpbuf_valid = False;
 }
 
@@ -577,15 +578,16 @@ void VG_(scheduler_init) ( Addr clstack_end, SizeT clstack_size )
       VG_(threads)[i].client_stack_szB          = 0;
       VG_(threads)[i].client_stack_highest_word = (Addr)NULL;
    }
-
+   VG_(debugLog)(1,"scheduler","pre aloc_ThreadState\n");
    tid_main = VG_(alloc_ThreadState)();
-
+   VG_(debugLog)(1,"scheduler","post aloc_ThreadState\n");
    VG_(threads)[tid_main].client_stack_highest_word 
       = clstack_end + 1 - sizeof(UWord);
    VG_(threads)[tid_main].client_stack_szB 
       = clstack_size;
-
+   VG_(debugLog)(1,"scheduler","pre atfork_child\n");
    VG_(atfork_child)(sched_fork_cleanup);
+   VG_(debugLog)(1,"scheduler","post atfork_child\n");
 }
 
 

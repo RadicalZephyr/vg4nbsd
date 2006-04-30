@@ -389,7 +389,7 @@ Addr setup_client_stack( void*  init_sp,
       auxsize +                               /* auxv */
       VG_ROUNDUP(stringsize, sizeof(Word));   /* strings (aligned) */
 
-   if (0) VG_(printf)("stacksize = %d\n", stacksize);
+   if (1) VG_(printf)("stacksize = %d\n", stacksize);
 
    /* client_SP is the client's stack pointer */
    client_SP = clstack_end - stacksize;
@@ -408,7 +408,7 @@ Addr setup_client_stack( void*  init_sp,
    VG_(clstk_base) = clstack_start;
    VG_(clstk_end)  = clstack_end;
 
-   if (0)
+   if (1)
       VG_(printf)("stringsize=%d auxsize=%d stacksize=%d maxsize=0x%x\n"
                   "clstack_start %p\n"
                   "clstack_end   %p\n",
@@ -434,7 +434,7 @@ Addr setup_client_stack( void*  init_sp,
      inner_HACK = 1024*1024; // create 1M non-fault-extending stack
 #    endif
 
-     if (0)
+     if (1)
         VG_(printf)("%p 0x%x  %p 0x%x\n", 
                     resvn_start, resvn_size, anon_start, anon_size);
 
@@ -611,7 +611,7 @@ Addr setup_client_stack( void*  init_sp,
 
    /* client_SP is pointing at client's argc/argv */
 
-   if (0) VG_(printf)("startup SP = %p\n", client_SP);
+   if (1) VG_(printf)("startup SP = %p\n", client_SP);
    return client_SP;
 }
 
@@ -2043,7 +2043,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // child processes will have a reasonable brk value.
    VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
    zero.rlim_max = VG_(client_rlimit_data).rlim_max;
-   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
+//   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
 
    // Get the current process stack rlimit.
    VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));
@@ -2492,7 +2492,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-   VG_(sigstartup_actions)();
+//   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Perhaps we're profiling Valgrind?

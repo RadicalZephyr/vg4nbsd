@@ -88,7 +88,7 @@ typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 typedef unsigned long vki_old_sigset_t;		/* at least 32 bits */
 
 typedef struct {
-	unsigned long sig[_VKI_NSIG_WORDS];
+	unsigned long sig[4];
 } vki_sigset_t;
 
 #define VKI_SIGHUP		 1

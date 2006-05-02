@@ -331,7 +331,10 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
-#if !defined(VGP_x86_netbsdelf2) 
+#if defined (VGO_netbsdelf2)
+	return VG_(getpid)();
+#endif 
+#if !defined(VGO_netbsdelf2) 
    SysRes res = VG_(do_syscall0)(__NR_gettid); 
 #else 
 /* fake up a res as this not available on NetBSD -HACK */
@@ -354,9 +357,13 @@ Int VG_(gettid)(void)
        * So instead of calling getpid here we use readlink to see where
        * the /proc/self link is pointing...
        */
-
+#ifdef VGO_netbsdelf2
+      res = VG_(do_syscall3)(__NR_readlink, (UWord)"/proc/curproc",
+                             (UWord)pid, sizeof(pid));
+#else
       res = VG_(do_syscall3)(__NR_readlink, (UWord)"/proc/self",
                              (UWord)pid, sizeof(pid));
+#endif
       if (!res.isError && res.val > 0) {
          pid[res.val] = '\0';
          res.val = VG_(atoll)(pid);

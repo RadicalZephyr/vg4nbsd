@@ -32,7 +32,6 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_libcprint.h"
-static int nl_gcount =0;
 
 static void nl_post_clo_init(void)
 {
@@ -44,8 +43,6 @@ IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout,
                     Addr64 orig_addr_noredir, VexGuestExtents* vge,
                     IRType gWordTy, IRType hWordTy)
 {
-	nl_gcount++;
-	VG_(printf)("what!%d,\n",nl_gcount);
     return bb;
 }
 

@@ -344,7 +344,7 @@ static void block_signals(ThreadId tid)
       if ((jumped) == 0) {						\
 	 vg_assert(!_qq_tst->sched_jmpbuf_valid);			\
 	 _qq_tst->sched_jmpbuf_valid = True;				\
-VG_(printf)("running stmt\n");\
+VG_(debugLog)(2,"scheduler","running stmt\n");\
 	 stmt;								\
       }	else if (VG_(clo_trace_sched))					\
 	 VG_(printf)("SCHEDSETJMP(line %d) tid %d, jumped=%d\n", __LINE__, tid, jumped); \
@@ -359,7 +359,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 {
    volatile Bool jumped;
    volatile ThreadState *tst = VG_(get_ThreadState)(tid);
-   VG_(printf)("after get threadstate\n");
+   VG_(debugLog)(2,"scheduler","after get threadstate\n");
 
    volatile UInt trc = 0;
    volatile Int  dispatch_ctr_SAVED = VG_(dispatch_ctr);
@@ -381,7 +381,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    /* Even more paranoia.  Check that what we have matches
       Vex's guest state layout requirements. */
-   if (1)
+   if (0)
    VG_(printf)("%p %d %p %d %p %d\n",
                (void*)a_vex, sz_vex, (void*)a_vexsh, sz_vexsh,
                (void*)a_spill, sz_spill );
@@ -401,7 +401,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(a_vex + 2 * sz_vex == a_spill);
 
    VGP_PUSHCC(VgpRun);
-   VG_(printf)("after the asserts\n");
+   VG_(debugLog)(2,"scheduler","run_threads_for_a_while : after the asserts\n");
 
 #  if defined(VGA_ppc32)
    /* This is necessary due to the hacky way vex models reservations
@@ -434,7 +434,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    vg_assert(VG_(my_fault));
    VG_(my_fault) = False;
-   VG_(printf)("doing schedsetjmp\n");
+   VG_(debugLog)(2,"scheduler","doing schedsetjmp\n");
 
    SCHEDSETJMP(tid, jumped, 
                     trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
@@ -444,7 +444,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    //   VG_(printf)("trc=%d jump to %p from %p\n",
    //		  trc, nextEIP, EIP);
    
-   VG_(printf)("after jump\n");
+   VG_(debugLog)(2,"scheduler","after jump\n");
    VG_(my_fault) = True;
 
    if (jumped) {
@@ -455,7 +455,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
       block_signals(tid);
    } 
 
-   VG_(printf)("jumped doing done_this_time\n");
+   VG_(debugLog)(2,"scheduler","jumped doing done_this_time\n");
    done_this_time = (Int)dispatch_ctr_SAVED - (Int)VG_(dispatch_ctr) - 0;
 
    vg_assert(done_this_time >= 0);
@@ -674,7 +674,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
    VG_(printf)("dispatch ctr = %d\n",VG_(dispatch_ctr));
    while(!VG_(is_exiting)(tid)) {
-	   VG_(printf)("in while loop\n");
+	   VG_(debugLog)(2,"scheduler","scheduler: in while loop\n");
       if (VG_(dispatch_ctr) == 1) {
 	      VG_(printf)("about to set sleeping\n");
 	 /* Our slice is done, so yield the CPU to another thread.  This
@@ -717,13 +717,13 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       /* For stats purposes only. */
       n_scheduling_events_MINOR++;
 
-      if (1)
+      if (0)
 	 VG_(message)(Vg_DebugMsg, "thread %d: running for %d bbs", 
 		      tid, VG_(dispatch_ctr) - 1 );
 
       trc = run_thread_for_a_while ( tid );
 
-      VG_(printf)("after running for a while\n");
+      VG_(debugLog)(2,"scheduler","after running for a while\n");
       if (VG_(clo_trace_sched) && VG_(clo_verbosity) > 2) {
 	 Char buf[50];
 	 VG_(sprintf)(buf, "TRC: %s", name_of_sched_event(trc));

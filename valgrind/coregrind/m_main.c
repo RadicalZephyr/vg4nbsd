@@ -2484,7 +2484,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: ?
    //--------------------------------------------------------------
    //if (VG_(clo_model_pthreads))
-   //   VG_(pthread_init)();
+   // VG_(pthread_init)();
 
    //--------------------------------------------------------------
    // Initialise the signal handling subsystem
@@ -2492,7 +2492,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-//   VG_(sigstartup_actions)();
+   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Perhaps we're profiling Valgrind?

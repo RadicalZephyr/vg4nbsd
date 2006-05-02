@@ -55,9 +55,9 @@ extern Char* VG_(x86_linux_REDIR_FOR_index) ( const Char*, Int );
 #endif
 
 #if defined(VGP_x86_netbsdelf2)
-extern void VG_(x86_netbsdelf2_SUBST_FOR_sigreturn);
-extern void VG_(x86_netbsdelf2_SUBST_FOR_rt_sigreturn);
-extern void VG_(x86_netbsdelf2_REDIR_FOR__dl_sysinfo_int80);
+//extern void VG_(x86_netbsdelf2_SUBST_FOR_sigreturn);
+//extern void VG_(x86_netbsdelf2_SUBST_FOR_rt_sigreturn);
+//extern void VG_(x86_netbsdelf2_REDIR_FOR__dl_sysinfo_int80);
 /* XXX Needed? */
 /*extern Char* VG_(x86_netbsdelf2_REDIR_FOR_index) ( const Char*, Int );*/
 #endif

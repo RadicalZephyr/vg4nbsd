@@ -82,6 +82,7 @@ typedef
    struct {
       Int o_sysno;
       Int *o_argp;
+      Int o_retval;
    }
 SyscallArgLayout;
 #else
@@ -356,6 +357,18 @@ static inline UWord getRES ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the lowest address.
 */
+#ifdef VGO_netbsdelf2 
+#define PRRAn_LE(n,s,t,a)                            \
+    do {                                             \
+       Int here = layout->o_argp[n - 1];                    \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          here, sizeof(t)                            \
+       );                                            \
+    } while (0)
+
+#else
 #define PRRAn_LE(n,s,t,a)                            \
     do {                                             \
        Int here = layout->o_arg##n;                  \
@@ -365,6 +378,8 @@ static inline UWord getRES ( SyscallStatus* st ) {
           here, sizeof(t)                            \
        );                                            \
     } while (0)
+#endif				    
+
 
 /* big-endian: the part of the guest state being read is
       let next = offset_of_reg + sizeof(reg) 
@@ -372,6 +387,18 @@ static inline UWord getRES ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the highest address.
 */
+#ifdef VGO_netbsdelf2
+#define PRRAn_BE(n,s,t,a)                            \
+    do {                                             \
+       Int next = layout->o_argp[n - 1] + sizeof(UWord);  \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          next-sizeof(t), sizeof(t)                  \
+       );                                            \
+    } while (0)
+
+#else
 #define PRRAn_BE(n,s,t,a)                            \
     do {                                             \
        Int next = layout->o_arg##n + sizeof(UWord);  \
@@ -381,6 +408,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
           next-sizeof(t), sizeof(t)                  \
        );                                            \
     } while (0)
+#endif				    
 
 #if defined(VG_BIGENDIAN)
 #  define PRRAn(n,s,t,a) PRRAn_BE(n,s,t,a)

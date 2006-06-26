@@ -344,7 +344,7 @@ static void block_signals(ThreadId tid)
       if ((jumped) == 0) {						\
 	 vg_assert(!_qq_tst->sched_jmpbuf_valid);			\
 	 _qq_tst->sched_jmpbuf_valid = True;				\
-VG_(debugLog)(2,"scheduler","running stmt\n");\
+VG_(debugLog)(4,"scheduler","running stmt\n");\
 	 stmt;								\
       }	else if (VG_(clo_trace_sched))					\
 	 VG_(printf)("SCHEDSETJMP(line %d) tid %d, jumped=%d\n", __LINE__, tid, jumped); \
@@ -359,7 +359,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 {
    volatile Bool jumped;
    volatile ThreadState *tst = VG_(get_ThreadState)(tid);
-   VG_(debugLog)(2,"scheduler","after get threadstate\n");
+   VG_(debugLog)(4,"scheduler","after get threadstate\n");
 
    volatile UInt trc = 0;
    volatile Int  dispatch_ctr_SAVED = VG_(dispatch_ctr);
@@ -401,7 +401,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(a_vex + 2 * sz_vex == a_spill);
 
    VGP_PUSHCC(VgpRun);
-   VG_(debugLog)(2,"scheduler","run_threads_for_a_while : after the asserts\n");
+   VG_(debugLog)(4,"scheduler","run_threads_for_a_while : after the asserts\n");
 
 #  if defined(VGA_ppc32)
    /* This is necessary due to the hacky way vex models reservations
@@ -434,7 +434,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    vg_assert(VG_(my_fault));
    VG_(my_fault) = False;
-   VG_(debugLog)(2,"scheduler","doing schedsetjmp\n");
+   VG_(debugLog)(4,"scheduler","doing schedsetjmp\n");
 
    SCHEDSETJMP(tid, jumped, 
                     trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
@@ -444,7 +444,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    //   VG_(printf)("trc=%d jump to %p from %p\n",
    //		  trc, nextEIP, EIP);
    
-   VG_(debugLog)(2,"scheduler","after jump\n");
+   VG_(debugLog)(4,"scheduler","after jump\n");
    VG_(my_fault) = True;
 
    if (jumped) {
@@ -468,7 +468,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
       block_signals(tid);
    } 
 
-   VG_(debugLog)(2,"scheduler","jumped doing done_this_time\n");
+   VG_(debugLog)(4,"scheduler","jumped doing done_this_time\n");
    done_this_time = (Int)dispatch_ctr_SAVED - (Int)VG_(dispatch_ctr) - 0;
 
    vg_assert(done_this_time >= 0);
@@ -504,20 +504,20 @@ void mostly_clear_thread_record ( ThreadId tid )
    /* Leave the thread in Zombie, so that it doesn't get reallocated
       until the caller is finally done with the thread stack. */
    VG_(threads)[tid].status               = VgTs_Zombie;
-   VG_(debugLog)(1,"scheduler","about to do sigemptyset\n");
+   VG_(debugLog)(4,"scheduler","about to do sigemptyset\n");
    VG_(sigemptyset)(&VG_(threads)[tid].sig_mask);
-   VG_(debugLog)(1,"scheduler","after first  sigemptyset\n");
+   VG_(debugLog)(4,"scheduler","after first  sigemptyset\n");
    VG_(sigemptyset)(&VG_(threads)[tid].tmp_sig_mask);
-   VG_(debugLog)(1,"scheduler","after second  sigemptyset\n");
+   VG_(debugLog)(4,"scheduler","after second  sigemptyset\n");
    os_state_clear(&VG_(threads)[tid]);
 
    /* start with no altstack */
    VG_(threads)[tid].altstack.ss_sp = (void *)0xdeadbeef;
    VG_(threads)[tid].altstack.ss_size = 0;
    VG_(threads)[tid].altstack.ss_flags = VKI_SS_DISABLE;
-   VG_(debugLog)(1,"scheduler","clearout \n");
+   VG_(debugLog)(4,"scheduler","clearout \n");
    VG_(clear_out_queued_signals)(tid, &savedmask);
-   VG_(debugLog)(1,"scheduler","post clearout\n");
+   VG_(debugLog)(4,"scheduler","post clearout\n");
    VG_(threads)[tid].sched_jmpbuf_valid = False;
 }
 
@@ -591,16 +591,16 @@ void VG_(scheduler_init) ( Addr clstack_end, SizeT clstack_size )
       VG_(threads)[i].client_stack_szB          = 0;
       VG_(threads)[i].client_stack_highest_word = (Addr)NULL;
    }
-   VG_(debugLog)(1,"scheduler","pre aloc_ThreadState\n");
+   VG_(debugLog)(4,"scheduler","pre aloc_ThreadState\n");
    tid_main = VG_(alloc_ThreadState)();
-   VG_(debugLog)(1,"scheduler","post aloc_ThreadState\n");
+   VG_(debugLog)(4,"scheduler","post aloc_ThreadState\n");
    VG_(threads)[tid_main].client_stack_highest_word 
       = clstack_end + 1 - sizeof(UWord);
    VG_(threads)[tid_main].client_stack_szB 
       = clstack_size;
-   VG_(debugLog)(1,"scheduler","pre atfork_child\n");
+   VG_(debugLog)(4,"scheduler","pre atfork_child\n");
    VG_(atfork_child)(sched_fork_cleanup);
-   VG_(debugLog)(1,"scheduler","post atfork_child\n");
+   VG_(debugLog)(4,"scheduler","post atfork_child\n");
 }
 
 
@@ -687,7 +687,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
    VG_(printf)("dispatch ctr = %d\n",VG_(dispatch_ctr));
    while(!VG_(is_exiting)(tid)) {
-	   VG_(debugLog)(2,"scheduler","scheduler: in while loop\n");
+	   VG_(debugLog)(4,"scheduler","scheduler: in while loop\n");
       if (VG_(dispatch_ctr) == 1) {
 	      VG_(printf)("about to set sleeping\n");
 	 /* Our slice is done, so yield the CPU to another thread.  This
@@ -736,7 +736,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
       trc = run_thread_for_a_while ( tid );
 
-      VG_(debugLog)(2,"scheduler","after running for a while\n");
+      VG_(debugLog)(4,"scheduler","after running for a while\n");
       if (VG_(clo_trace_sched) && VG_(clo_verbosity) > 2) {
 	 Char buf[50];
 	 VG_(sprintf)(buf, "TRC: %s", name_of_sched_event(trc));

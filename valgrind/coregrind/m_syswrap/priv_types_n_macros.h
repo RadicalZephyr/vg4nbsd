@@ -77,6 +77,14 @@ typedef
    SyscallStatus;
 
 /* Guest state layout info for syscall args. */
+#ifdef VGO_netbsdelf2
+typedef
+   struct {
+      Int o_sysno;
+      Int *o_argp;
+   }
+SyscallArgLayout;
+#else
 typedef
    struct {
       Int o_sysno;
@@ -89,6 +97,7 @@ typedef
       Int o_retval;
    }
    SyscallArgLayout;
+#endif
 
 /* Flags describing syscall wrappers */
 #define SfMayBlock   (1 << 1)    /* may block                       */

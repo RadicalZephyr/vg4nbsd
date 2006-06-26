@@ -309,7 +309,7 @@ static
 void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
                                     /*IN*/ VexGuestArchState* gst_vanilla )
 {
-   VG_(printf)(0, "MAW!\n");
+   VG_(printf)( "MAW!\n");
 #if defined(VGP_x86_linux) 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAXr;
@@ -341,7 +341,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    canonical->arg6  = gst->guest_GPR8;
 
 #elif defined(VGP_x86_netbsdelf2)
-   VG_(printf)(0,  "MAW2\n");
+   VG_(printf)(  "MAW2\n");
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = ((UInt*)gst->guest_ESP)[0];
    canonical->argp  = (UInt*)gst->guest_ESP + 1;
@@ -514,6 +514,11 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg5   = OFFSET_ppc32_GPR7;
    layout->o_arg6   = OFFSET_ppc32_GPR8;
    layout->o_retval = OFFSET_ppc32_GPR3;
+
+#if defined(VGP_x86_netbsdelf2)
+   layout->o_sysno  = (Int *)OFFSET_x86_ESP[0];
+   layout->o_argp   = (Int *)OFFSET_x86_ESP + 1;
+   layout->o_retval = OFFSET_x86_EAX;
 
 #else
    I_die_here;

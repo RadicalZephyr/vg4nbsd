@@ -751,7 +751,7 @@ void VG_(client_syscall) ( ThreadId tid )
             VG_(fixup_guest_state_after_syscall_interrupted), which
             fixes up the guest state, and possibly calls
             VG_(post_syscall).  Once that's done, control drops back
-            to the scheduler.  */p
+            to the scheduler.  */
 
          /* Reacquire the lock */
          VG_(set_running)(tid);

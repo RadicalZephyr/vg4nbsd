@@ -249,6 +249,15 @@ void do_syscall_for_client ( Int syscallno,
 static
 Bool eq_SyscallArgs ( SyscallArgs* a1, SyscallArgs* a2 )
 {
+#ifdef VGO_netbsdelf2
+   return a1->sysno == a2->sysno
+          && a1->argp[0] == a2->argp[0]
+          && a1->argp[1] == a2->argp[1]
+          && a1->argp[2] == a2->argp[2]
+          && a1->argp[3] == a2->argp[3]
+          && a1->argp[4] == a2->argp[4]
+          && a1->argp[5] == a2->argp[5];
+#else
    return a1->sysno == a2->sysno
           && a1->arg1 == a2->arg1
           && a1->arg2 == a2->arg2
@@ -256,6 +265,7 @@ Bool eq_SyscallArgs ( SyscallArgs* a1, SyscallArgs* a2 )
           && a1->arg4 == a2->arg4
           && a1->arg5 == a2->arg5
           && a1->arg6 == a2->arg6;
+#endif
 }
 
 static
@@ -329,6 +339,11 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    canonical->arg5  = gst->guest_GPR7;
    canonical->arg6  = gst->guest_GPR8;
 
+#elif defined(VGP_x86_netbsd)
+   VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
+   canonical->sysno = (UInt*)gst->guest_ESIr[0];
+   canonical->argp  = (UInt*)gst->guest_ESIr + 1;
+   
 #else
    I_die_here;
 //#  error "getSyscallArgsFromGuestState: unknown arch"
@@ -369,6 +384,12 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    gst->guest_GPR7 = canonical->arg5;
    gst->guest_GPR8 = canonical->arg6;
 
+#elif defined(VGP_x86_netbsd)
+   VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
+   gst->guest_ESIr = canonical->sysno;
+   /* XXX Can this be done? */
+   *(gst->guest_ESIr + 1) = canonical->argp;
+   
 #else
    I_die_here;
 //#  error "putSyscallArgsIntoGuestState: unknown arch"
@@ -773,11 +794,17 @@ void VG_(client_syscall) ( ThreadId tid )
             kernel, there's no point in flushing them back to the
             guest state.  Indeed doing so could be construed as
             incorrect. */
-
+#ifdef VGO_netbsdelf2
+         SysRes sres 
+            = VG_(do_syscall6)(sysno, sci->args.argp[0], sci->args.argp[1], 
+                                      sci->args.argp[2], sci->args.argp[3], 
+                                      sci->args.argp[4], sci->args.argp[5] );
+#else
          SysRes sres 
             = VG_(do_syscall6)(sysno, sci->args.arg1, sci->args.arg2, 
                                       sci->args.arg3, sci->args.arg4, 
                                       sci->args.arg5, sci->args.arg6 );
+#endif
          sci->status = convert_SysRes_to_SyscallStatus(sres);
 
          PRINT("[sync] --> %s(0x%llx)\n",

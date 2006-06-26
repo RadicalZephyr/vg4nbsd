@@ -48,6 +48,14 @@
    ------------------------------------------------------------------ */
 
 /* Arguments for a syscall. */
+#ifdef VGO_netbsdelf2
+typedef
+struct {
+	UWord sysno;
+	UWord *argp;
+}
+SyscallArgs;
+#else
 typedef
    struct {
       UWord sysno;
@@ -59,7 +67,7 @@ typedef
       UWord arg6;
    }
    SyscallArgs;
-
+#endif
 /* Current status of a syscall being done on behalf of the client. */
 typedef
    struct {
@@ -221,6 +229,15 @@ extern const UInt ML_(syscall_table_size);
 
 /* Reference to the syscall's arguments -- the ones which the
    pre-wrapper may have modified, not the original copy. */
+#ifdef VGO_netbsdelf2
+#define SYSNO  (arrghs->sysno)
+#define ARG1   (arrghs->argp[0])
+#define ARG2   (arrghs->argp[1])
+#define ARG3   (arrghs->argp[2])
+#define ARG4   (arrghs->argp[3])
+#define ARG5   (arrghs->argp[4])
+#define ARG6   (arrghs->argp[5])
+#else
 #define SYSNO  (arrghs->sysno)
 #define ARG1   (arrghs->arg1)
 #define ARG2   (arrghs->arg2)
@@ -228,6 +245,7 @@ extern const UInt ML_(syscall_table_size);
 #define ARG4   (arrghs->arg4)
 #define ARG5   (arrghs->arg5)
 #define ARG6   (arrghs->arg6)
+#endif
 
 /* Reference to the syscall's current result status/value.  Note that
    

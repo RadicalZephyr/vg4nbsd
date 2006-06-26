@@ -451,6 +451,19 @@ UInt run_thread_for_a_while ( ThreadId tid )
       /* We get here if the client took a fault, which caused our
          signal handler to longjmp. */
       vg_assert(trc == 0);
+
+
+
+
+
+
+
+
+
+
+
+
+
       trc = VG_TRC_FAULT_SIGNAL;
       block_signals(tid);
    } 

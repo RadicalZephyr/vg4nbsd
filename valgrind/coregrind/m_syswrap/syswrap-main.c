@@ -84,7 +84,7 @@
      is stored in thread-specific storage.
 
 
-   * The pre-wrapper is called, passing it a pointer to struct
+   * The pre-wrapper is called, passay ing it a pointer to struct
      "args".
 
 
@@ -299,9 +299,9 @@ static
 void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
                                     /*IN*/ VexGuestArchState* gst_vanilla )
 {
-#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux) 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   canonical->sysno = gst->guest_EAX;
+   canonical->sysno = gst->guest_EAXr;
    canonical->arg1  = gst->guest_EBX;
    canonical->arg2  = gst->guest_ECX;
    canonical->arg3  = gst->guest_EDX;
@@ -330,7 +330,8 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    canonical->arg6  = gst->guest_GPR8;
 
 #else
-#  error "getSyscallArgsFromGuestState: unknown arch"
+   I_die_here;
+//#  error "getSyscallArgsFromGuestState: unknown arch"
 #endif
 }
 
@@ -338,7 +339,7 @@ static
 void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
                                     /*OUT*/VexGuestArchState* gst_vanilla )
 {
-#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    gst->guest_EAX = canonical->sysno;
    gst->guest_EBX = canonical->arg1;
@@ -369,7 +370,8 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    gst->guest_GPR8 = canonical->arg6;
 
 #else
-#  error "putSyscallArgsIntoGuestState: unknown arch"
+   I_die_here;
+//#  error "putSyscallArgsIntoGuestState: unknown arch"
 #endif
 }
 
@@ -460,7 +462,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 static
 void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
 {
-#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)
    layout->o_sysno  = OFFSET_x86_EAX;
    layout->o_arg1   = OFFSET_x86_EBX;
    layout->o_arg2   = OFFSET_x86_ECX;
@@ -491,7 +493,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_retval = OFFSET_ppc32_GPR3;
 
 #else
-#  error "getSyscallLayout: unknown arch"
+   I_die_here;
+//#  error "getSyscallLayout: unknown arch"
 #endif
 }
 
@@ -606,7 +609,9 @@ void VG_(client_syscall) ( ThreadId tid )
    vg_assert(sci->status.what == SsIdle);
 
    getSyscallArgsFromGuestState( &sci->orig_args, &tst->arch.vex );
-
+/* For netbsd, we should store the syscall args somewhere in a
+   temporary location and  get them from there, throwing it into the
+   stack at the right time */
    /* Copy .orig_args to .args.  The pre-handler may modify .args, but
       we want to keep the originals too, just in case. */
    sci->args = sci->orig_args;
@@ -631,6 +636,7 @@ void VG_(client_syscall) ( ThreadId tid )
       action.  This info is needed so that the scalar syscall argument
       checks (PRE_REG_READ calls) know which bits of the guest state
       they need to inspect. */
+/* VG4NBSD needs to do something here */
    getSyscallArgLayout( &layout );
 
    /* Make sure the tmp signal mask matches the real signal mask;
@@ -731,7 +737,7 @@ void VG_(client_syscall) ( ThreadId tid )
             modified syscall args back into the guest state. */
          vg_assert(eq_SyscallArgs(&sci->args, &sci->orig_args));
          putSyscallArgsIntoGuestState( &sci->args, &tst->arch.vex );
-
+/* Vg4nbsd needs to edit this function */
          /* Drop the lock */
          VG_(set_sleeping)(tid, VgTs_WaitSys);
 
@@ -745,7 +751,7 @@ void VG_(client_syscall) ( ThreadId tid )
             VG_(fixup_guest_state_after_syscall_interrupted), which
             fixes up the guest state, and possibly calls
             VG_(post_syscall).  Once that's done, control drops back
-            to the scheduler.  */
+            to the scheduler.  */p
 
          /* Reacquire the lock */
          VG_(set_running)(tid);

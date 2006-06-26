@@ -378,7 +378,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
       PRRSN; \
       PRRAn(1,s,t1,a1); PRRAn(2,s,t2,a2); \
    }
-#define PRE_REG_READ3(tr, s, t1, a1, t2, a2, t3, a3) \
+ #define PRE_REG_READ3(tr, s, t1, a1, t2, a2, t3, a3) \
    if (VG_(tdict).track_pre_reg_read) { \
       PRRSN; \
       PRRAn(1,s,t1,a1); PRRAn(2,s,t2,a2); PRRAn(3,s,t3,a3); \

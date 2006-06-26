@@ -779,6 +779,8 @@ PRE(sys_sysctl)
 /*       PRE_MEM_READ("sysctl(oldlenp)", (Addr)args->oldlenp, sizeof(*args->oldlenp)); */
 /*       PRE_MEM_WRITE("sysctl(oldval)", (Addr)args->oldval, *args->oldlenp); */
 /*    } */
+	PRINT("__sysctl(%p , %d , %p, %p, %p, %d)", 
+	      ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
 	I_die_here;
 }
 

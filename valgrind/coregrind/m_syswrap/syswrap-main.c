@@ -309,6 +309,7 @@ static
 void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
                                     /*IN*/ VexGuestArchState* gst_vanilla )
 {
+   VG_(printf)(0, "MAW!\n");
 #if defined(VGP_x86_linux) 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAXr;
@@ -339,10 +340,11 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    canonical->arg5  = gst->guest_GPR7;
    canonical->arg6  = gst->guest_GPR8;
 
-#elif defined(VGP_x86_netbsd)
+#elif defined(VGP_x86_netbsdelf2)
+   VG_(printf)(0,  "MAW2\n");
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   canonical->sysno = (UInt*)gst->guest_ESIr[0];
-   canonical->argp  = (UInt*)gst->guest_ESIr + 1;
+   canonical->sysno = ((UInt*)gst->guest_ESP)[0];
+   canonical->argp  = (UInt*)gst->guest_ESP + 1;
    
 #else
    I_die_here;
@@ -384,11 +386,11 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    gst->guest_GPR7 = canonical->arg5;
    gst->guest_GPR8 = canonical->arg6;
 
-#elif defined(VGP_x86_netbsd)
+#elif defined(VGP_x86_netbsdelf2)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   gst->guest_ESIr = canonical->sysno;
+   gst->guest_ESP = canonical->sysno;
    /* XXX Can this be done? */
-   *(gst->guest_ESIr + 1) = canonical->argp;
+   *((UInt *)gst->guest_ESP + 1) = canonical->argp;
    
 #else
    I_die_here;

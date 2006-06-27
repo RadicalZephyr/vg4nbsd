@@ -430,6 +430,7 @@ static
 void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
                                       /*OUT*/VexGuestArchState* gst_vanilla )
 {
+    VG_(printf)("WE ARE IN!!!: %d\n", canonical->what);
    vg_assert(canonical->what == SsSuccess 
              || canonical->what == SsFailure);
 #if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
@@ -936,7 +937,9 @@ void VG_(post_syscall) (ThreadId tid)
       post-handler for sys_open can change the result from success to
       failure if the kernel supplied a fd that it doesn't like), once
       again dump the syscall result back in the guest state.*/
+   VG_(printf)("prout prout\n");
    putSyscallStatusIntoGuestState( &sci->status, &tst->arch.vex );
+   VG_(printf)("prout prout prout prout\n");
 
    /* Do any post-syscall actions required by the tool. */
    if (VG_(needs).syscall_wrapper) {
@@ -955,10 +958,12 @@ void VG_(post_syscall) (ThreadId tid)
    if (sci->flags & SfPollAfter)
       VG_(poll_signals)(tid);
 
+
    /* Similarly, the wrappers might have asked for a yield
       afterwards. */
    if (sci->flags & SfYieldAfter)
       VG_(vg_yield)();
+   VG_(printf)("DANS TON CUL\n");
 }
 
 

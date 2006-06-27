@@ -521,13 +521,13 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
 /*    layout->o_argp   = (Int *)OFFSET_x86_ESP + 1; */
 /*    layout->o_retval = OFFSET_x86_EAX; */
    layout->o_sysno  = OFFSET_x86_EAX;
-   layout->o_arg1   = 1000 + 2 ;
-   layout->o_arg2   = 1000 + 3 ;
-   layout->o_arg3   = 1000 + 4 ;
-   layout->o_arg4   = 1000 + 5;
-   layout->o_arg5   = 1000 + 6;
-   layout->o_arg6   = 1000 + 7;
-   layout->o_retval = 1000 + 8;
+   layout->o_arg1   = 1000 + 1 ;
+   layout->o_arg2   = 1000 + 2 ;
+   layout->o_arg3   = 1000 + 3 ;
+   layout->o_arg4   = 1000 + 4;
+   layout->o_arg5   = 1000 + 5;
+   layout->o_arg6   = 1000 + 6;
+   layout->o_retval = 1000 + 7;
 
 #else
    I_die_here;

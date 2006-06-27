@@ -93,26 +93,27 @@ ML_(do_syscall_for_client_WRK):
 	pushl   8+FSZ(%ebx)
 	pushl	$VKI_SIG_SETMASK
 	/* garbage return address blalab */
-	pushl	12+FSZ(%ebx)
+	pushl	$0xdeadbeef
 	movl	$__NR___sigprocmask14, %eax
 	int	$0x80
+	movl    %ebx, %esp
 	jc	5f	/* sigprocmask failed */
 
-	pushl   %eax   /* Restore garbage return addr */
 	movl	 4+FSZ(%esp), %eax	/* eax == ThreadState * */
 
 	/* movl	 %esp, %ebx */
 	movl	 OFFSET_x86_ESP(%eax), %esp 
 	movl	 0+FSZ(%ebx), %eax	/* use syscallno argument rather than thread EAX */
+	/* No need for garbage, client already has this */
 	
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */
 2:	int	$0x80
+	movl    %ebx, %esp /* Restore our stack */
 	movl    $0, %edx
 	jnc     cfdone
 	movl    $1, %edx
 cfdone:
-	movl    %ebx, %esp  /* Restore the stack */
 3:	/* In the range [3, 4), the syscall result is in %eax, but hasn't been
 	   committed to EAX. */
 	movl	4+FSZ(%esp), %ecx
@@ -125,19 +126,15 @@ cfdone:
 	pushl	12+FSZ(%ebx)
 	pushl	$VKI_SIG_SETMASK
 	/* garbage return address blalab */
-	pushl	12+FSZ(%ebx)
+	pushl	$0xdeadbeaf
 	movl	$__NR___sigprocmask14, %eax
 	int	$0x80
 
-	/* This should NOT be needed, but if we remove it, it breaks */
+	/* Arguments are still on the stack, restore it */
 	movl    %ebx, %esp
 
 	/* Restore carry flag */
-	clc
-	cmp     %edx, 1
-	jne     nosetflag
-	stc
-nosetflag:
+	cmp     $0, %edx
 5:	/* now safe from signals */
 
 	popl    %edx		

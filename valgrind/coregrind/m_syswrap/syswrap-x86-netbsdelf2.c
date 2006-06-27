@@ -1272,32 +1272,11 @@ POST(sys_ipc)
 
 PRE(old_mmap)
 {
-   /* struct mmap_arg_struct {           
-         unsigned long addr;
-         unsigned long len;
-         unsigned long prot;
-         unsigned long flags;
-         unsigned long fd;
-         unsigned long offset;
-   }; */
-   UWord a1, a2, a3, a4, a5, a6;
-   SysRes r;
-
-   UWord* args = (UWord*)ARG1;
-   PRE_REG_READ1(long, "old_mmap", struct mmap_arg_struct *, args);
-   PRE_MEM_READ( "old_mmap(args)", (Addr)args, 6*sizeof(UWord) );
-
-   a1 = args[1-1];
-   a2 = args[2-1];
-   a3 = args[3-1];
-   a4 = args[4-1];
-   a5 = args[5-1];
-   a6 = args[6-1];
-
+	SysRes r;
    PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
-         a1, (ULong)a2, a3, a4, a5, a6 );
+         ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
 
-   r = ML_(generic_PRE_sys_mmap)( tid, a1, a2, a3, a4, a5, (Off64T)a6 );
+   r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, (Off64T)ARG6);
    SET_STATUS_from_SysRes(r);
 }
 

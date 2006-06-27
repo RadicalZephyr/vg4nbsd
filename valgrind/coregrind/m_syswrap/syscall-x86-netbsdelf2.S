@@ -97,24 +97,18 @@ ML_(do_syscall_for_client_WRK):
 	int	$0x80
 	testl	%eax, %eax
 	js	5f	/* sigprocmask failed */
-	
-	movl	 %ebx, %esp
+
+	pushl   %eax   /* Restore garbage return addr */
 	movl	 4+FSZ(%esp), %eax	/* eax == ThreadState * */
 
 	/* movl	 %esp, %ebx */
 	movl	 OFFSET_x86_ESP(%eax), %esp 
 	movl	 0+FSZ(%ebx), %eax	/* use syscallno argument rather than thread EAX */
 	
-	/* XXX REMOVE ME exit(test) */
-	/*
-	pushl	%eax
-	movl	$1, %eax
-	*/
-
-	
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */
 2:	int	$0x80
+	movl    %ebx, %esp  /* Restore the stack */
 3:	/* In the range [3, 4), the syscall result is in %eax, but hasn't been
 	   committed to EAX. */
 	movl	4+FSZ(%esp), %ebx

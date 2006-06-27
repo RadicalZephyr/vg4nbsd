@@ -80,7 +80,8 @@ ML_(do_syscall_for_client_WRK):
 	push	%edi
 	push	%ebx
 	push	%ebp
-#define FSZ	((4+1)*4)	/* 4 args + ret addr */
+	push    %edx
+#define FSZ	((5+1)*4)	/* 5 args + ret addr */
 
 1:	/* Even though we can't take a signal until the sigprocmask completes,
 	   start the range early.
@@ -95,8 +96,7 @@ ML_(do_syscall_for_client_WRK):
 	pushl	12+FSZ(%ebx)
 	movl	$__NR___sigprocmask14, %eax
 	int	$0x80
-	testl	%eax, %eax
-	js	5f	/* sigprocmask failed */
+	jc	5f	/* sigprocmask failed */
 
 	pushl   %eax   /* Restore garbage return addr */
 	movl	 4+FSZ(%esp), %eax	/* eax == ThreadState * */
@@ -108,28 +108,39 @@ ML_(do_syscall_for_client_WRK):
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */
 2:	int	$0x80
+	movl    $0, %edx
+	jnc     cfdone
+	movl    $1, %edx
+cfdone:
 	movl    %ebx, %esp  /* Restore the stack */
 3:	/* In the range [3, 4), the syscall result is in %eax, but hasn't been
 	   committed to EAX. */
-	movl	4+FSZ(%esp), %ebx
-	movl	%eax, OFFSET_x86_EAX(%ebx)	/* save back to EAX */
+	movl	4+FSZ(%esp), %ecx
+	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save back to EAX */
 
 4:	/* Re-block signals.  If eip is in [4,5), then the syscall is complete and 
 	   we needn't worry about it. */
-	movl	%esp, %ebx
 	xorl    %eax, %eax   /* Just zero it out */
 	pushl   %eax
-	pushl	8+FSZ(%ebx)
+	pushl	12+FSZ(%ebx)
 	pushl	$VKI_SIG_SETMASK
 	/* garbage return address blalab */
 	pushl	12+FSZ(%ebx)
 	movl	$__NR___sigprocmask14, %eax
 	int	$0x80
 
+	/* This should NOT be needed, but if we remove it, it breaks */
 	movl    %ebx, %esp
-	
+
+	/* Restore carry flag */
+	clc
+	cmp     %edx, 1
+	jne     nosetflag
+	stc
+nosetflag:
 5:	/* now safe from signals */
-		
+
+	popl    %edx		
 	popl	%ebp
 	popl	%ebx
 	popl	%edi

@@ -390,7 +390,7 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    gst->guest_EAX = canonical->sysno;
    /* XXX Can this be done? */
-   *((UInt *)gst->guest_ESP + 1) = canonical->argp;
+/*    *((UInt *)gst->guest_ESP + 1) = canonical->argp; */
    
 #else
    I_die_here;

@@ -387,7 +387,7 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
 
 #elif defined(VGP_x86_netbsdelf2)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   gst->guest_ESP = canonical->sysno;
+   gst->guest_EAX = canonical->sysno;
    /* XXX Can this be done? */
    *((UInt *)gst->guest_ESP + 1) = canonical->argp;
    
@@ -692,10 +692,12 @@ void VG_(client_syscall) ( ThreadId tid )
 
    PRINT("SYSCALL[%d,%d](%3lld) ", VG_(getpid)(), tid, (ULong)sysno);
 
+   VG_(printf)("before tool\n");
    /* Do any pre-syscall actions */
    if (VG_(needs).syscall_wrapper) {
       VG_TDICT_CALL(tool_pre_syscall, tid, sysno);
    }
+
 
    vg_assert(ent);
    vg_assert(ent->before);
@@ -703,6 +705,7 @@ void VG_(client_syscall) ( ThreadId tid )
                   &layout, 
                   &sci->args, &sci->status, &sci->flags );
    
+   VG_(printf)("tool : %d\n", sci->status.what);
    /* The pre-handler may have modified:
          sci->args
          sci->status
@@ -757,6 +760,7 @@ void VG_(client_syscall) ( ThreadId tid )
          by doing it directly in this thread, which is a lot
          simpler. */
 
+       VG_(printf)("handtokernel\n");
       /* Check that the given flags are allowable: MayBlock, PollAfter
          and PostOnFail are ok. */
       vg_assert(0 == (sci->flags & ~(SfMayBlock | SfPostOnFail | SfPollAfter)));
@@ -767,14 +771,17 @@ void VG_(client_syscall) ( ThreadId tid )
          vki_sigset_t mask;
 
          PRINT(" --> [async] ... \n");
+	 VG_(printf)("handtokernel #0\n");
 
          mask = tst->sig_mask;
          sanitize_client_sigmask(tid, &mask);
 
+	 VG_(printf)("handtokernel #1\n");
          /* Gack.  More impedance matching.  Copy the possibly
             modified syscall args back into the guest state. */
          vg_assert(eq_SyscallArgs(&sci->args, &sci->orig_args));
          putSyscallArgsIntoGuestState( &sci->args, &tst->arch.vex );
+	 VG_(printf)("handtokernel #2\n");
 /* Vg4nbsd needs to edit this function */
          /* Drop the lock */
          VG_(set_sleeping)(tid, VgTs_WaitSys);

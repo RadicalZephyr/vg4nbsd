@@ -98,7 +98,7 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
 	   VG_(printf)("In messing up shadow state\n");
 	   vg_assert(size == 1); 
 	   offset -= 1000;
-	   *(UWord *)area =  (*(tst->arch.vex_shadow + OFFSET_ESP))[offset];
+	   *(UWord *)area =  (*((UChar *)tst->arch.vex_shadow)[OFFSET_ESP])[offset];
    }
 #endif
 }

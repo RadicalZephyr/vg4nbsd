@@ -53,6 +53,7 @@ typedef
 struct {
 	UWord sysno;
 	UWord *argp;
+	UWord size;
 }
 SyscallArgs;
 #else

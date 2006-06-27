@@ -71,7 +71,7 @@
 */
 
 /* from vki_arch.h */	
-#define VKI_SIG_SETMASK	2
+#define VKI_SIG_SETMASK	3
 	
 .globl ML_(do_syscall_for_client_WRK)
 ML_(do_syscall_for_client_WRK):
@@ -87,24 +87,30 @@ ML_(do_syscall_for_client_WRK):
 	   If eip is in the range [1,2), the syscall hasn't been started yet */
 
 	/* Set the signal mask which should be current during the syscall. */
+	movl	%esp, %ebx
+	pushl	12+FSZ(%ebx)
+	pushl   8+FSZ(%ebx)
+	pushl	$VKI_SIG_SETMASK
+	/* garbage return address blalab */
+	pushl	12+FSZ(%ebx)
 	movl	$__NR___sigprocmask14, %eax
-	movl	$VKI_SIG_SETMASK, %ebx
-	movl	8+FSZ(%esp), %ecx
-	movl	12+FSZ(%esp), %edx
-	movl	16+FSZ(%esp), %esi
 	int	$0x80
 	testl	%eax, %eax
 	js	5f	/* sigprocmask failed */
 	
+	movl	 %ebx, %esp
 	movl	 4+FSZ(%esp), %eax	/* eax == ThreadState * */
 
-	movl	 OFFSET_x86_EBX(%eax), %ebx
-	movl	 OFFSET_x86_ECX(%eax), %ecx
-	movl	 OFFSET_x86_EDX(%eax), %edx
-	movl	 OFFSET_x86_ESI(%eax), %esi
-	movl	 OFFSET_x86_EDI(%eax), %edi
-	movl	 OFFSET_x86_EBP(%eax), %ebp
-	movl	 0+FSZ(%esp), %eax	/* use syscallno argument rather than thread EAX */
+	/* movl	 %esp, %ebx */
+	movl	 OFFSET_x86_ESP(%eax), %esp 
+	movl	 0+FSZ(%ebx), %eax	/* use syscallno argument rather than thread EAX */
+	
+	/* XXX REMOVE ME exit(test) */
+	/*
+	pushl	%eax
+	movl	$1, %eax
+	*/
+
 	
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */

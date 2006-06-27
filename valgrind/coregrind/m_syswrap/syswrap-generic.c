@@ -4864,7 +4864,7 @@ PRE(sys_write)
    Bool ok;
    *flags |= SfMayBlock;
 
-   PRINT("sys_write ( %d, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
+   PRINT("sys_write ( %d, %p(%s), %llu )", ARG1, ARG2,ARG2, (ULong)ARG3);
 #ifdef VGO_netbsdelf2
 /* PRE_MEM READ/WRITE INDICATE IF BUFFER IS TO BE READ/WRITEN INTO */
    PRE_MEM_READ("sys_write",&(ARG1),sizeof(int));

@@ -343,6 +343,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAX;
+   VG_(printf)("syscall #%d\n", canonical->sysno);
    canonical->argp  = (UInt*)gst->guest_ESP + 1;
    
 #else
@@ -518,14 +519,14 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
 /*    layout->o_sysno  = ((Int *)(OFFSET_x86_ESP)[0]; */
 /*    layout->o_argp   = (Int *)OFFSET_x86_ESP + 1; */
 /*    layout->o_retval = OFFSET_x86_EAX; */
-   layout->o_sysno  = 1000 + 0 ;
-   layout->o_arg1   = 1000 + 1 ;
-   layout->o_arg2   = 1000 + 2 ;
-   layout->o_arg3   = 1000 + 3 ;
-   layout->o_arg4   = 1000 + 4;
-   layout->o_arg5   = 1000 + 5;
-   layout->o_arg6   = 1000 + 6;
-   layout->o_retval = 1000 + 9;
+   layout->o_sysno  = OFFSET_x86_EAX;
+   layout->o_arg1   = 1000 + 2 ;
+   layout->o_arg2   = 1000 + 3 ;
+   layout->o_arg3   = 1000 + 4 ;
+   layout->o_arg4   = 1000 + 5;
+   layout->o_arg5   = 1000 + 6;
+   layout->o_arg6   = 1000 + 7;
+   layout->o_retval = 1000 + 8;
 
 #else
    I_die_here;
@@ -789,6 +790,7 @@ void VG_(client_syscall) ( ThreadId tid )
          /* Do the call, which operates directly on the guest state,
             not on our abstracted copies of the args/result. */
          do_syscall_for_client(sysno, tst, &mask);
+	 VG_(printf)("handtokernel #3\n");
 
          /* do_syscall_for_client may not return if the syscall was
             interrupted by a signal.  In that case, flow of control is

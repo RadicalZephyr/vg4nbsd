@@ -116,13 +116,18 @@ ML_(do_syscall_for_client_WRK):
 
 4:	/* Re-block signals.  If eip is in [4,5), then the syscall is complete and 
 	   we needn't worry about it. */
+	movl	%esp, %ebx
+	xorl    %eax, %eax   /* Just zero it out */
+	pushl   %eax
+	pushl	8+FSZ(%ebx)
+	pushl	$VKI_SIG_SETMASK
+	/* garbage return address blalab */
+	pushl	12+FSZ(%ebx)
 	movl	$__NR___sigprocmask14, %eax
-	movl	$VKI_SIG_SETMASK, %ebx
-	movl	12+FSZ(%esp), %ecx
-	xorl	%edx, %edx
-	movl	16+FSZ(%esp), %esi
 	int	$0x80
 
+	movl    %ebx, %esp
+	
 5:	/* now safe from signals */
 		
 	popl	%ebp

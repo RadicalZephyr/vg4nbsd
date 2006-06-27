@@ -340,13 +340,10 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    canonical->arg6  = gst->guest_GPR8;
 
 #elif defined(VGP_x86_netbsdelf2)
-   VG_(debugLog)(2, "before everything\n");
+
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   VG_(debugLog)(2, "one\n");
-   canonical->sysno = ((UInt*)gst->guest_ESP)[0];
-   VG_(debugLog)(2, "two\n");
+   canonical->sysno = gst->guest_EAX;
    canonical->argp  = (UInt*)gst->guest_ESP + 1;
-   VG_(debugLog)(2, "three\n");
    
 #else
    I_die_here;
@@ -518,9 +515,17 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_retval = OFFSET_ppc32_GPR3;
 
 #elif defined(VGP_x86_netbsdelf2)
-   layout->o_sysno  = ((Int *)OFFSET_x86_ESP)[0];
-   layout->o_argp   = (Int *)OFFSET_x86_ESP + 1;
-   layout->o_retval = OFFSET_x86_EAX;
+/*    layout->o_sysno  = ((Int *)(OFFSET_x86_ESP)[0]; */
+/*    layout->o_argp   = (Int *)OFFSET_x86_ESP + 1; */
+/*    layout->o_retval = OFFSET_x86_EAX; */
+   layout->o_sysno  = 1000 + 0 ;
+   layout->o_arg1   = 1000 + 1 ;
+   layout->o_arg2   = 1000 + 2 ;
+   layout->o_arg3   = 1000 + 3 ;
+   layout->o_arg4   = 1000 + 4;
+   layout->o_arg5   = 1000 + 5;
+   layout->o_arg6   = 1000 + 6;
+   layout->o_retval = 1000 + 9;
 
 #else
    I_die_here;
@@ -644,12 +649,13 @@ void VG_(client_syscall) ( ThreadId tid )
    stack at the right time */
    /* Copy .orig_args to .args.  The pre-handler may modify .args, but
       we want to keep the originals too, just in case. */
-   sci->args = sci->orig_args;
 
+   sci->args = sci->orig_args;
+   VG_(printf)("after  copy of args\n");
    /* Save the syscall number in the thread state in case the syscall 
       is interrupted by a signal. */
    sysno = sci->orig_args.sysno;
-
+   VG_(printf)("after  sysno loaded\n");
    /* The default what-to-do-next thing is hand the syscall to the
       kernel, so we pre-set that here. */
    sci->status.what = SsHandToKernel;
@@ -659,6 +665,7 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Fetch the syscall's handlers.  If no handlers exist for this
       syscall, we are given dummy handlers which force an immediate
       return with ENOSYS. */
+   VG_(printf)("before get entry\n");
    ent = get_syscall_entry(sysno);
 
    /* Fetch the layout information, which tells us where in the guest
@@ -667,8 +674,9 @@ void VG_(client_syscall) ( ThreadId tid )
       checks (PRE_REG_READ calls) know which bits of the guest state
       they need to inspect. */
 /* VG4NBSD needs to do something here */
+   VG_(printf)("before layout\n");
    getSyscallArgLayout( &layout );
-
+   VG_(printf)("layout\n");
    /* Make sure the tmp signal mask matches the real signal mask;
       sigsuspend may change this. */
    vg_assert(VG_(iseqsigset)(&tst->sig_mask, &tst->tmp_sig_mask));

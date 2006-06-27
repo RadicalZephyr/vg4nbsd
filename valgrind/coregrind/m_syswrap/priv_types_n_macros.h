@@ -77,15 +77,15 @@ typedef
    SyscallStatus;
 
 /* Guest state layout info for syscall args. */
-#ifdef VGO_netbsdelf2
-typedef
-   struct {
-      Int o_sysno;
-      Int *o_argp;
-      Int o_retval;
-   }
-SyscallArgLayout;
-#else
+/* #ifdef VGO_netbsdelf2 */
+/* typedef */
+/*    struct { */
+/*       Int o_sysno; */
+/*       Int *o_argp; */
+/*       Int o_retval; */
+/*    } */
+/* SyscallArgLayout; */
+/* #else */
 typedef
    struct {
       Int o_sysno;
@@ -98,7 +98,7 @@ typedef
       Int o_retval;
    }
    SyscallArgLayout;
-#endif
+/* #endif */
 
 /* Flags describing syscall wrappers */
 #define SfMayBlock   (1 << 1)    /* may block                       */
@@ -357,18 +357,18 @@ static inline UWord getRES ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the lowest address.
 */
-#ifdef VGO_netbsdelf2 
-#define PRRAn_LE(n,s,t,a)                            \
-    do {                                             \
-       Int here = layout->o_argp[n - 1];                    \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       VG_(tdict).track_pre_reg_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          here, sizeof(t)                            \
-       );                                            \
-    } while (0)
+/* #ifdef VGO_netbsdelf2  */
+/* #define PRRAn_LE(n,s,t,a)                            \ */
+/*     do {                                             \ */
+/*        Int here = layout->o_argp[n - 1];                    \ */
+/*        vg_assert(sizeof(t) <= sizeof(UWord));        \ */
+/*        VG_(tdict).track_pre_reg_read(                \ */
+/*           Vg_CoreSysCall, tid, s"("#a")",            \ */
+/*           here, sizeof(t)                            \ */
+/*        );                                            \ */
+/*     } while (0) */
 
-#else
+/* #else */
 #define PRRAn_LE(n,s,t,a)                            \
     do {                                             \
        Int here = layout->o_arg##n;                  \
@@ -378,7 +378,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
           here, sizeof(t)                            \
        );                                            \
     } while (0)
-#endif				    
+/* #endif				     */
 
 
 /* big-endian: the part of the guest state being read is
@@ -387,18 +387,18 @@ static inline UWord getRES ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the highest address.
 */
-#ifdef VGO_netbsdelf2
-#define PRRAn_BE(n,s,t,a)                            \
-    do {                                             \
-       Int next = layout->o_argp[n - 1] + sizeof(UWord);  \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       VG_(tdict).track_pre_reg_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          next-sizeof(t), sizeof(t)                  \
-       );                                            \
-    } while (0)
+/* #ifdef VGO_netbsdelf2 */
+/* #define PRRAn_BE(n,s,t,a)                            \ */
+/*     do {                                             \ */
+/*        Int next = layout->o_argp[n - 1] + sizeof(UWord);  \ */
+/*        vg_assert(sizeof(t) <= sizeof(UWord));        \ */
+/*        VG_(tdict).track_pre_reg_read(                \ */
+/*           Vg_CoreSysCall, tid, s"("#a")",            \ */
+/*           next-sizeof(t), sizeof(t)                  \ */
+/*        );                                            \ */
+/*     } while (0) */
 
-#else
+/* #else */
 #define PRRAn_BE(n,s,t,a)                            \
     do {                                             \
        Int next = layout->o_arg##n + sizeof(UWord);  \
@@ -408,7 +408,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
           next-sizeof(t), sizeof(t)                  \
        );                                            \
     } while (0)
-#endif				    
+/* #endif				     */
 
 #if defined(VG_BIGENDIAN)
 #  define PRRAn(n,s,t,a) PRRAn_BE(n,s,t,a)

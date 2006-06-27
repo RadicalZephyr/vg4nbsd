@@ -87,10 +87,20 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
    tst = & VG_(threads)[tid];
 
    // Bounds check
+#ifndef VGO_netbdself2
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
-
    VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
+#else
+   if(offset < 1000 ) 
+	   VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
+   else {
+	   VG_(printf)("In messing up shadow state\n");
+	   vg_assert(size == 1); 
+	   offset -= 1000;
+	   *(UWord *)area =  (*(tst->arch.vex_shadow + OFFSET_ESP))[offset];
+   }
+#endif
 }
 
 void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,

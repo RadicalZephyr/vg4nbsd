@@ -4865,18 +4865,20 @@ PRE(sys_write)
    *flags |= SfMayBlock;
 
    PRINT("sys_write ( %d, %p(%s), %llu )", ARG1, ARG2,ARG2, (ULong)ARG3);
-#ifdef VGO_netbsdelf2
-/* PRE_MEM READ/WRITE INDICATE IF BUFFER IS TO BE READ/WRITEN INTO */
-   PRE_MEM_READ("sys_write",&(ARG1),sizeof(int));
-   PRE_MEM_WRITE("sys_write",ARG2,sizeof(void *));
-   PRE_MEM_READ("sys_write",&(ARG1),sizeof(ULong));
-//   I_die_here;
-#else
+
+/* #ifdef VGO_netbsdelf2 */
+/* /\* PRE_MEM READ/WRITE INDICATE IF BUFFER IS TO BE READ/WRITEN INTO *\/ */
+/*    PRE_MEM_READ("sys_write",&(ARG1),sizeof(int)); */
+/*    PRE_MEM_WRITE("sys_write",ARG2,sizeof(void *)); */
+/*    PRE_MEM_READ("sys_write",&(ARG1),sizeof(ULong)); */
+/* //   I_die_here; */
+/* #else */
+
    PRE_REG_READ3(ssize_t, "write",
                  unsigned int, fd, const char *, buf, vki_size_t, count);
    /* check to see if it is allowed.  If not, try for an exemption from
       --sim-hints=enable-outer (used for self hosting). */
-#endif
+/* #endif */
    ok = ML_(fd_allowed)(ARG1, "write", tid, False);
    if (!ok && ARG1 == 2/*stderr*/ 
            && VG_(strstr)(VG_(clo_sim_hints),"enable-outer"))
@@ -4885,7 +4887,6 @@ PRE(sys_write)
       SET_STATUS_Failure( VKI_EBADF );
    else
       PRE_MEM_READ( "write(buf)", ARG2, ARG3 );
-
 }
 
 PRE(sys_creat)

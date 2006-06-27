@@ -91,7 +91,8 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
 	VG_(printf)("The argu is %s\n",argu[0]);
 	argc = *(long *)sp;
 	sp+=2+argc ; /* skip over argc arguments and null terminator */
-        while(*sp++!=0) { } /* skip over environment and null terminator */
+        while(*sp++!=0) { } /* skip over environment and null
+			     * terminator */
 	return (struct ume_auxv *)sp;
 }
 

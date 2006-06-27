@@ -781,7 +781,7 @@ PRE(sys_sysctl)
 /*    } */
 	PRINT("__sysctl(%p , %d , %p, %p, %p, %d)", 
 	      ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
-	I_die_here;
+//	I_die_here;
 }
 
 POST(sys_sysctl)
@@ -792,7 +792,7 @@ POST(sys_sysctl)
 /*       POST_MEM_WRITE((Addr)args->oldlenp, sizeof(*args->oldlenp)); */
 /*       POST_MEM_WRITE((Addr)args->oldval, 1 + *args->oldlenp); */
 /*    } */
-	I_die_here;
+	//I_die_here;
 }
 
 PRE(sys_prctl)

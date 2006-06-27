@@ -645,7 +645,6 @@ static void handle_syscall(ThreadId tid)
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(BEFORE SYSCALL)",__FILE__,__LINE__);
 
-   VG_(printf)("DSJDKSJADJSAKJDSAKJSA\n");
    SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid));
 
    if (VG_(clo_sanity_level >= 3))
@@ -660,7 +659,6 @@ static void handle_syscall(ThreadId tid)
       block_signals(tid);
       VG_(poll_signals)(tid);
    }
-   VG_(printf)(" DSKDAJDKJSA  DSJDKSJADJSAKJDSAKJSA finished\n");
 }
 
 /* 
@@ -757,9 +755,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
       case VEX_TRC_JMP_SYS_INT128:  /* x86-linux */
       case VEX_TRC_JMP_SYS_SYSCALL: /* amd64-linux, ppc32-linux */
-	 VG_(printf)("we found you!!\n");
 	 handle_syscall(tid);
-	 VG_(printf)("we found you!!\n");
 	 if (VG_(clo_sanity_level) > 2)
 	    VG_(sanity_check_general)(True); /* sanity-check every syscall */
 	 break;

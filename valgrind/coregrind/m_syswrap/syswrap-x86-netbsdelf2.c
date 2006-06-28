@@ -1852,7 +1852,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    GENX_(__NR_chmod,             sys_chmod),          // 15
    GENX_(__NR_chown,             sys_chown),          // 16 ## P
-   GENX_(__NR_break,             sys_ni_syscall),     // 17
+   GENX_(__NR_break,             sys_brk),     // 17
    NBSDXY(__NR_getfsstat,        sys_getfsstat),      // 18 
    PLAX_(__NR_compat_43_olseek,  sys_compat_lseek),   // 19
 

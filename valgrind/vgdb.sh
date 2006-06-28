@@ -2,7 +2,7 @@
 # quick gdb script launching valgrind 
 #
 
-VG_ROOT=/home/rival/dev/c/vg4nbsd/branches/aspacem/valgrind
+VG_ROOT=/home/hsaliak/srcs/aspacem/valgrind
 VG_ROOT_LIB=$VG_ROOT/.in_place/
 VG_TOOL=none
 VG_TMP_SCRIPT=/tmp/vg.gdb
@@ -16,7 +16,7 @@ echo "BIN : $BIN"
 cd $VG_ROOT
 cat > $VG_TMP_SCRIPT << EOF
 break main
-run -d -d --tool=$VG_TOOL -v $BIN
+run -d -d --trace-syscalls=yes --tool=$VG_TOOL -v $BIN
 step
 symbol-file .in_place/x86-netbsd/none
 EOF

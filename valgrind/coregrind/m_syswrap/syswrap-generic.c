@@ -4952,7 +4952,7 @@ PRE(sys_readlink)
    HChar name[25];
    Word  saved = SYSNO;
 
-   PRINT("sys_readlink ( %p, %p, %llu )", ARG1,ARG2,(ULong)ARG3);
+   PRINT("sys_readlink ( %p(%s), %p(%s), %llu )", ARG1,ARG1,ARG2,ARG2,(ULong)ARG3);
    PRE_REG_READ3(long, "readlink",
                  const char *, path, char *, buf, int, bufsiz);
    PRE_MEM_RASCIIZ( "readlink(path)", ARG1 );
@@ -4966,7 +4966,8 @@ PRE(sys_readlink)
    if (ML_(safe_to_deref)((void*)ARG1, 1)
        && (VG_(strcmp)((Char *)ARG1, name) == 0 
            || VG_(strcmp)((Char *)ARG1, "/proc/self/exe") == 0)) {
-      VG_(sprintf)(name, "/proc/self/fd/%d", VG_(cl_exec_fd));
+      VG_(sprintf)(name
+, "/proc/self/fd/%d", VG_(cl_exec_fd));
       SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, 
                                                       ARG2, ARG3));
    } else {
@@ -4976,6 +4977,7 @@ PRE(sys_readlink)
 
    if (SUCCESS && RES > 0)
       POST_MEM_WRITE( ARG2, RES );
+   PRINT("sys_readlink_end ( %p(%s), %p(%s), %llu )", ARG1,ARG1,ARG2,ARG2,(ULong)ARG3);
 }
 
 PRE(sys_readv)

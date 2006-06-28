@@ -635,7 +635,7 @@ void VG_(client_syscall) ( ThreadId tid )
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(tid >= 1 && tid < VG_N_THREADS);
    vg_assert(VG_(is_running_thread)(tid));
-
+	VG_(printf)("in client syscall\n");
    tst = VG_(get_ThreadState)(tid);
 
    /* First off, get the syscall args and number.  This is a
@@ -821,6 +821,12 @@ void VG_(client_syscall) ( ThreadId tid )
             guest state.  Indeed doing so could be construed as
             incorrect. */
 #ifdef VGO_netbsdelf2
+/* 	sci->args.argp[0] = 1; */
+/* 	sci->args.argp[2] = 2; */
+/* 	sci->args.argp[1] = 3; */
+/* 	sci->args.argp[3] = 4; */
+/* 	sci->args.argp[4]  = 5; */
+/* 	sci->args.argp[5] = 6 ; */
          SysRes sres 
             = VG_(do_syscall6)(sysno, sci->args.argp[0], sci->args.argp[1], 
                                       sci->args.argp[2], sci->args.argp[3], 
@@ -832,6 +838,7 @@ void VG_(client_syscall) ( ThreadId tid )
                                       sci->args.arg5, sci->args.arg6 );
 #endif
          sci->status = convert_SysRes_to_SyscallStatus(sres);
+
 
          PRINT("[sync] --> %s(0x%llx)\n",
                sci->status.what==SsSuccess ? "Success" : "Failure",
@@ -846,6 +853,7 @@ void VG_(client_syscall) ( ThreadId tid )
 
    /* Dump the syscall result back in the guest state.  This is
       a platform-specific action. */
+
    putSyscallStatusIntoGuestState( &sci->status, &tst->arch.vex );
 
    /* Situation now:
@@ -856,6 +864,7 @@ void VG_(client_syscall) ( ThreadId tid )
       Now go on to do the post-syscall actions (read on down ..)
    */
    VG_(post_syscall)(tid);
+	VG_(printf)("out of client syscall\n");
 }
 
 

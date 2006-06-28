@@ -644,8 +644,9 @@ static void handle_syscall(ThreadId tid)
 
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(BEFORE SYSCALL)",__FILE__,__LINE__);
-
+   VG_(printf)("before handling client syscall\n");
    SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid));
+   VG_(printf)("after handling client syscall\n");
 
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(AFTER SYSCALL)",__FILE__,__LINE__);
@@ -659,6 +660,7 @@ static void handle_syscall(ThreadId tid)
       block_signals(tid);
       VG_(poll_signals)(tid);
    }
+   VG_(printf)("out of handle syscall\n");
 }
 
 /* 
@@ -880,8 +882,8 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 break;
 
       } /* switch (trc) */
+      //   VG_(printf)("outside switch\n");
    }
-
    if (VG_(clo_trace_sched))
       print_sched_event(tid, "exiting VG_(scheduler)");
 

@@ -38,13 +38,11 @@
 /*------------------------------------------------------------*/
 /*--- The dispatch loop.                                   ---*/
 /*------------------------------------------------------------*/
-
 /* signature: UWord VG_(run_innerloop) ( void* guest_state ) */
 
 .globl VG_(run_innerloop)
 VG_(run_innerloop):
 	/* 4(%esp) holds guest_state */
-	
 	/* ----- entry point to VG_(run_innerloop) ----- */
 	pushl	%ebx
 	pushl	%ecx
@@ -107,6 +105,7 @@ dispatch_boring:
 	/* Found a match.  Call tce[1], which is 8 bytes along, since
            each tce element is a 64-bit int. */
 	addl 	$8, %ecx
+/* 	int3  */
 	call 	*%ecx
 	
 	/* 

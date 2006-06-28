@@ -969,6 +969,7 @@ void VG_(post_syscall) (ThreadId tid)
       afterwards. */
    if (sci->flags & SfYieldAfter)
       VG_(vg_yield)();
+   VG_(printf)("Out of Post syscal");
 }
 
 
@@ -998,9 +999,8 @@ void VG_(post_syscall) (ThreadId tid)
 */
 
 
-/* These are addresses within ML_(do_syscall_for_client_WRK).  See
-   syscall-$PLAT.S for details. 
-*/
+/*  These are addresses within ML_(do_syscall_for_client_WRK).  See */
+/*    syscall-$PLAT.S for details.  */
 extern const Addr ML_(blksys_setup);
 extern const Addr ML_(blksys_restart);
 extern const Addr ML_(blksys_complete);

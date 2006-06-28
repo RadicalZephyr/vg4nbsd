@@ -1452,7 +1452,7 @@ POST(sys_fhstatfs)
 PRE(sys_issetugid)
 {
    PRINT("sys_issetugid ()");
-   PRE_REG_READ0(int, "issetugid");
+      PRE_REG_READ0(int, "issetugid");
    //I_die_here;  // Do we even need to do anything here?  I don't think so...
 }
 

@@ -7,7 +7,7 @@ int main(int argc, char **argv)
   void *p1;
   void *p2;
 
-  if ( ( p1 = mmap( 0, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0 ) ) == MAP_FAILED )
+  if ( ( p1 = mmap( 0, 4096, PROT_READ, MAP_PRIVATE | MAP_ANON, -1, 0 ) ) == MAP_FAILED )
     {
       perror( "mmap" );
       exit( 1 );
@@ -19,7 +19,7 @@ int main(int argc, char **argv)
       exit( 1 );
     }
 
-  if ( ( p2 = mmap( p1 + 1, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0 ) ) == MAP_FAILED )
+  if ( ( p2 = mmap( p1 + 1, 4096, PROT_READ, MAP_PRIVATE | MAP_ANON, -1, 0 ) ) == MAP_FAILED )
     {
       perror( "mmap" );
       exit( 1 );
@@ -31,7 +31,7 @@ int main(int argc, char **argv)
       exit( 1 );
     }
 
-  if ( ( p2 = mmap( p1 + 1, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0 ) ) == MAP_FAILED )
+  if ( ( p2 = mmap( p1 + 1, 4096, PROT_READ, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0 ) ) == MAP_FAILED )
     {
       perror( "mmap" );
       exit( 1 );

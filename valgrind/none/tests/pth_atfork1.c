@@ -18,7 +18,6 @@
    Boston, MA 02111-1307, USA.  */
 
 #include <errno.h>
-#include <error.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -33,6 +32,13 @@ enum
 };
 
 static int var;
+
+static void
+error(int exitcode, int other, char *message)
+{
+	printf("%s\n", message);
+	exit(exitcode);
+}
 
 static void
 prepare (void)

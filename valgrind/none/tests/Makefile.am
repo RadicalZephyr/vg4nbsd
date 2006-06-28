@@ -2,6 +2,9 @@ SUBDIRS = .
 if VG_X86_LINUX
 SUBDIRS += x86
 endif
+if VG_X86_NETBSD
+SUBDIRS += x86
+endif
 if VG_AMD64_LINUX
 SUBDIRS += amd64
 endif
@@ -65,8 +68,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	map_unaligned.stderr.exp map_unaligned.vgtest \
 	map_unmap.stderr.exp map_unmap.stdout.exp map_unmap.vgtest \
 	mq.stderr.exp mq.vgtest \
-	mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
-	mremap2.stderr.exp mremap2.stdout.exp mremap2.vgtest \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
 	nestedfns.stderr.exp nestedfns.stdout.exp nestedfns.vgtest \
 	pending.stdout.exp pending.stderr.exp pending.vgtest \
@@ -120,6 +121,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tls.vgtest tls.stderr.exp tls.stdout.exp  \
 	vgprintf.stderr.exp vgprintf.stdout.exp vgprintf.vgtest
 
+if !VG_X86_NETBSD
+EXTRA_DIST += mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
+	mremap2.stderr.exp mremap2.stdout.exp mremap2.vgtest
+endif
+
 check_PROGRAMS = \
 	ansi args \
 	async-sigs bitfield1 blockfault closeall coolo_strlen \
@@ -128,7 +134,7 @@ check_PROGRAMS = \
 	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip manythreads \
-	munmap_exe map_unaligned map_unmap mq mremap mremap2 \
+	munmap_exe map_unaligned map_unmap mq \
 	nestedfns \
 	pending \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
@@ -141,6 +147,10 @@ check_PROGRAMS = \
 	thread-exits threaded-fork threadederrno \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
+
+if !VG_X86_NETBSD
+check_PROGRAMS+= mremap mremap2 
+endif
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include

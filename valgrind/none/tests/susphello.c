@@ -132,6 +132,10 @@ initSignalling(void)
    sa.sa_flags = SA_RESTART | SA_SIGINFO | SA_ONSTACK;
    sa.sa_sigaction = ptiSrSigHandler;
    sigfillset(&sa.sa_mask);
+#ifdef __NetBSD__
+/* It's what Linux uses... */
+#define __SIGRTMIN 32
+#endif
    sigdelset(&sa.sa_mask, (__SIGRTMIN+1));
    if (sigaction(srSignal, &sa, 0) == -1) {
       perror("sigaction");

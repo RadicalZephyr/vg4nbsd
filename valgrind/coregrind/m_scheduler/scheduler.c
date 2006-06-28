@@ -96,7 +96,7 @@
 /* Defines the thread-scheduling timeslice, in terms of the number of
    basic blocks we attempt to run each thread for.  Smaller values
    give finer interleaving but much increased scheduling overheads. */
-#define SCHEDULING_QUANTUM   50000
+#define SCHEDULING_QUANTUM   50
 /* #define SCHEDULING_QUANTUM   50 */
 
 /* If true, a fault is Valgrind-internal (ie, a bug) */

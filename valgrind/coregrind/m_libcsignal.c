@@ -211,8 +211,10 @@ Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info,
    SysRes res = VG_(do_syscall4)(__NR_rt_sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)timeout, sizeof(*set));
    return res.isError ? -1 : res.val;
-#else
-   I_die_here;
+#elif defined (VGP_x86_netbsdelf2)
+   SysRes res = VG_(do_syscall3)(__NR___sigtimedwait, (UWord)set, (UWord)info, 
+                                 (UWord)timeout/* , sizeof(*set) */);
+   return res.isError ? -1 : res.val;
 #endif
 }
  

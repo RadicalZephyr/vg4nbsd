@@ -186,9 +186,9 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-SysRes res = VG_(do_syscall4)(__NR_compat_13_sigaction13,
-                                 signum, (UWord)act, (UWord)oldact, 
-                                 _VKI_NSIG_WORDS * sizeof(UWord));
+SysRes res = VG_(do_syscall3)(__NR_compat_13_sigaction13,
+                                 signum, (UWord)act, (UWord)oldact 
+			      /*, _VKI_NSIG_WORDS * sizeof(UWord) */);
    return res.isError ? -1 : 0;
 #endif
 }

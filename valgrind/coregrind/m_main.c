@@ -46,7 +46,6 @@
 #include "pub_core_machine.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
-#include "pub_core_profile.h"
 #include "pub_core_debuginfo.h"
 #include "pub_core_redir.h"
 #include "pub_core_scheduler.h"
@@ -66,6 +65,7 @@
 
 static void print_all_stats ( void )
 {
+/*    VG_(print_translation_stats)(); */
    VG_(print_tt_tc_stats)();
    VG_(print_scheduler_stats)();
    VG_(print_ExeContext_stats)();
@@ -202,6 +202,15 @@ static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
 
    VG_(free)(preload_string);
    ret[envc] = NULL;
+   {
+     int duck = 0 ;
+     for ( duck = 0 ; duck < envc; duck ++ ){
+       VG_(printf)("The environment iS : %s\n",ret[duck]);
+     }
+     if(ret[envc] == NULL )
+       VG_(printf)("Null as expected \n");
+
+   }
 
    return ret;
 }
@@ -302,7 +311,7 @@ static char *copy_str(char **tab, const char *str)
 static 
 Addr setup_client_stack( void*  init_sp,
                          char** orig_envp, 
-                         const struct exeinfo *info,
+                         const struct exeinfo* info,
                          UInt** client_auxv,
                          Addr   clstack_end,
                          SizeT  clstack_max_size )
@@ -367,14 +376,14 @@ Addr setup_client_stack( void*  init_sp,
    /* now, how big is the auxv? */
    auxsize = sizeof(*auxv);	/* there's always at least one entry: AT_NULL */
    for (cauxv = orig_auxv; cauxv->a_type != AT_NULL; cauxv++) {
-#ifdef AT_PLATFORM /* XXX -netbsd */
+#ifdef AT_PLATFORM /* XXX -netbsd maybe we have other string types that need to be added */
       if (cauxv->a_type == AT_PLATFORM)
 	 stringsize += VG_(strlen)(cauxv->u.a_ptr) + 1;
 #endif 
       auxsize += sizeof(*cauxv);
    }
 
-#  if defined(VGP_ppc32_linux)
+#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    auxsize += 2 * sizeof(*cauxv);
 #  endif
 
@@ -423,6 +432,24 @@ Addr setup_client_stack( void*  init_sp,
      Addr  resvn_start = anon_start - resvn_size;
      SizeT inner_HACK  = 0;
      Bool  ok;
+
+     /* So far we've only accounted for space requirements down to the
+        stack pointer.  If this target's ABI requires a redzone below
+        the stack pointer, we need to allocate an extra page, to
+        handle the worst case in which the stack pointer is almost at
+        the bottom of a page, and so there is insufficient room left
+        over to put the redzone in.  In this case the simple thing to
+        do is allocate an extra page, by shrinking the reservation by
+        one page and growing the anonymous area by a corresponding
+        page. */
+     vg_assert(VG_STACK_REDZONE_SZB >= 0);
+     vg_assert(VG_STACK_REDZONE_SZB < VKI_PAGE_SIZE);
+     if (VG_STACK_REDZONE_SZB > 0) {
+        vg_assert(resvn_size > VKI_PAGE_SIZE);
+        resvn_size -= VKI_PAGE_SIZE;
+        anon_start -= VKI_PAGE_SIZE;
+        anon_size += VKI_PAGE_SIZE;
+     }
 
      vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
@@ -491,7 +518,7 @@ Addr setup_client_stack( void*  init_sp,
    auxv = (struct ume_auxv *)ptr;
    *client_auxv = (UInt *)auxv;
 
-#  if defined(VGP_ppc32_linux)
+#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    auxv[0].a_type  = AT_IGNOREPPC;
    auxv[0].u.a_val = AT_IGNOREPPC;
    auxv[1].a_type  = AT_IGNOREPPC;
@@ -569,10 +596,18 @@ Addr setup_client_stack( void*  init_sp,
                                 "PPC32 cache line size %u (type %u)\n", 
                                 (UInt)auxv->u.a_val, (UInt)auxv->a_type );
             }
+#           elif defined(VGP_ppc64_linux)
+            /* acquire cache info */
+            if (auxv->u.a_val > 0) {
+               VG_(machine_ppc64_set_clszB)( auxv->u.a_val );
+               VG_(debugLog)(2, "main", 
+                                "PPC64 cache line size %u (type %u)\n", 
+                                (UInt)auxv->u.a_val, (UInt)auxv->a_type );
+            }
 #           endif
             break;
 
-#        if defined(VGP_ppc32_linux)
+#        if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
          case AT_IGNOREPPC:
             break;
 #        endif
@@ -588,7 +623,7 @@ Addr setup_client_stack( void*  init_sp,
             break;
 
          case AT_SYSINFO:
-#        if !defined(VGP_ppc32_linux)
+#        if !defined(VGP_ppc32_linux) && !defined(VGP_ppc64_linux)
          case AT_SYSINFO_EHDR:
 #        endif
             /* Trash this, because we don't reproduce it */
@@ -696,7 +731,7 @@ static void setup_client_dataseg ( SizeT max_size )
    it reaches the end of the list without that happening.
 */
 static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
-{
+ {
    char *cp, *entry;
    int end;
 
@@ -854,7 +889,7 @@ static void load_client ( /*OUT*/struct exeinfo* info,
       VG_(cl_exec_fd) = res.val;
    VG_(debugLog)(1, "load_client", "after open\n"); 
    /* Copy necessary bits of 'info' that were filled in */
-   *client_eip = info->init_eip;
+   *client_eip  = info->init_eip;
    VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase);
    VG_(debugLog)(1, "load_client", "finished load_client\n"); 
 }
@@ -917,7 +952,6 @@ static void usage_NORETURN ( Bool debug_help )
 "\n"
 "  debugging options for all Valgrind tools:\n"
 "    --sanity-level=<number>   level of sanity checking to do [1]\n"
-"    --profile=no|yes          profile? (tool must be built for it) [no]\n"
 "    --trace-flags=<XXXXXXXX>   show generated code? (X = 0|1) [00000000]\n"
 "    --profile-flags=<XXXXXXXX> ditto, but for profiling (X = 0|1) [00000000]\n"
 "    --trace-notbelow=<number> only show BBs above <number> [0]\n"
@@ -1032,6 +1066,9 @@ static void get_helprequest_and_toolname ( Int* need_help, HChar** tool )
 
 static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
 {
+   // VG_(clo_log_fd) is used by all the messaging.  It starts as 2 (stderr)
+   // and we cannot change it until we know what we are changing it to is
+   // ok.  So we have tmp_log_fd to hold the tmp fd prior to that point.
    SysRes sres;
    Int    i, eventually_log_fd;
    Int    toolname_len = VG_(strlen)(toolname);
@@ -1102,7 +1139,6 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
       else VG_BOOL_CLO(arg, "--error-limit",      VG_(clo_error_limit))
       else VG_BOOL_CLO(arg, "--show-emwarns",     VG_(clo_show_emwarns))
       else VG_NUM_CLO (arg, "--max-stackframe",   VG_(clo_max_stackframe))
-      else VG_BOOL_CLO(arg, "--profile",          VG_(clo_profile))
       else VG_BOOL_CLO(arg, "--run-libc-freeres", VG_(clo_run_libc_freeres))
       else VG_BOOL_CLO(arg, "--show-below-main",  VG_(clo_show_below_main))
       else VG_BOOL_CLO(arg, "--time-stamp",       VG_(clo_time_stamp))
@@ -1327,7 +1363,6 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
       case VgLogTo_Fd: 
          vg_assert(VG_(clo_log_name) == NULL);
-         VG_(clo_log_fd) = eventually_log_fd;
          break;
 
       case VgLogTo_File: {
@@ -1372,7 +1407,6 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
 			   VKI_S_IRUSR|VKI_S_IWUSR);
 	    if (!sres.isError) {
                eventually_log_fd = sres.val;
-	       VG_(clo_log_fd) = VG_(safe_fd)(eventually_log_fd);
 	       break; /* for (;;) */
 	    } else {
                // If the file already existed, we try the next name.  If it
@@ -1400,7 +1434,6 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
                         VKI_S_IRUSR|VKI_S_IWUSR);
          if (!sres.isError) {
             eventually_log_fd = sres.val;
-            VG_(clo_log_fd) = VG_(safe_fd)(eventually_log_fd);
          } else {
             VG_(message)(Vg_UserMsg, 
                          "Can't create/open log file '%s'; giving up!", 
@@ -1435,9 +1468,9 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
                 "" );
             /* We don't change anything here. */
             vg_assert(VG_(clo_log_fd) == 2);
+            eventually_log_fd = 2;
 	 } else {
             vg_assert(eventually_log_fd > 0);
-            VG_(clo_log_fd) = eventually_log_fd;
             VG_(logging_to_socket) = True;
          }
          break;
@@ -1455,17 +1488,20 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
       /*NOTREACHED*/
    }
 
-   // Move log_fd into the safe range, so it doesn't conflict with any app fds.
-   // XXX: this is more or less duplicating the behaviour of the calls to
-   // VG_(safe_fd)() above, although this does not close the original fd.
-   // Perhaps the VG_(safe_fd)() calls above should be removed, and this
-   // code should be replaced with a call to VG_(safe_fd)().   --njn
-   eventually_log_fd = VG_(fcntl)(VG_(clo_log_fd), VKI_F_DUPFD, VG_(fd_hard_limit));
-   if (eventually_log_fd < 0)
-      VG_(message)(Vg_UserMsg, "valgrind: failed to move logfile fd into safe range");
-   else {
+    if (eventually_log_fd >= 0) {
+      // Move log_fd into the safe range, so it doesn't conflict with any app fds.
+      eventually_log_fd = VG_(fcntl)(eventually_log_fd, VKI_F_DUPFD, VG_(fd_hard_limit));
+      if (eventually_log_fd < 0) {
+         VG_(message)(Vg_UserMsg, "valgrind: failed to move logfile fd into safe range, using stderr");
+         VG_(clo_log_fd) = 2;   // stderr
+      } else {
+         VG_(clo_log_fd) = eventually_log_fd;
+         VG_(fcntl)(VG_(clo_log_fd), VKI_F_SETFD, VKI_FD_CLOEXEC);
+      }
+   } else {
+      // If they said --log-fd=-1, don't print anything.  Plausible for use in
+      // regression testing suites that use client requests to count errors.
       VG_(clo_log_fd) = eventually_log_fd;
-      VG_(fcntl)(VG_(clo_log_fd), VKI_F_SETFD, VKI_FD_CLOEXEC);
    }
 
    if (VG_(clo_n_suppressions) < VG_CLO_MAX_SFILES-1 &&
@@ -1755,6 +1791,20 @@ static void init_thread1state ( Addr client_ip,
    arch->vex.guest_GPR1 = client_sp;
    arch->vex.guest_CIA  = client_ip;
 
+#elif defined(VGA_ppc64)
+   vg_assert(0 == sizeof(VexGuestPPC64State) % 16);
+
+   /* Zero out the initial state, and set up the simulated FPU in a
+      sane way. */
+   LibVEX_GuestPPC64_initialise(&arch->vex);
+
+   /* Zero out the shadow area. */
+   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC64State));
+
+   /* Put essential stuff into the new state. */
+   arch->vex.guest_GPR1 = client_sp;
+   arch->vex.guest_GPR2 = client_toc;
+   arch->vex.guest_CIA  = client_ip;
 #else
 #  error Unknown arch
 #endif
@@ -1875,7 +1925,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
 
 /* TODO: GIVE THIS A PROPER HOME
-   TODO: MERGE THIS WITH DUPLICATE IN mac_leakcheck.c
+   TODO: MERGE THIS WITH DUPLICATE IN mc_leakcheck.c and coredump-elf.c.
    Extract from aspacem a vector of the current segment start
    addresses.  The vector is dynamically allocated and should be freed
    by the caller when done.  REQUIRES m_mallocfree to be running.
@@ -1918,7 +1968,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    Addr    initial_client_SP = 0;
    Addr    clstack_top       = 0;
    SizeT   clstack_max_size  = 0;
-   UInt*   client_auxv;
+   UInt*   client_auxv = NULL;
    Int     loglevel, i;
    Bool    logging_to_fd;
    struct vki_rlimit zero = { 0, 0 };
@@ -1934,6 +1984,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Once that's done, we can relax a bit.
    //
    //============================================================
+   
    /* This is needed to make VG_(getenv) usable early. */
    VG_(client_envp) = (Char**)envp;
 
@@ -2044,7 +2095,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // child processes will have a reasonable brk value.
    VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
    zero.rlim_max = VG_(client_rlimit_data).rlim_max;
-//   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
+   //   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
 
    // Get the current process stack rlimit.
    VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));
@@ -2139,12 +2190,12 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    if (!need_help) {
       void* init_sp = argv - 1;
-      SizeT m1 = 1024 * 1024;
-      SizeT m8 = 8 * m1;
+      SizeT m1  = 1024 * 1024;
+      SizeT m16 = 16 * m1;
       VG_(debugLog)(1, "main", "Setup client stack\n");
       clstack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
-      if (clstack_max_size < m1) clstack_max_size = m1;
-      if (clstack_max_size > m8) clstack_max_size = m8;
+      if (clstack_max_size < m1)  clstack_max_size = m1;
+      if (clstack_max_size > m16) clstack_max_size = m16;
       clstack_max_size = VG_PGROUNDUP(clstack_max_size);
 
       initial_client_SP
@@ -2336,7 +2387,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
 
 #     if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
       iters = 5;
-#     elif defined(VGP_amd64_linux)
+#     elif defined(VGP_amd64_linux) || defined(VGP_ppc64_linux)
       iters = 10;
 #     elif defined(VGP_ppc32_linux)
       iters = 5;
@@ -2439,17 +2490,22 @@ Int main(Int argc, HChar **argv, HChar **envp)
      vg_assert(initial_client_SP >= seg->start);
      vg_assert(initial_client_SP <= seg->end);
 
-     /* Stuff below the initial SP is unaddressable. */
-     /* NB: shouldn't this take into account the VG_STACK_REDZONE_SZB
-        bytes below SP?  */
-     VG_TRACK( die_mem_stack, seg->start, initial_client_SP - seg->start );
+     /* Stuff below the initial SP is unaddressable.  Take into
+	account any ABI-mandated space below the stack pointer that is
+	required (VG_STACK_REDZONE_SZB).  setup_client_stack() will
+	have allocated an extra page if a red zone is required, to be on 
+        the safe side. */
+     vg_assert(initial_client_SP - VG_STACK_REDZONE_SZB >= seg->start);
+     VG_TRACK( die_mem_stack, seg->start, initial_client_SP 
+                                          - VG_STACK_REDZONE_SZB - seg->start );
      VG_(debugLog)(2, "main", "mark stack inaccessible %010lx-%010lx\n",
-                      seg->start, initial_client_SP-1 );
+                      seg->start, initial_client_SP-1 - VG_STACK_REDZONE_SZB);
 
      /* Also the assembly helpers. */
      VG_TRACK( new_mem_startup,
                (Addr)&VG_(trampoline_stuff_start),
-               (Addr)&VG_(trampoline_stuff_end) - (Addr)&VG_(trampoline_stuff_start),
+               (Addr)&VG_(trampoline_stuff_end) 
+                  - (Addr)&VG_(trampoline_stuff_start),
                False, /* readable? */
                False, /* writable? */
                True   /* executable? */ );
@@ -2485,7 +2541,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: ?
    //--------------------------------------------------------------
    //if (VG_(clo_model_pthreads))
-   // VG_(pthread_init)();
+   //   VG_(pthread_init)();
 
    //--------------------------------------------------------------
    // Initialise the signal handling subsystem
@@ -2493,24 +2549,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-//   VG_(sigstartup_actions)();
-
-   //--------------------------------------------------------------
-   // Perhaps we're profiling Valgrind?
-   //   p: process_cmd_line_options()  [for VG_(clo_profile)]
-   //   p: others?
-   //
-   // XXX: this seems to be broken?   It always says the tool wasn't built
-   // for profiling;  vg_profile.c's functions don't seem to be overriding
-   // vg_dummy_profile.c's?
-   //
-   // XXX: want this as early as possible.  Looking for --profile
-   // in get_helprequest_and_toolname() could get it earlier.
-   //--------------------------------------------------------------
-   if (VG_(clo_profile))
-      VG_(init_profiling)();
-
-   VGP_PUSHCC(VgpStartup);
+   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Read suppression file
@@ -2538,8 +2577,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Run!
    //--------------------------------------------------------------
-   VGP_POPCC(VgpStartup);
-
    if (VG_(clo_xml)) {
       HChar buf[50];
       VG_(elapsed_wallclock_time)(buf);
@@ -2632,7 +2669,6 @@ void shutdown_actions_NORETURN( ThreadId tid,
    VG_TDICT_CALL(tool_fini, 0/*exitcode*/);
 
    if (VG_(clo_xml)) {
-
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "</valgrindoutput>");
       VG_(message)(Vg_UserMsg, "");
@@ -2642,9 +2678,6 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    if (VG_(clo_verbosity) > 1)
       print_all_stats();
-
-   if (VG_(clo_profile))
-      VG_(done_profiling)();
 
    if (VG_(clo_profile_flags) > 0) {
       #define N_MAX 100
@@ -2693,14 +2726,28 @@ void shutdown_actions_NORETURN( ThreadId tid,
 */
 static void final_tidyup(ThreadId tid)
 {
-   Addr __libc_freeres_wrapper;
+#  if defined(VGP_ppc64_linux)
+   Addr r2;
+#  endif
+   Addr __libc_freeres_wrapper = VG_(client___libc_freeres_wrapper);
 
    vg_assert(VG_(is_running_thread)(tid));
    
    if ( !VG_(needs).libc_freeres ||
         !VG_(clo_run_libc_freeres) ||
-        0 == (__libc_freeres_wrapper = VG_(get_libc_freeres_wrapper)()) )
+        0 == __libc_freeres_wrapper )
       return;			/* can't/won't do it */
+
+#  if defined(VGP_ppc64_linux)
+   r2 = VG_(get_tocptr)( __libc_freeres_wrapper );
+   if (r2 == 0) {
+      VG_(message)(Vg_UserMsg, 
+                   "Caught __NR_exit, but can't run __libc_freeres()");
+      VG_(message)(Vg_UserMsg, 
+                   "   since cannot establish TOC pointer for it.");
+      return;
+   }
+#  endif
 
    if (VG_(clo_verbosity) > 2  ||
        VG_(clo_trace_syscalls) ||
@@ -2708,9 +2755,15 @@ static void final_tidyup(ThreadId tid)
       VG_(message)(Vg_DebugMsg, 
 		   "Caught __NR_exit; running __libc_freeres()");
       
-   /* point thread context to point to libc_freeres_wrapper */
+   /* set thread context to point to libc_freeres_wrapper */
+   /* ppc64-linux note: __libc_freeres_wrapper gives us the real
+      function entry point, not a fn descriptor, so can use it
+      directly.  However, we need to set R2 (the toc pointer)
+      appropriately. */
    VG_(set_IP)(tid, __libc_freeres_wrapper);
-   // XXX should we use a special stack?
+#  if defined(VGP_ppc64_linux)
+   VG_(threads)[tid].arch.vex.guest_GPR2 = r2;
+#  endif
 
    /* Block all blockable signals by copying the real block state into
       the thread's block state*/
@@ -2865,6 +2918,45 @@ asm("\n"
     "\tbl _start_in_C\n"
     "\ttrap\n"
     ".previous\n"
+);
+#elif defined(VGP_ppc64_linux)
+asm("\n"
+    /* PPC64 ELF ABI says '_start' points to a function descriptor.
+       So we must have one, and that is what goes into the .opd section. */
+    "\t.align 2\n"
+    "\t.global _start\n"
+    "\t.section \".opd\",\"aw\"\n"
+    "\t.align 3\n"
+    "_start:\n"
+    "\t.quad ._start,.TOC.@tocbase,0\n"
+    "\t.previous\n"
+    "\t.type ._start,@function\n"
+    "\t.global  ._start\n"
+    "._start:\n"
+    /* set up the new stack in r16 */
+    "\tlis  16,   vgPlain_interim_stack@highest\n"
+    "\tori  16,16,vgPlain_interim_stack@higher\n"
+    "\tsldi 16,16,32\n"
+    "\toris 16,16,vgPlain_interim_stack@h\n"
+    "\tori  16,16,vgPlain_interim_stack@l\n"
+    "\txor  17,17,17\n"
+    "\tlis    17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" >> 16)\n"
+    "\tori 17,17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" & 0xFFFF)\n"
+    "\txor 18,18,18\n"
+    "\tlis    18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" >> 16)\n"
+    "\tori 18,18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" & 0xFFFF)\n"
+    "\tadd 16,17,16\n"
+    "\tadd 16,18,16\n"
+    "\trldicr 16,16,0,59\n"
+    /* now r16 = &vgPlain_interim_stack + VG_STACK_GUARD_SZB +
+       VG_STACK_ACTIVE_SZB rounded down to the nearest 16-byte
+       boundary.  And r1 is the original SP.  Set the SP to r16 and
+       call _start_in_C, passing it the initial SP. */
+    "\tmr 3,1\n"
+    "\tmr 1,16\n"
+    "\tbl ._start_in_C\n"
+    "\tnop\n"
+    "\ttrap\n"
 );
 #else
 #error "_start: needs implementation on this platform"

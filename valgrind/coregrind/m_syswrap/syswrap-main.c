@@ -343,7 +343,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAX;
-   VG_(printf)("syscall #%d\n", canonical->sysno);
+   VG_(debugLog)(9,"syswrap-main","syscall #%d\n", canonical->sysno);
    canonical->argp  = (UInt*)gst->guest_ESP + 1;
    
 #else
@@ -635,7 +635,6 @@ void VG_(client_syscall) ( ThreadId tid )
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(tid >= 1 && tid < VG_N_THREADS);
    vg_assert(VG_(is_running_thread)(tid));
-	VG_(printf)("in client syscall\n");
    tst = VG_(get_ThreadState)(tid);
 
    /* First off, get the syscall args and number.  This is a
@@ -652,11 +651,9 @@ void VG_(client_syscall) ( ThreadId tid )
       we want to keep the originals too, just in case. */
 
    sci->args = sci->orig_args;
-   VG_(printf)("after  copy of args\n");
    /* Save the syscall number in the thread state in case the syscall 
       is interrupted by a signal. */
    sysno = sci->orig_args.sysno;
-   VG_(printf)("after  sysno loaded\n");
    /* The default what-to-do-next thing is hand the syscall to the
       kernel, so we pre-set that here. */
    sci->status.what = SsHandToKernel;
@@ -666,7 +663,6 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Fetch the syscall's handlers.  If no handlers exist for this
       syscall, we are given dummy handlers which force an immediate
       return with ENOSYS. */
-   VG_(printf)("before get entry\n");
    ent = get_syscall_entry(sysno);
 
    /* Fetch the layout information, which tells us where in the guest
@@ -675,9 +671,9 @@ void VG_(client_syscall) ( ThreadId tid )
       checks (PRE_REG_READ calls) know which bits of the guest state
       they need to inspect. */
 /* VG4NBSD needs to do something here */
-   VG_(printf)("before layout\n");
+   VG_(debugLog)(9,"syswrap-main","before layout\n");
    getSyscallArgLayout( &layout );
-   VG_(printf)("layout\n");
+   VG_(debugLog)(9,"syswrap-main.c","layout\n");
    /* Make sure the tmp signal mask matches the real signal mask;
       sigsuspend may change this. */
    vg_assert(VG_(iseqsigset)(&tst->sig_mask, &tst->tmp_sig_mask));
@@ -693,7 +689,7 @@ void VG_(client_syscall) ( ThreadId tid )
 
    PRINT("SYSCALL[%d,%d](%3lld) ", VG_(getpid)(), tid, (ULong)sysno);
 
-   VG_(printf)("before tool\n");
+   VG_(debugLog)(9,"syswrap-main","before tool\n");
    /* Do any pre-syscall actions */
    if (VG_(needs).syscall_wrapper) {
       VG_TDICT_CALL(tool_pre_syscall, tid, sysno);
@@ -706,7 +702,7 @@ void VG_(client_syscall) ( ThreadId tid )
                   &layout, 
                   &sci->args, &sci->status, &sci->flags );
    
-   VG_(printf)("tool : %d\n", sci->status.what);
+   VG_(debugLog)(9,"syswrap-main","tool : %d\n", sci->status.what);
    /* The pre-handler may have modified:
          sci->args
          sci->status
@@ -761,7 +757,7 @@ void VG_(client_syscall) ( ThreadId tid )
          by doing it directly in this thread, which is a lot
          simpler. */
 
-       VG_(printf)("handtokernel\n");
+       VG_(debugLog)(9,"syswrap-main","handtokernel\n");
       /* Check that the given flags are allowable: MayBlock, PollAfter
          and PostOnFail are ok. */
       vg_assert(0 == (sci->flags & ~(SfMayBlock | SfPostOnFail | SfPollAfter)));
@@ -772,17 +768,17 @@ void VG_(client_syscall) ( ThreadId tid )
          vki_sigset_t mask;
 
          PRINT(" --> [async] ... \n");
-	 VG_(printf)("handtokernel #0\n");
+	 VG_(debugLog)(9,"syswrap-main","handtokernel #0\n");
 
          mask = tst->sig_mask;
          sanitize_client_sigmask(tid, &mask);
 
-	 VG_(printf)("handtokernel #1\n");
+	 VG_(debugLog)(9,"syswrap-main","handtokernel #1\n");
          /* Gack.  More impedance matching.  Copy the possibly
             modified syscall args back into the guest state. */
          vg_assert(eq_SyscallArgs(&sci->args, &sci->orig_args));
          putSyscallArgsIntoGuestState( &sci->args, &tst->arch.vex );
-	 VG_(printf)("handtokernel #2\n");
+	 VG_(debugLog)(9,"syswrap-main","handtokernel #2\n");
 /* Vg4nbsd needs to edit this function */
          /* Drop the lock */
          VG_(set_sleeping)(tid, VgTs_WaitSys);
@@ -790,7 +786,6 @@ void VG_(client_syscall) ( ThreadId tid )
          /* Do the call, which operates directly on the guest state,
             not on our abstracted copies of the args/result. */
          do_syscall_for_client(sysno, tst, &mask);
-	 VG_(printf)("handtokernel #3\n");
 
          /* do_syscall_for_client may not return if the syscall was
             interrupted by a signal.  In that case, flow of control is
@@ -864,7 +859,6 @@ void VG_(client_syscall) ( ThreadId tid )
       Now go on to do the post-syscall actions (read on down ..)
    */
    VG_(post_syscall)(tid);
-	VG_(printf)("out of client syscall\n");
 }
 
 
@@ -969,7 +963,7 @@ void VG_(post_syscall) (ThreadId tid)
       afterwards. */
    if (sci->flags & SfYieldAfter)
       VG_(vg_yield)();
-   VG_(printf)("Out of Post syscal");
+   VG_(debugLog)(9,"syswrap-main","Out of Post syscal");
 }
 
 

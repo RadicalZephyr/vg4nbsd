@@ -902,4 +902,11 @@
 
 #define	__NR_uuidgen	355
 
+
+/* syscall: "__fstat30" ret: "int" args: "int" "struct stat *" */
+#define __NR___fstat30   388
+
+/* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
+#define __NR___lstat30   389
+
 #endif /* _VG_ASM_I386_UNISTD_H_ */

@@ -646,9 +646,9 @@ static void handle_syscall(ThreadId tid)
 
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(BEFORE SYSCALL)",__FILE__,__LINE__);
-   VG_(printf)("before handling client syscall\n");
+   VG_(debugLog)(9,"scheduler.c","before handling client syscall\n");
    SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid));
-   VG_(printf)("after handling client syscall\n");
+   VG_(debugLog)(9,"scheduler.c","after handling client syscall\n");
 
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(AFTER SYSCALL)",__FILE__,__LINE__);
@@ -662,7 +662,7 @@ static void handle_syscall(ThreadId tid)
       block_signals(tid);
       VG_(poll_signals)(tid);
    }
-   VG_(printf)("out of handle syscall\n");
+   VG_(debugLog)(9,"scheduler.c","out of handle syscall\n");
 }
 
 /* 

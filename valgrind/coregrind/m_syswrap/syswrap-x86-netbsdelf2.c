@@ -2305,7 +2305,44 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(353,                    sys_ni_syscall),     // 353
    NBSDX_(__NR_fsync_range,      sys_fsync_range),    // 354
 
-   NBSDXY(__NR_uuidgen,          sys_uuidgen)         // 355
+   NBSDXY(__NR_uuidgen,          sys_uuidgen),         // 355
+   GENX_(356,                    sys_ni_syscall),     // 356
+   GENX_(357,                    sys_ni_syscall),     // 357
+   GENX_(358,                    sys_ni_syscall),     // 358
+   GENX_(359,                    sys_ni_syscall),     // 359
+   GENX_(360,                    sys_ni_syscall),     // 360
+   GENX_(361,                    sys_ni_syscall),     // 361
+   GENX_(362,                    sys_ni_syscall),     // 362
+   GENX_(363,                    sys_ni_syscall),     // 363
+   GENX_(364,                    sys_ni_syscall),     // 364
+   GENX_(365,                    sys_ni_syscall),     // 365
+   GENX_(366,                    sys_ni_syscall),     // 366
+   GENX_(367,                    sys_ni_syscall),     // 367
+   GENX_(368,                    sys_ni_syscall),     // 368
+   GENX_(369,                    sys_ni_syscall),     // 369
+   GENX_(370,                    sys_ni_syscall),     // 370
+   GENX_(371,                    sys_ni_syscall),     // 371
+   GENX_(372,                    sys_ni_syscall),     // 372
+   GENX_(373,                    sys_ni_syscall),     // 373
+   GENX_(374,                    sys_ni_syscall),     // 374
+   GENX_(375,                    sys_ni_syscall),     // 375
+   GENX_(376,                    sys_ni_syscall),     // 376
+   GENX_(377,                    sys_ni_syscall),     // 377
+   GENX_(378,                    sys_ni_syscall),     // 378
+   GENX_(379,                    sys_ni_syscall),     // 379
+   GENX_(380,                    sys_ni_syscall),     // 380
+   GENX_(381,                    sys_ni_syscall),     // 38
+   GENX_(382,                    sys_ni_syscall),     // 382
+   GENX_(383,                    sys_ni_syscall),     // 3
+   GENX_(384,                    sys_ni_syscall),     // 381
+   GENX_(385,                    sys_ni_syscall),     // 382
+   GENX_(386,                    sys_ni_syscall),     // 383
+   GENX_(387,                    sys_ni_syscall),     // 384
+   GENXY(__NR___fstat30,         sys_newfstat),       // 388
+   GENXY(__NR___lstat30,         sys_newlstat)       // 279
+
+   /* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
+#define SYS___lstat30   389  
 };
 
 const UInt ML_(syscall_table_size) = 

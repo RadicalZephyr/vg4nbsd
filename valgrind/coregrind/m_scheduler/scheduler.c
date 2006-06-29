@@ -360,7 +360,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 {
    volatile Bool jumped;
    volatile ThreadState *tst = VG_(get_ThreadState)(tid);
-   VG_(debugLog)(1,"scheduler","after get threadstate\n");
+   VG_(debugLog)(4,"scheduler","after get threadstate\n");
 
    volatile UInt trc = 0;
    volatile Int  dispatch_ctr_SAVED = VG_(dispatch_ctr);
@@ -382,7 +382,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    /* Even more paranoia.  Check that what we have matches
       Vex's guest state layout requirements. */
-   if (1)
+   if (0)
    VG_(printf)("%p %d %p %d %p %d\n",
                (void*)a_vex, sz_vex, (void*)a_vexsh, sz_vexsh,
                (void*)a_spill, sz_spill );
@@ -402,7 +402,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(a_vex + 2 * sz_vex == a_spill);
 
    VGP_PUSHCC(VgpRun);
-   VG_(debugLog)(1,"scheduler","run_threads_for_a_while : after the asserts\n");
+   VG_(debugLog)(4,"scheduler","run_threads_for_a_while : after the asserts\n");
 
 #  if defined(VGA_ppc32)
    /* This is necessary due to the hacky way vex models reservations
@@ -435,7 +435,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    vg_assert(VG_(my_fault));
    VG_(my_fault) = False;
-   VG_(debugLog)(1,"scheduler","doing schedsetjmp\n");
+   VG_(debugLog)(4,"scheduler","doing schedsetjmp\n");
 
    SCHEDSETJMP(tid, jumped, 
                     trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
@@ -445,7 +445,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    //   VG_(printf)("trc=%d jump to %p from %p\n",
    //		  trc, nextEIP, EIP);
    
-   VG_(debugLog)(1,"scheduler","after jump\n");
+   VG_(debugLog)(4,"scheduler","after jump\n");
    VG_(my_fault) = True;
 
    if (jumped) {
@@ -631,7 +631,7 @@ static void handle_tt_miss ( ThreadId tid )
 	 // way, we just need to go back into the scheduler loop.
       }
    }
-   VG_(debugLog)(1,"scheduler","out of handling tt miss\n");
+   VG_(debugLog)(4,"scheduler","out of handling tt miss\n");
 }
 
 static void handle_syscall(ThreadId tid)
@@ -691,9 +691,9 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
    VG_(printf)("dispatch ctr = %d\n",VG_(dispatch_ctr));
    while(!VG_(is_exiting)(tid)) {
-	   VG_(debugLog)(1,"scheduler","scheduler: in while loop\n");
+	   VG_(debugLog)(4,"scheduler","scheduler: in while loop\n");
       if (VG_(dispatch_ctr) == 1) {
-	      VG_(printf)("about to set sleeping\n");
+	      VG_(debugLog)(1,"scheduler","about to set sleeping\n");
 	 /* Our slice is done, so yield the CPU to another thread.  This
 	    doesn't sleep between sleeping and running, since that would
 	    take too much time.  */
@@ -702,13 +702,13 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 VG_(set_running)(tid);
 
 	 /* OK, do some relatively expensive housekeeping stuff */
-	 VG_(printf)("run sanity checks\n");
+	 VG_(debugLog)(1,"scheduler","run sanity checks\n");
 	 scheduler_sanity(tid);
 	 VG_(sanity_check_general)(False);
 
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
-	 VG_(printf)("poll signals");
+	 VG_(debugLog)(1,"scheduler","poll signals");
 	 VG_(poll_signals)(tid);
 
 	 if (VG_(is_exiting)(tid))
@@ -734,13 +734,13 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       /* For stats purposes only. */
       n_scheduling_events_MINOR++;
 
-      if (1)
+      if (0)
 	 VG_(message)(Vg_DebugMsg, "thread %d: running for %d bbs", 
 		      tid, VG_(dispatch_ctr) - 1 );
 
       trc = run_thread_for_a_while ( tid );
 
-      VG_(debugLog)(1,"scheduler","after running for a while\n");
+      VG_(debugLog)(4,"scheduler","after running for a while\n");
       if (VG_(clo_trace_sched) && VG_(clo_verbosity) > 2) {
 	 Char buf[50];
 	 VG_(sprintf)(buf, "TRC: %s", name_of_sched_event(trc));
@@ -749,26 +749,26 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
       switch(trc) {
       case VG_TRC_INNER_FASTMISS:
-	VG_(debugLog)(1,"scheduler", "INNERFASTMISS\n");
+	VG_(debugLog)(4,"scheduler", "INNERFASTMISS\n");
 	 vg_assert(VG_(dispatch_ctr) > 1);
 	 handle_tt_miss(tid);
 	 break;
 	    
       case VEX_TRC_JMP_CLIENTREQ:
-	VG_(debugLog)(1,"scheduler", "clientreq\n");
+	VG_(debugLog)(4,"scheduler", "clientreq\n");
 	 do_client_request(tid);
 	 break;
 
       case VEX_TRC_JMP_SYS_INT128:  /* x86-linux */
       case VEX_TRC_JMP_SYS_SYSCALL: /* amd64-linux, ppc32-linux */
-	VG_(debugLog)(1,"scheduler", "syscall\n");
+	VG_(debugLog)(4,"scheduler", "syscall\n");
 	 handle_syscall(tid);
 	 if (VG_(clo_sanity_level) > 2)
 	    VG_(sanity_check_general)(True); /* sanity-check every syscall */
 	 break;
 
       case VEX_TRC_JMP_YIELD:
-	VG_(debugLog)(1,"scheduler", "trc yield\n");
+	VG_(debugLog)(4,"scheduler", "trc yield\n");
 	 /* Explicit yield, because this thread is in a spin-lock
 	    or something.  Only let the thread run for a short while
             longer.  Because swapping to another thread is expensive,
@@ -781,19 +781,19 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 break;
 
       case VG_TRC_INNER_COUNTERZERO:
-	VG_(debugLog)(1,"scheduler", "countzero\n");
+	VG_(debugLog)(4,"scheduler", "countzero\n");
 	 /* Timeslice is out.  Let a new thread be scheduled. */
 	 vg_assert(VG_(dispatch_ctr) == 1);
 	 break;
 
       case VG_TRC_FAULT_SIGNAL:
-	VG_(debugLog)(1,"scheduler", "signal fault\n");
+	VG_(debugLog)(4,"scheduler", "signal fault\n");
 	 /* Everything should be set up (either we're exiting, or
 	    about to start in a signal handler). */
 	 break;
 
       case VEX_TRC_JMP_MAPFAIL:
-	VG_(debugLog)(1,"scheduler", "mapfail\n");
+	VG_(debugLog)(4,"scheduler", "mapfail\n");
          /* Failure of arch-specific address translation (x86/amd64
             segment override use) */
          /* jrs 2005 03 11: is this correct? */
@@ -801,7 +801,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          break;
 
       case VEX_TRC_JMP_EMWARN: {
-	VG_(debugLog)(1,"scheduler", "emwarn\n");
+	VG_(debugLog)(4,"scheduler", "emwarn\n");
          static Int  counts[EmWarn_NUMBER];
          static Bool counts_initted = False;
          VexEmWarn ew;
@@ -846,7 +846,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          break;
 
       case VEX_TRC_JMP_TINVAL:
-	VG_(debugLog)(1,"scheduler", "JMP_TINVAL\n");
+	VG_(debugLog)(4,"scheduler", "JMP_TINVAL\n");
          VG_(discard_translations)(
             (Addr64)VG_(threads)[tid].arch.vex.guest_TISTART,
             VG_(threads)[tid].arch.vex.guest_TILEN,
@@ -869,7 +869,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
                        "state invariant failure", trc);
 
       case VEX_TRC_JMP_SYS_SYSENTER:
-	VG_(debugLog)(1,"scheduler", "OOPS SYSENTER\n");
+	VG_(debugLog)(4,"scheduler", "OOPS SYSENTER\n");
          /* Do whatever simulation is appropriate for an x86 sysenter
             instruction.  Note that it is critical to set this thread's
             guest_EIP to point at the code to execute after the

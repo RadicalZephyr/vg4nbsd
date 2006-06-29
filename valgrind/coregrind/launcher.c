@@ -235,6 +235,7 @@ int main(int argc, char** argv, char** envp)
 /* // broken */
 /*    snprintf(launcher_name,PATH_MAX,"%s","/proc/self/exe"); */
 /* #else */
+#ifndef VGO_netbsdelf2
    memset(launcher_name, 0, PATH_MAX+1);
    r = readlink("/proc/self/exe", launcher_name, PATH_MAX);
    if (r == -1) {
@@ -269,7 +270,7 @@ int main(int argc, char** argv, char** envp)
    new_env[i++] = new_line;
    new_env[i++] = NULL;
    assert(i == j+2);
-
+#endif 
    /* Establish the correct VALGRIND_LIB. */
    cp = getenv(VALGRIND_LIB);
 
@@ -284,9 +285,12 @@ int main(int argc, char** argv, char** envp)
 
    VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);
 // error here
-   printf("toolfile : %s \n argv: %s \n valgrind_launcher %s \n new_env: %s \n",toolfile, *argv,VALGRIND_LAUNCHER,  new_env[j]); 
+/*    printf("toolfile : %s \n argv: %s \n valgrind_launcher %s \n new_env: %s \n",toolfile, *argv,VALGRIND_LAUNCHER,  new_env[j]);  */
+#ifdef VGO_netbsdelf2
+   execve(toolfile, argv, envp);
+#else
    execve(toolfile, argv, new_env);
-
+#endif
    fprintf(stderr, "valgrind: failed to start tool '%s' for platform '%s': %s\n"
 	   "Please set the VALGRIND_LIB environment variable to point to the\n"
 	   ".in_place directory under valgrind toplevel sourcedir for now\n",

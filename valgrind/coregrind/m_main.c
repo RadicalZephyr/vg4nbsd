@@ -164,7 +164,7 @@ static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
    /* Walk over the new environment, mashing as we go */
    for (cpp = ret; cpp && *cpp; cpp++) {
       if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
-         Int len = VG_(strlen)(*cpp) + preload_string_len;
+	Int len = VG_(strlen)(*cpp) + preload_string_len+1 ; /* +16 for slop! */
          HChar *cp = VG_(malloc)(len);
          vg_assert(cp);
 
@@ -2029,13 +2029,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Extract the launcher name from the environment.
    VG_(debugLog)(1, "main", "Getting stage1's name\n");
+#ifndef VGO_netbsdelf2
    VG_(name_of_launcher) = VG_(getenv)(VALGRIND_LAUNCHER);
    if (VG_(name_of_launcher) == NULL) {
       VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
       VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
       VG_(exit)(1);
    }
-
+#endif
    //--------------------------------------------------------------
    // Get the current process datasize rlimit, and set it to zero.
    // This prevents any internal uses of brk() from having any effect.

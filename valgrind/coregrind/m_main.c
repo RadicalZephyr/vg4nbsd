@@ -460,19 +460,27 @@ Addr setup_client_stack( void*  init_sp,
 #    ifdef ENABLE_INNER
      inner_HACK = 1024*1024; // create 1M non-fault-extending stack
 #    endif
-
+#ifdef VGO_netbsdelf2
+     inner_HACK = 1024*1024; /* KS -- I have added this so that we can
+				add 1meg to the stack and see if it
+				fixes the problems, sure enough, it does */ 
+#endif
      if (1)
-        VG_(printf)("%p 0x%x  %p 0x%x\n", 
-                    resvn_start, resvn_size, anon_start, anon_size);
-
+       VG_(printf)("%p 0x%x  %p 0x%x\n", 
+		   resvn_start, resvn_size, anon_start, anon_size);
+     
      /* Create a shrinkable reservation followed by an anonymous
         segment.  Together these constitute a growdown stack. */
      ok = VG_(am_create_reservation)(
-             resvn_start,
-             resvn_size -inner_HACK,
-             SmUpper, 
-             anon_size +inner_HACK
-          );
+				     resvn_start /* start */,
+				     resvn_size -inner_HACK /* length */,
+				     SmUpper /* shrink mode */, 
+				     anon_size +inner_HACK /*extra */
+				     ); 
+     /* we reserve the space for the stack, but make sure that 1 meg
+     is available AFTER the end of the reservation, this seems to fix
+        the netbsd issue temporarily, Now that can only meen that our
+        stack size calculation is wrong */
      vg_assert(ok);
      /* allocate a stack - mmap enough space for the stack */
      res = VG_(am_mmap_anon_fixed_client)(

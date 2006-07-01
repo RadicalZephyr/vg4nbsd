@@ -71,8 +71,8 @@ struct elfinfo
 static void check_mmap(SysRes res, Addr base, SizeT len)
 {
    if (res.isError) {
-      VG_(printf)("valgrind: mmap(0x%llx, %lld) failed in UME.\n", 
-                  (ULong)base, (Long)len);
+      VG_(printf)("valgrind: mmap(0x%llx, %lld) failed in UME with error %d.\n", 
+                  (ULong)base, (Long)len, res.val);
       VG_(exit)(1);
    }
 }
@@ -109,7 +109,7 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
       sp++;
    sp++;
    
-#if defined(VGA_ppc32)
+#if defined(VGA_ppc32) || defined(VGA_ppc64)
 # if defined AT_IGNOREPPC
    while (*sp == AT_IGNOREPPC)        // skip AT_IGNOREPPC entries
       sp += 2;
@@ -239,21 +239,22 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 maintain compatibility.
 */
 
-for(i = 0; i < e->e.e_phnum; i++) {
+   for(i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, bss, brkaddr;
       ESZ(Off) off;
       ESZ(Word) filesz;
       ESZ(Word) memsz;
-      int prot = 0;
+      unsigned prot = 0;
 
       if (ph->p_type != PT_LOAD)
 	 continue;
+
       if (ph->p_flags & PF_X) prot |= VKI_PROT_EXEC;
-      if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE; 
+      if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE;
       if (ph->p_flags & PF_R) prot |= VKI_PROT_READ;
-      
-      addr    = ph->p_vaddr+base ;
+
+      addr    = ph->p_vaddr+base;
       off     = ph->p_offset;
       filesz  = ph->p_filesz;
       bss     = addr+filesz;
@@ -308,11 +309,10 @@ for(i = 0; i < e->e.e_phnum; i++) {
 	 bytes = bss & (VKI_PAGE_SIZE - 1);
 
          // The 'prot' condition allows for a read-only bss
-         if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {  
+         if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {
 	    bytes = VKI_PAGE_SIZE - bytes;
 	    VG_(memset)((char *)bss, 0, bytes);
 	 }
-
       }
    }
 
@@ -382,6 +382,11 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    Int i;
    void *entry;
    ESZ(Addr) ebase = 0;
+
+   /* The difference between where the interpreter got mapped and
+      where it asked to be mapped.  Needed for computing the ppc64 ELF
+      entry point and initial tocptr (R2) value. */
+   ESZ(Word) interp_offset = 0;
 
 #ifdef HAVE_PIE
    ebase = info->exe_base;
@@ -564,6 +569,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 
       entry = (void *)(advised - interp_addr + interp->e.e_entry);
       info->interp_base = (ESZ(Addr))advised;
+      interp_offset = advised - interp_addr;
 
       VG_(free)(interp->p);
       VG_(free)(interp);
@@ -573,8 +579,19 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    info->exe_base = minaddr + ebase;
    info->exe_end  = maxaddr + ebase;
 
-   info->init_eip = (Addr)entry;
-
+#if defined(VGP_ppc64_linux)
+   /* On PPC64, a func ptr is represented by a TOC entry ptr.  This
+      TOC entry contains three words; the first word is the function
+      address, the second word is the TOC ptr (r2), and the third word
+      is the static chain value. */
+   info->init_eip  = ((ULong*)entry)[0];
+   // info->init_toc = ((ULong*)entry)[1];
+   info->init_ip  += interp_offset;
+   info->init_toc += interp_offset;
+#else
+   info->init_eip  = (Addr)entry;
+   // info->init_toc = 0; /* meaningless on this platform */
+#endif
    VG_(free)(e->p);
    VG_(free)(e);
 
@@ -727,6 +744,7 @@ SysRes VG_(pre_exec_check)(const Char* exe_name, Int* out_fd)
    } else { 
       VG_(close)(fd);
    }
+
    return res;
 }
 

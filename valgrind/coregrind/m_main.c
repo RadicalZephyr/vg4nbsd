@@ -443,13 +443,19 @@ Addr setup_client_stack( void*  init_sp,
         one page and growing the anonymous area by a corresponding
         page. */
      vg_assert(VG_STACK_REDZONE_SZB >= 0);
-     vg_assert(VG_STACK_REDZONE_SZB < VKI_PAGE_SIZE);
+     /*
+      * Since NetBSD uses a redzone of 2 * pagesize, this is a wrong
+      * assertion. (/usr/src/sys/arch/i386/compile/STABLE/machine/proc.h)
+      */
+     /* vg_assert(VG_STACK_REDZONE_SZB < VKI_PAGE_SIZE); */
      if (VG_STACK_REDZONE_SZB > 0) {
         vg_assert(resvn_size > VKI_PAGE_SIZE);
-        resvn_size -= VKI_PAGE_SIZE;
-        anon_start -= VKI_PAGE_SIZE;
-        anon_size += VKI_PAGE_SIZE;
+        resvn_size -= VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
+        anon_start -= VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
+        anon_size += VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
      }
+
+     VG_(debugLog)(2, "main", "REDZONE size = 0x%x\n", VG_STACK_REDZONE_SZB);
 
      vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
@@ -460,11 +466,6 @@ Addr setup_client_stack( void*  init_sp,
 #    ifdef ENABLE_INNER
      inner_HACK = 1024*1024; // create 1M non-fault-extending stack
 #    endif
-#ifdef VGO_netbsdelf2
-     inner_HACK = 1024*1024; /* KS -- I have added this so that we can
-				add 1meg to the stack and see if it
-				fixes the problems, sure enough, it does */ 
-#endif
      if (1)
        VG_(printf)("%p 0x%x  %p 0x%x\n", 
 		   resvn_start, resvn_size, anon_start, anon_size);

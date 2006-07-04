@@ -93,7 +93,7 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
 	sp+=2+argc ; /* skip over argc arguments and null terminator */
         while(*sp++!=0) { } /* skip over environment and null
 			     * terminator */
-	return (struct ume_auxv *)sp;
+       	return (struct ume_auxv *)sp;
 }
 
 #else
@@ -289,7 +289,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
 #ifdef VGO_netbsdelf
-      bss     = addr+filesz;
+            bss     = addr+filesz;
 #endif
       // if memsz > filesz, fill the remainder with zeroed pages
       if (memsz > filesz) {
@@ -570,15 +570,15 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       entry = (void *)(advised - interp_addr + interp->e.e_entry);
       info->interp_base = (ESZ(Addr))advised;
       interp_offset = advised - interp_addr;
-
+      
       VG_(free)(interp->p);
       VG_(free)(interp);
    } else
-      entry = (void *)(ebase + e->e.e_entry);
-
+     entry = (void *)(ebase + e->e.e_entry);
+   
    info->exe_base = minaddr + ebase;
    info->exe_end  = maxaddr + ebase;
-
+   
 #if defined(VGP_ppc64_linux)
    /* On PPC64, a func ptr is represented by a TOC entry ptr.  This
       TOC entry contains three words; the first word is the function

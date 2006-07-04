@@ -202,16 +202,6 @@ static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
 
    VG_(free)(preload_string);
    ret[envc] = NULL;
-   {
-     int duck = 0 ;
-     for ( duck = 0 ; duck < envc; duck ++ ){
-       VG_(printf)("The environment iS : %s\n",ret[duck]);
-     }
-     if(ret[envc] == NULL )
-       VG_(printf)("Null as expected \n");
-
-   }
-
    return ret;
 }
 
@@ -521,12 +511,33 @@ Addr setup_client_stack( void*  init_sp,
    VG_(client_envp) = (Char **)ptr;
    for (cpp = orig_envp; cpp && *cpp; ptr++, cpp++)
       *ptr = (Addr)copy_str(&strtab, *cpp);
-   *ptr++ = 0;
+   *ptr++ = 0; /* null */
 
    /* --- auxv --- */
-   auxv = (struct ume_auxv *)ptr;
+   auxv = (struct ume_auxv *)ptr; 
+   /* now we need to have enough space here , let us just assume that we ahve */
    *client_auxv = (UInt *)auxv;
-
+#ifdef VGO_netbsdelf2 
+   auxv[0].a_type = AT_PHDR; /* value will be overwritten later */
+   auxv[1].a_type = AT_PHENT;
+   auxv[1].u.a_val = 32;
+   auxv[2].a_type = AT_PHNUM;
+   auxv[2].u.a_val = 6; 
+   auxv[3].a_type  = AT_PAGESZ;
+   auxv[3].u.a_val = 4096;
+   auxv[4].a_type = AT_BASE; /* overwritten later */
+   auxv[5].a_type = AT_FLAGS;
+   auxv[6].a_type = AT_ENTRY; /* overwritten later */
+   auxv[7].a_type = AT_EUID;
+   auxv[7].u.a_val = VG_(geteuid);
+   auxv[8].a_type = AT_RUID;
+   auxv[8].u.a_val =   VG_(geteuid);
+   auxv[9].a_type = AT_EGID;
+   auxv[9].u.a_val =   VG_(getegid);
+   auxv[9].a_type = AT_RGID;
+   auxv[9].u.a_val =   VG_(getegid);
+   auxv[10].a_type = AT_NULL;
+#endif
 #  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    auxv[0].a_type  = AT_IGNOREPPC;
    auxv[0].u.a_val = AT_IGNOREPPC;
@@ -534,14 +545,28 @@ Addr setup_client_stack( void*  init_sp,
    auxv[1].u.a_val = AT_IGNOREPPC;
    auxv += 2;
 #  endif
+/*    auxv[0].a_type = AT_IGNORE; */
+/*      auxv[1].a_type = AT_PHENT; */
+/*      auxv[2].a_type = AT_PAGESZ; */
+/*      auxv[3].a_type = AT_FLAGS; */
+/*      auxv[4].a_type = AT_PHDR; */
+/*      auxv[5].a_type = AT_PHNUM; */
+/*      auxv[6].a_type = AT_BASE; */
+/*      auxv[7].a_type = AT_NULL; */
+       VG_(printf)("switching auxv %d\n", auxv->a_type);
+#ifdef VGO_netbsdelf2
+     for (; auxv->a_type != AT_NULL; auxv++) {
+#else
+     for (; orig_auxv->a_type != AT_NULL; auxv++, orig_auxv++) {
+             *auxv = *orig_auxv;
+#endif
+       /* copy the entry... */
 
-   for (; orig_auxv->a_type != AT_NULL; auxv++, orig_auxv++) {
-
-      /* copy the entry... */
-      *auxv = *orig_auxv;
-
-      /* ...and fix up / examine the copy */
-      switch(auxv->a_type) {
+       /* fill up auxvs ourselves */
+       
+       /* ...and fix up / examine the copy */
+       VG_(printf)("switching auxv %d\n", auxv->a_type);
+	 switch(auxv->a_type) {
 
          case AT_IGNORE:
          case AT_PHENT:
@@ -555,6 +580,11 @@ Addr setup_client_stack( void*  init_sp,
          case AT_EGID:
          case AT_CLKTCK:
          case AT_FPUCW:
+#elif defined (VGO_netbsdelf2)
+	 case AT_EUID:
+	 case AT_EGID:
+	 case AT_RUID:
+	 case AT_RGID:
 #endif
             /* All these are pointerless, so we don't need to do
                anything about them. */
@@ -575,7 +605,9 @@ Addr setup_client_stack( void*  init_sp,
             break;
 
          case AT_BASE:
+	   VG_(printf)("At base auxv->u.a_val = %p\n",auxv->u.a_val);
             auxv->u.a_val = info->interp_base;
+	    VG_(printf)("At base auxv->u.a_val = %p after assign\n",auxv->u.a_val);
             break;
 
 #if defined(VGO_linux)
@@ -641,14 +673,16 @@ Addr setup_client_stack( void*  init_sp,
 
          default:
             /* stomp out anything we don't know about */
-            VG_(debugLog)(2, "main",
+            VG_(debugLog)(0, "main",
                              "stomping auxv entry %lld\n", 
                              (ULong)auxv->a_type);
             auxv->a_type = AT_IGNORE;
             break;
       }
    }
+#ifndef VGO_netbsdelf2
    *auxv = *orig_auxv;
+#endif
    vg_assert(auxv->a_type == AT_NULL);
 
    vg_assert((strtab-stringbase) == stringsize);
@@ -2198,7 +2232,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: fix_environment() [for 'env']
    //--------------------------------------------------------------
    if (!need_help) {
-      void* init_sp = argv - 1;
+     void* init_sp = argv -1  ; /*  argv - 1; */ /*wtf */
       SizeT m1  = 1024 * 1024;
       SizeT m16 = 16 * m1;
       VG_(debugLog)(1, "main", "Setup client stack\n");

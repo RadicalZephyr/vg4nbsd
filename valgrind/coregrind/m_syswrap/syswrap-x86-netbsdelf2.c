@@ -1923,7 +1923,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDX_(__NR_sstk,             sys_ni_syscall),     // 70
    NBSDX_(__NR_compat_43_ommap,  sys_ni_syscall),     // 71 XXX
    NBSDX_(__NR_vadvise,          sys_ni_syscall),     // 72 Whats this? investigate
-   NBSDX_(__NR_munmap,           sys_munmap),         // 73
+   GENX_(__NR_munmap,           sys_munmap),         // 73
    NBSDX_(__NR_mprotect,         sys_mprotect),       // 74
 
    NBSDX_(__NR_madvise,          sys_madvise),        // 75

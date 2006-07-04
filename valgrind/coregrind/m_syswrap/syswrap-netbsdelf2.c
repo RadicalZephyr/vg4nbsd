@@ -520,9 +520,6 @@ PRE(sys_vfork)
 { 
 	I_die_here;
 }
-PRE(sys_munmap){
-	I_die_here;
-}
 PRE(sys_mprotect){
 	I_die_here;
 }

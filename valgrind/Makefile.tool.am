@@ -52,7 +52,7 @@ COREGRIND_LIBS_X86_NETBSD = \
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" version
 
 TOOL_LDADD_COMMON =  /usr/lib/libgcc.a
-TOOL_LDFLAGS_COMMON = -static \
+TOOL_LDFLAGS_COMMON = \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
 	-nodefaultlibs -nostartfiles -u _start -u __start 
 

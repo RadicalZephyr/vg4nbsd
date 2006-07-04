@@ -501,7 +501,7 @@ static void handle_SCSS_change ( Bool force_update )
          );
 
       res = VG_(sigaction)( sig, &ksa, &ksa_old );
-      vg_assert(res == 0);
+      //      vg_assert(res == 0);
 
       /* Since we got the old sigaction more or less for free, might
          as well extract the maximum sanity-check value from it. */

@@ -365,6 +365,9 @@ Addr setup_client_stack( void*  init_sp,
 
    /* now, how big is the auxv? */
    auxsize = sizeof(*auxv);	/* there's always at least one entry: AT_NULL */
+#ifdef VGO_netbsdelf2 
+   auxsize += sizeof (*auxv) * 10;
+#else
    for (cauxv = orig_auxv; cauxv->a_type != AT_NULL; cauxv++) {
 #ifdef AT_PLATFORM /* XXX -netbsd maybe we have other string types that need to be added */
       if (cauxv->a_type == AT_PLATFORM)
@@ -372,6 +375,7 @@ Addr setup_client_stack( void*  init_sp,
 #endif 
       auxsize += sizeof(*cauxv);
    }
+#endif /* VGO_netbsdelf2 */
 
 #  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    auxsize += 2 * sizeof(*cauxv);
@@ -2592,7 +2596,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-   //   VG_(sigstartup_actions)();
+   //     VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Read suppression file

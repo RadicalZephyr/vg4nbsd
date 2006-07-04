@@ -285,7 +285,7 @@ int main(int argc, char** argv, char** envp)
 
    VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);
 // error here
-/*    printf("toolfile : %s \n argv: %s \n valgrind_launcher %s \n new_env: %s \n",toolfile, *argv,VALGRIND_LAUNCHER,  new_env[j]);  */
+   printf("toolfile : %s \n argv: %s \n valgrind_launcher %s  \n",toolfile, *argv,VALGRIND_LAUNCHER);
 #ifdef VGO_netbsdelf2
    execve(toolfile, argv, envp);
 #else

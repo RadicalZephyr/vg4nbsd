@@ -298,7 +298,7 @@ static char *copy_str(char **tab, const char *str)
 /* XXX- this function requires syncing, but too hacked up for netbsd
    already. Simple diff wont work
    XXX - Is this still true?? */
-static 
+static
 Addr setup_client_stack( void*  init_sp,
                          char** orig_envp, 
                          const struct exeinfo* info,

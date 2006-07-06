@@ -568,6 +568,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       VG_(close)(interp->fd);
 
       entry = (void *)(advised - interp_addr + interp->e.e_entry);
+      VG_(debugLog)(1, "readelf", "entry = (%p - %p + %p) = %p\n", advised, interp_addr, interp->e.e_entry);
       info->interp_base = (ESZ(Addr))advised;
       interp_offset = advised - interp_addr;
       

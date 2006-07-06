@@ -402,12 +402,18 @@ static
 void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
                                       /*IN*/ VexGuestArchState* gst_vanilla )
 {
-#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    Int               i   = (Int)gst->guest_EAX;
    canonical->what = i >= -4095 && i <= -1  ? SsFailure  : SsSuccess;
    canonical->val  = (UWord)(canonical->what==SsFailure ? -i : i);
+#elif defined (VGP_x86_netbsdelf2)
+   VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
 
+   /* We use the carry flag (very first bit) for status */
+   canonical->what = (LibVEX_GuestX86_get_eflags(gst) & 0x01) ? SsFailure  : SsSuccess;
+   canonical->val  = (Int)gst->guest_EAX;
+   
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    Long                i   = (Long)gst->guest_RAX;
@@ -432,7 +438,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 {
    vg_assert(canonical->what == SsSuccess 
              || canonical->what == SsFailure);
-#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
+#if defined(VGP_x86_linux)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    if (canonical->what == SsFailure) {
       /* This isn't exactly right, in that really a Failure with res
@@ -442,6 +448,21 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    } else {
       gst->guest_EAX = canonical->val;
    }
+#elif defined (VGP_x86_netbsdelf2)
+   VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
+
+   /* We use the carry flag (very first bit) for status */
+   /*
+    * XXX Note that this is a huge hack, we're not using any kind
+    * of abstraction.  Beside geteflags, we also want a seteflags kind
+    * of thing.
+    */
+   if (canonical->what == SsFailure)  /* SET cf bit (bit 0) */
+	   gst->guest_CC_NDEP |= gst->guest_CC_NDEP & 1;
+   else /* (canonical->what == SsSuccess) */ /* UNSET cf bit (still bit 0) */
+	   gst->guest_CC_NDEP ^= gst->guest_CC_NDEP & 1;
+   gst->guest_EAX = canonical->val;
+   
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    vg_assert(canonical->what == SsSuccess 

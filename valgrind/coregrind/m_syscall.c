@@ -280,7 +280,11 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
   return VG_(mk_SysRes_ppc32_linux)( val, errflag );
 #elif defined(VGP_x86_netbsdelf2)
   UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6,a7);
-  return VG_(mk_SysRes_x86_netbsdelf2)( val );
+  SysRes res;
+  res = VG_(mk_SysRes_x86_netbsdelf2)( val );
+  if (sysno == 25)
+	  VG_(debugLog)(1, "do_syscall", "SYSRES AFTER 25: val = %d\nres.val = %d, res.isError = %d\n", sysno, val, res.val, res.isError);
+  return res;
 #else
 #  error Unknown platform
 #endif

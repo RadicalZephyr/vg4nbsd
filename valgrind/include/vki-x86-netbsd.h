@@ -322,27 +322,30 @@ typedef struct vki_sigcontext {
 #define VKI_SIOCGSTAMP	0x8906		/* Get stamp */
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/stat.h
+// From /usr/include/sys/stat.h
 //----------------------------------------------------------------------
 
 struct vki_stat {
-	unsigned int	  st_dev;
-	unsigned int 	  st_ino;
-	unsigned short	  st_mode;
-	unsigned short st_nlink;
-	unsigned int 	  st_uid;
-	unsigned int	  st_gid;
-	unsigned int  st_rdev;
-	struct vki_timespec  st_atimespec;
-	struct vki_timespec	  st_mtimespec;
-	struct vki_timespec st_ctimespec;
-        long long        st_size;
-	long long st_blocks;
-	unsigned int  st_blksize;
-	unsigned int st_flags;
-	unsigned int st_gen;
-	unsigned int st_spare0;
+	vki_u32	  st_dev;		/* inode's device */
+	vki_u32	  st_ino;		/* inode's number */
+	vki_u32	  st_mode;		/* inode protection mode */
+	vki_u32	  st_nlink;		/* number of hard links */
+	vki_u32	  st_uid;		/* user ID of the file's owner */
+	vki_u32	  st_gid;		/* group ID of the file's group */
+	vki_u32	  st_rdev;		/* device type */
+	struct	  vki_timespec st_atimespec;/* time of last access */
+	struct	  vki_timespec st_mtimespec;/* time of last data modification */
+	struct	  vki_timespec st_ctimespec;/* time of last file status change */
+	__vki_u64	  st_size;		/* file size, in bytes */
+	__vki_s64   st_blocks;		/* blocks allocated for file */
+	vki_u32   st_blksize;		/* optimal blocksize for I/O */
+	vki_u32   st_flags;		/* user defined flags for file */
+	vki_u32   st_gen;		/* file generation number */
+	vki_u32   st_spare0;
 	struct vki_timespec st_birthtimespec;
+#if !defined(_LP64)
+	int	__pad5;
+#endif
 };
 
 /* struct vki_stat64 { */

@@ -33,7 +33,9 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_machine.h"
+#include "pub_core_libcprint.h"
 #include "pub_core_cpuid.h"
+#include "libvex_guest_offsets.h"
 #include "pub_core_libcsignal.h"   // for ppc32 messing with SIGILL
 
 
@@ -97,8 +99,8 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
    else {
 	   VG_(printf)("In messing up shadow state\n");
 	   vg_assert(size == 1); 
-	   offset -= 1000;
-	   *(UWord *)area =  (*((UChar *)tst->arch.vex_shadow)[OFFSET_ESP])[offset];
+	   offset -= 1000;  /* Or offset %= 1000 ? */
+	   *(UWord *)area =  ((UChar *)tst->arch.vex_shadow.guest_ESP)[offset];
    }
 #endif
 }

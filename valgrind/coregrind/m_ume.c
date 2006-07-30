@@ -527,15 +527,15 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
             try and put it where it asks for, but if that doesn't work,
             just put it anywhere.
       */
-/*       if (interp_addr == 0) { */
-/*          mreq.rkind = MAny; */
-/*          mreq.start = 0; */
-/*          mreq.len   = interp_size; */
-/*       } else { */
+       if (interp_addr == 0) {
+          mreq.rkind = MAny;
+          mreq.start = 0;
+          mreq.len   = interp_size;
+       } else {
          mreq.rkind = MHint;
          mreq.start = interp_addr;
          mreq.len   = interp_size;
-/*       } */
+       }
 
       advised = VG_(am_get_advisory)( &mreq, True/*client*/, &ok );
 
@@ -621,6 +621,7 @@ static Int load_script(Int fd, const char *name, struct exeinfo *info)
    Char* arg = NULL;
    SysRes res;
 
+   VG_(printf)("load_script\n");
    // Read the first part of the file.
    res = VG_(pread)(fd, hdr, len, 0);
    if (res.isError) {
@@ -669,7 +670,7 @@ static Int load_script(Int fd, const char *name, struct exeinfo *info)
    if (info->argv && info->argv[0] != NULL)
       info->argv[0] = (char *)name;
 
-   if (0)
+   if (1)
       VG_(printf)("#! script: interp_name=\"%s\" interp_args=\"%s\"\n",
                   info->interp_name, info->interp_args);
 
@@ -854,8 +855,8 @@ static Int do_exec_shell_followup(Int ret, Char* exe_name,
 
       // Did it start with "#!"?  If so, it must have been a bad interpreter.
       } else if (is_hash_bang_file(exe_name)) {
-         VG_(printf)("valgrind: %s: bad interpreter: %s\n",
-                     exe_name, VG_(strerror)(ret));
+         VG_(printf)("valgrind: %s: bad interpreter (%s): %s\n",
+                     exe_name, info->interp_name, VG_(strerror)(ret));
 
       // Otherwise it was something else.
       } else {

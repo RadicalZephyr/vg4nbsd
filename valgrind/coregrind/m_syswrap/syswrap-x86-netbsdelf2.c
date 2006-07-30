@@ -1861,8 +1861,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDX_(__NR_unmount,          sys_unmount),        // 22
 /*    GENX_(__NR_setuid,            sys_setuid),       // 23 ## P */
    GENX_(__NR_setuid,            sys_ni_syscall),       // 23 ## P
-/*    GENX_(__NR_getuid,            sys_getuid),       // 24 ## P */
-   GENX_(__NR_getuid,            sys_ni_syscall),       // 24 ## P
+   GENX_(__NR_getuid,            sys_getuid),       // 24 ## P
 /*    GENX_(__NR_geteuid,           sys_geteuid),      // 25 */
    GENX_(__NR_geteuid,           sys_ni_syscall),      // 25
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26

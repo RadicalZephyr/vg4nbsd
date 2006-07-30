@@ -176,6 +176,26 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 #endif
 }
 
+/* Not sure if this is the right place for this (aka BIG HACK SIR) */
+#if defined(VGP_x86_netbsdelf2)
+extern int __sigtramp_sigcontext_1[];
+#define __STRING(x) #x
+#define STR(x) __STRING(x)
+asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
+    ".align 4\n"   /* This is ALIGN_TEXT, defined 4 if __ELF, else 2 */
+    ".globl\n"
+    ".type ___sigtramp_sigcontext_1,@function\n"
+    "__sigtramp_sigcontext_1:\n"
+    "leal	12(%esp),%eax\n"	/* get pointer to sigcontext */
+    "movl	%eax,4(%esp)\n" 	/* put it in the argument slot */
+    /* fake return address already there */
+    "movl $(" STR(__NR_compat_16___sigreturn14) "), %eax\n" /* do sigreturn */
+    "int $0x80\n"
+    "movl	%eax,4(%esp)\n"   	/* error code */
+    "movl $(" STR(__NR_exit) "), %eax\n"       		/* exit */
+    "int $0x80\n"
+    );
+#endif
 
 Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
@@ -186,9 +206,17 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-SysRes res = VG_(do_syscall3)(__NR_compat_13_sigaction13,
-                                 signum, (UWord)act, (UWord)oldact 
-			      /*, _VKI_NSIG_WORDS * sizeof(UWord) */);
+   /* From /usr/src/lib/libc/arch/i386/sys/__sigaction14_sigtramp */
+   SysRes res;
+   if (act == NULL) {
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  NULL, 0);
+   } else {
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  __sigtramp_sigcontext_1, 1);
+   }
    return res.isError ? -1 : 0;
 #endif
 }

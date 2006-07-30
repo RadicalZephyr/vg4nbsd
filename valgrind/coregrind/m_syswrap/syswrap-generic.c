@@ -2730,8 +2730,10 @@ PRE(sys_fcntl)
    case VKI_F_GETFD:
    case VKI_F_GETFL:
    case VKI_F_GETOWN:
+#ifdef VGO_linux
    case VKI_F_GETSIG:
    case VKI_F_GETLEASE:
+#endif
       PRINT("sys_fcntl ( %d, %d )", ARG1,ARG2);
       PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
       break;
@@ -2740,10 +2742,12 @@ PRE(sys_fcntl)
    case VKI_F_DUPFD:
    case VKI_F_SETFD:
    case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+#ifdef VGO_linux
    case VKI_F_SETLEASE:
    case VKI_F_NOTIFY:
-   case VKI_F_SETOWN:
    case VKI_F_SETSIG:
+#endif	   
       PRINT("sys_fcntl[ARG3=='arg'] ( %d, %d, %d )", ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd, unsigned long, arg);
@@ -2793,9 +2797,11 @@ PRE(sys_fcntl64)
    case VKI_F_GETFL:
    case VKI_F_GETOWN:
    case VKI_F_SETOWN:
+#ifdef VGO_linux
    case VKI_F_GETSIG:
    case VKI_F_SETSIG:
    case VKI_F_GETLEASE:
+#endif
       PRINT("sys_fcntl64 ( %d, %d )", ARG1,ARG2);
       PRE_REG_READ2(long, "fcntl64", unsigned int, fd, unsigned int, cmd);
       break;
@@ -2804,8 +2810,10 @@ PRE(sys_fcntl64)
    case VKI_F_DUPFD:
    case VKI_F_SETFD:
    case VKI_F_SETFL:
+#ifdef VGO_linux
    case VKI_F_SETLEASE:
    case VKI_F_NOTIFY:
+#endif	   
       PRINT("sys_fcntl64[ARG3=='arg'] ( %d, %d, %d )", ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "fcntl64",
                     unsigned int, fd, unsigned int, cmd, unsigned long, arg);

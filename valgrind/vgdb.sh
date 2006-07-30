@@ -2,7 +2,7 @@
 # quick gdb script launching valgrind 
 #
 
-VG_ROOT=/home/hsaliak/srcs/aspacem/valgrind
+VG_ROOT=/home/hsaliak/src/valgrind
 VG_ROOT_LIB=$VG_ROOT/.in_place/
 VG_TOOL=none
 VG_TMP_SCRIPT=/tmp/vg.gdb

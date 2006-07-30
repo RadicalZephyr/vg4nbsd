@@ -96,7 +96,7 @@
 /* Defines the thread-scheduling timeslice, in terms of the number of
    basic blocks we attempt to run each thread for.  Smaller values
    give finer interleaving but much increased scheduling overheads. */
-#define SCHEDULING_QUANTUM   50
+#define SCHEDULING_QUANTUM   5000000000
 /* #define SCHEDULING_QUANTUM   50 */
 
 /* If true, a fault is Valgrind-internal (ie, a bug) */
@@ -345,7 +345,7 @@ static void block_signals(ThreadId tid)
       if ((jumped) == 0) {						\
 	 vg_assert(!_qq_tst->sched_jmpbuf_valid);			\
 	 _qq_tst->sched_jmpbuf_valid = True;				\
-VG_(debugLog)(4,"scheduler","running stmt\n");\
+VG_(debugLog)(1,"scheduler","running stmt\n");\
 	 stmt;								\
       }	else if (VG_(clo_trace_sched))					\
 	 VG_(printf)("SCHEDSETJMP(line %d) tid %d, jumped=%d\n", __LINE__, tid, jumped); \
@@ -402,7 +402,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(a_vex + 2 * sz_vex == a_spill);
 
    VGP_PUSHCC(VgpRun);
-   VG_(debugLog)(4,"scheduler","run_threads_for_a_while : after the asserts\n");
+   VG_(debugLog)(1,"scheduler","run_threads_for_a_while : after the asserts\n");
 
 #  if defined(VGA_ppc32)
    /* This is necessary due to the hacky way vex models reservations
@@ -435,7 +435,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
    vg_assert(VG_(my_fault));
    VG_(my_fault) = False;
-   VG_(debugLog)(4,"scheduler","doing schedsetjmp\n");
+   VG_(debugLog)(1,"scheduler","doing schedsetjmp\n");
 
    SCHEDSETJMP(tid, jumped, 
                     trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
@@ -445,7 +445,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    //   VG_(printf)("trc=%d jump to %p from %p\n",
    //		  trc, nextEIP, EIP);
    
-   VG_(debugLog)(4,"scheduler","after jump\n");
+   VG_(debugLog)(1,"scheduler","after jump\n");
    VG_(my_fault) = True;
 
    if (jumped) {

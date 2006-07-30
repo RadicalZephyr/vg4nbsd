@@ -1891,6 +1891,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
 
    /* Otherwise we're OK (so far).  Install aspacem's choice of
       address, and let the mmap go through.  */
+   VG_(printf)("in pre_sys_mmap offset = %d\n",arg6);
    sres = VG_(am_do_mmap_NO_NOTIFY)(advised, arg2, arg3,
                                     arg4 | VKI_MAP_FIXED,
                                     arg5, arg6);
@@ -4968,11 +4969,11 @@ PRE(sys_readlink)
            || VG_(strcmp)((Char *)ARG1, "/proc/self/exe") == 0)) {
       VG_(sprintf)(name
 , "/proc/self/fd/%d", VG_(cl_exec_fd));
-      SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, 
+      SET_STATUS_from_SysRes_NO_SANITY_CHECK( VG_(do_syscall3)(saved, (UWord)name, 
                                                       ARG2, ARG3));
    } else {
       /* Normal case */
-      SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, ARG1, ARG2, ARG3));
+      SET_STATUS_from_SysRes_NO_SANITY_CHECK( VG_(do_syscall3)(saved, ARG1, ARG2, ARG3));
    }
 
    if (SUCCESS && RES > 0)

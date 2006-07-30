@@ -405,7 +405,7 @@ void VG_(setup_code_redirect_table) ( void )
 #elif defined(VGP_x86_netbsdelf2)
    // NetBSD: TODO - XXXX 
 /*  add_redirect_sym_to_addr( */
-/*       "soname:ld-elf.so", "_dl_sysinfo_int80", */
+/*       "soname:ld.elf_so", "_dl_sysinfo_int80", */
 /*       (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80) */
 /*    ); */
 

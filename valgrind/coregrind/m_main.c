@@ -595,11 +595,13 @@ Addr setup_client_stack( void*  init_sp,
             break;
 
          case AT_PHDR:
+
             if (info->phdr == 0)
                auxv->a_type = AT_IGNORE;
             else
                auxv->u.a_val = info->phdr;
-            break;
+	    /* XXX  dump phdr here   especially dynamic section */
+	    break;
 
          case AT_PHNUM:
             if (info->phdr == 0)
@@ -622,6 +624,7 @@ Addr setup_client_stack( void*  init_sp,
 #endif
 
          case AT_ENTRY:
+	   VG_(printf) ("info -entry in m_main = %p\n", info->entry);
             auxv->u.a_val = info->entry;
             break;
 
@@ -680,7 +683,7 @@ Addr setup_client_stack( void*  init_sp,
             VG_(debugLog)(0, "main",
                              "stomping auxv entry %lld\n", 
                              (ULong)auxv->a_type);
-            auxv->a_type = AT_IGNORE;
+	    //     auxv->a_type = AT_IGNORE;
             break;
       }
    }
@@ -2596,7 +2599,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-   //     VG_(sigstartup_actions)();
+   //   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Read suppression file
@@ -2822,6 +2825,7 @@ static void final_tidyup(ThreadId tid)
    VG_(set_default_handler)(VKI_SIGBUS);
    VG_(set_default_handler)(VKI_SIGILL);
    VG_(set_default_handler)(VKI_SIGFPE);
+
 
    // We were exiting, so assert that...
    vg_assert(VG_(is_exiting)(tid));

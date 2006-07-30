@@ -452,7 +452,7 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
                          prot, flags, fd, offset);
 // XXX Is this correct? - sjamaan. netbsd uses 7 param mmap call -kailash
 # elif defined(VGP_x86_netbsdelf2)
-	VG_(debugLog)(3, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d ",offset,offset/VKI_PAGE_SIZE); 
+	VG_(debugLog)(0, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d\n ",offset,offset/VKI_PAGE_SIZE); 
    res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
                           prot, flags, fd,0,  offset  );
 
@@ -2299,7 +2299,6 @@ SysRes VG_(am_mmap_file_fixed_client)
    UWord      dev, ino;
    UInt       mode;
    HChar      buf[VKI_PATH_MAX];
-
    /* Not allowable. */
    if (length == 0 
        || !VG_IS_PAGE_ALIGNED(start)
@@ -2372,7 +2371,7 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
    Addr       advised;
    Bool       ok;
    MapRequest req;
- 
+
    /* Not allowable. */
    if (length == 0 || !VG_IS_PAGE_ALIGNED(start))
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
@@ -2389,6 +2388,7 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
 #ifdef VGO_netbsdelf2
+   VG_(printf)("In am_anon_fixed_client\n");
   sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 

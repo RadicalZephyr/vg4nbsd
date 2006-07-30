@@ -133,7 +133,7 @@ struct elfinfo *readelf(Int fd, const char *filename)
 
    vg_assert(e);
    e->fd = fd;
-
+   /* reading the Elf header into Elf32Hdr e->e at start of the file */
    sres = VG_(pread)(fd, &e->e, sizeof(e->e), 0);
    if (sres.isError || sres.val != sizeof(e->e)) {
       VG_(printf)("valgrind: %s: can't read ELF header: %s\n", 
@@ -173,8 +173,8 @@ struct elfinfo *readelf(Int fd, const char *filename)
    phsz = sizeof(ESZ(Phdr)) * e->e.e_phnum;
    e->p = VG_(malloc)(phsz);
    vg_assert(e->p);
-
-   sres = VG_(pread)(fd, e->p, phsz, e->e.e_phoff);
+   /* space for array of phdrs */
+   sres = VG_(pread)(fd, e->p, phsz, e->e.e_phoff); /* e->p points to array of phdrs , e->e_phnum to how many */
    if (sres.isError || sres.val != phsz) {
       VG_(printf)("valgrind: can't read phdr: %s\n", 
                   VG_(strerror)(sres.val));
@@ -194,12 +194,6 @@ static
 ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 {
    Int    i;
-#ifdef VGO_netbsdelf2
-   ESZ(Phdr) *segs[2]; /* array of 2 phdr  pointers of course */
-   int loadseg_count=0;;
-	int nsegs=0;
-
-#endif
    SysRes res;
    ESZ(Addr) elfbrk = 0;
 
@@ -210,15 +204,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
       if (ph->p_type != PT_LOAD)
 	 continue;
-#ifdef VGO_netbsdelf2
-      if(nsegs < 2) { 
-	      segs[nsegs] = ph;
-	      ++nsegs;
-      } 
-      if(nsegs!=2){
-	   VG_(debugLog)(1,"mapelf","nsegs >2 wtf\n");
-   }
-#endif
+
       addr    = ph->p_vaddr+base;
       memsz   = ph->p_memsz;
       brkaddr = addr+memsz;
@@ -260,15 +246,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       bss     = addr+filesz;
       memsz   = ph->p_memsz;
       brkaddr = addr+memsz;
-#ifdef VGO_netbsdelf2
-      VG_(debugLog)(0,"mapelf", "The alignment is %d\n" , ph->p_align);
-      if(loadseg_count==0){
-	      bss = VG_PGROUNDUP((segs[1]->p_memsz + segs[1]->p_vaddr +base)) ; 
-/* bytes the data segment occupies  + where its loaded = where bss
-   starts */
-	      loadseg_count++;
-      }
-#endif
+
       // Tom says: In the following, do what the Linux kernel does and only
       // map the pages that are required instead of rounding everything to
       // the specified alignment (ph->p_align).  (AMD64 doesn't work if you
@@ -288,9 +266,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
          check_mmap(res, VG_PGROUNDDN(addr),
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
-#ifdef VGO_netbsdelf
-            bss     = addr+filesz;
-#endif
+
       // if memsz > filesz, fill the remainder with zeroed pages
       if (memsz > filesz) {
 	 UInt bytes;
@@ -372,7 +348,7 @@ static Bool match_ELF(const char *hdr, Int len)
 static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 {
    SysRes sres;
-   struct elfinfo *e;
+   struct elfinfo *e; /* ehdr then pointer to phdr p then fd */
    struct elfinfo *interp = NULL;
    ESZ(Addr) minaddr = ~0;	/* lowest mapped address */
    ESZ(Addr) maxaddr = 0;	/* highest mapped address */
@@ -399,21 +375,21 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 
    /* The kernel maps position-independent executables at TASK_SIZE*2/3;
       duplicate this behavior as close as we can. */
-   if (e->e.e_type == ET_DYN && ebase == 0) {
-	   VG_(printf)("screwing up \n"); 
-      ebase = VG_PGROUNDDN(info->exe_base + (info->exe_end - info->exe_base) * 2 / 3);
-   }
+/*    if (e->e.e_type == ET_DYN && ebase == 0) { */
+/* 	   VG_(printf)("screwing up \n");  */
+/*       ebase = VG_PGROUNDDN(info->exe_base + (info->exe_end - info->exe_base) * 2 / 3); */
+/*    } */
 
    info->phnum = e->e.e_phnum;
    info->entry = e->e.e_entry + ebase;
-   info->phdr = 0;
+   info->phdr = 0; 
    if(1){
 	   VG_(printf)("info->phnum:%d\n , info->entry:%p\n",info->phnum, info->entry); 
    }
-   for(i = 0; i < e->e.e_phnum; i++) {
-      ESZ(Phdr) *ph = &e->p[i];
-      VG_(printf)("p_type = %p\n",ph->p_type);
-      switch(ph->p_type) {
+   for(i = 0; i < e->e.e_phnum; i++) { 
+     ESZ(Phdr) *ph = &e->p[i]; /* e->p[i] e->p is array of phdr [i] is to deref that & of that is the address of phdr there */
+     VG_(printf)("p_type = %p\n",ph->p_type);
+     switch(ph->p_type) {
       case PT_PHDR:
      VG_(printf)("in pt_hdr\n");
 	 info->phdr = ph->p_vaddr + ebase;
@@ -437,10 +413,10 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 VG_(printf)("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
 	 break;
 			
-      case PT_INTERP: {
+      case PT_INTERP:
+	{
          VG_(printf) ("in pt_interp\n");
 	 char *buf = VG_(malloc)(ph->p_filesz+1);
-         VG_(printf) ("in pt_interp post malloc\n");
 	 Int j;
 	 Int intfd;
 	 Int baseaddr_set;
@@ -450,37 +426,44 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 buf[ph->p_filesz] = '\0';
 
 	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
-	 VG_(debugLog)(1,"m_ume","Managed to open interp\n");
+	 VG_(printf)("Managed to open interp %s\n",buf);
          if (sres.isError) {
 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
 	    VG_(exit)(1);
 	 }
-         intfd = sres.val;
+         intfd = sres.val; 
+	 VG_(printf)("intfd = %d\n",intfd);
 
 	 interp = readelf(intfd, buf); 
-	 VG_(debugLog)(1,"m_ume","Reading the interpreter\n");
+	 VG_(printf)("interp = %p \t info->entry = %p \t interp->e.e_entry = %p\n", interp, info->entry, interp->e.e_entry); 
+	 //info->entry = interp->e.e_entry;
+	 /* it has its own program header etc does ld.elf_so have? , yes */
+	 VG_(printf)("Reading the interpreter\n");
 	 if (interp == NULL) {
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
 	    return 1;
 	 }
-	 VG_(free)(buf);
+	 VG_(free)(buf); /* free up the interp name buffer */
 
 	 baseaddr_set = 0;
 	 for(j = 0; j < interp->e.e_phnum; j++) {
 	    ESZ(Phdr) *iph = &interp->p[j];
 	    ESZ(Addr) end;
 
-	    if (iph->p_type != PT_LOAD)
-	       continue;
-	    
-	    if (!baseaddr_set) {
-	       interp_addr  = iph->p_vaddr;
+	    if (iph->p_type != PT_LOAD) {
+	      VG_(printf)("iph->p_type = %d\n", iph->p_type);
+	      continue; /* why? there must be 4 here  */
+	    }
+	    VG_(printf)("in m_ume.c:load_ELF PT_INTERP switch case, type is PT_LOAD baseaddr_set =%d\n",baseaddr_set);
+	    	    if (!baseaddr_set) {
+	       interp_addr  = iph->p_vaddr; 
 	       interp_align = iph->p_align;
 	       baseaddr_set = 1;
-	    }
+	           }
+	    VG_(printf)("interp_addr = %d\n",interp_addr);
 
 	    /* assumes that all segments in the interp are close */
-	    end = (iph->p_vaddr - interp_addr) + iph->p_memsz;
+	    end = (iph->p_vaddr - interp_addr) + iph->p_memsz; /* is this valid for netbsd */
 
 	    if (end > interp_size)
 	       interp_size = end;
@@ -494,9 +477,10 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       }
    }
 
-  VG_( printf)("interp_addr = %p\n", interp_addr);
-   if (info->phdr == 0)
-      info->phdr = minaddr + ebase + e->e.e_phoff;
+   VG_( printf)("interp_addr = %p\n", interp_addr); /* why is this 0 */
+   if (info->phdr == 0) // it will be 
+     info->phdr = minaddr + ebase + e->e.e_phoff;  
+   VG_(printf)("info->phdr = %p phoff = %p\n",info->phdr, e->e.e_phoff);
 
    if (info->exe_base != info->exe_end) {
       if (minaddr >= maxaddr ||
@@ -543,15 +527,15 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
             try and put it where it asks for, but if that doesn't work,
             just put it anywhere.
       */
-      if (interp_addr == 0) {
-         mreq.rkind = MAny;
-         mreq.start = 0;
-         mreq.len   = interp_size;
-      } else {
+/*       if (interp_addr == 0) { */
+/*          mreq.rkind = MAny; */
+/*          mreq.start = 0; */
+/*          mreq.len   = interp_size; */
+/*       } else { */
          mreq.rkind = MHint;
          mreq.start = interp_addr;
          mreq.len   = interp_size;
-      }
+/*       } */
 
       advised = VG_(am_get_advisory)( &mreq, True/*client*/, &ok );
 
@@ -568,7 +552,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       VG_(close)(interp->fd);
 
       entry = (void *)(advised - interp_addr + interp->e.e_entry);
-      VG_(debugLog)(1, "readelf", "entry = (%p - %p + %p) = %p\n", advised, interp_addr, interp->e.e_entry);
+      VG_(printf)( "readelf entry = (%p - %p + %p) = %p\n", advised, interp_addr, interp->e.e_entry,entry);
       info->interp_base = (ESZ(Addr))advised;
       interp_offset = advised - interp_addr;
       
@@ -590,7 +574,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    info->init_ip  += interp_offset;
    info->init_toc += interp_offset;
 #else
-   info->init_eip  = (Addr)entry;
+   info->init_eip  = (Addr)entry; 
    // info->init_toc = 0; /* meaningless on this platform */
 #endif
    VG_(free)(e->p);

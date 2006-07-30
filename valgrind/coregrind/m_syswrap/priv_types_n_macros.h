@@ -248,6 +248,7 @@ extern const UInt ML_(syscall_table_size);
 #define ARG4   (arrghs->argp[3])
 #define ARG5   (arrghs->argp[4])
 #define ARG6   (arrghs->argp[5])
+#define ARG7   (arrghs->argp[6])
 #else
 #define SYSNO  (arrghs->sysno)
 #define ARG1   (arrghs->arg1)
@@ -326,6 +327,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
          SET_STATUS_Success(zres.val);               \
       }                                              \
    } while (0)
+
 
 
 #define PRINT(format, args...)                       \

@@ -1273,10 +1273,10 @@ POST(sys_ipc)
 PRE(old_mmap)
 {
 	SysRes r;
-   PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
-         ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
+   PRINT("old_mmap ( %p, %llu, %d, %d, %d, %llu )",
+         ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, (ULong)ARG7 );
 
-   r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, (Off64T)ARG6);
+   r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, ARG7);
    SET_STATUS_from_SysRes(r);
 }
 

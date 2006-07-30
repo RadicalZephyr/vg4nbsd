@@ -80,7 +80,11 @@ SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag ) {
 SysRes VG_(mk_SysRes_x86_netbsdelf2) ( Word val ) {
    SysRes res;
    res.isError = val >= -4095 && val <= -1; /* XXX -NetBSD */
-   res.val     = res.isError ? -val : val;
+   /* iserror is set when val is between -1 and -4095 so why are we
+      inversing this if there is an error?  why cant we handle this
+   the ppc32 way?  */
+    res.val     = res.isError ? -val : val;
+   res.val = val; 
    return res;
 }
 

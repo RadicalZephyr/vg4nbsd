@@ -4,7 +4,8 @@ AUTOMAKE_OPTIONS = foreign 1.6 dist-bzip2
 include $(top_srcdir)/Makefile.all.am 
 
 ## addrcheck must come after memcheck, for mac_*.o
-TOOLS =		none
+TOOLS =		none \
+		memcheck
 
 ##		addrcheck \
 ##		memcheck

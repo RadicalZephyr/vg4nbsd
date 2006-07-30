@@ -87,7 +87,7 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
    tst = & VG_(threads)[tid];
 
    // Bounds check
-#ifndef VGO_netbdself2
+#ifndef VGO_netbsdelf2
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
    VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);

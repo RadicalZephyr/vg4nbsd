@@ -1124,13 +1124,102 @@ struct vki_dirent {
 };
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/fcntl.h
+// From include/sys/fcntl.h
 //----------------------------------------------------------------------
 
-#define VKI_F_SETLEASE	(VKI_F_LINUX_SPECIFIC_BASE+0)
-#define VKI_F_GETLEASE	(VKI_F_LINUX_SPECIFIC_BASE+1)
+/*
+ * File status flags: these are used by open(2), fcntl(2).
+ * They are also used (indirectly) in the kernel file structure f_flags,
+ * which is a superset of the open/fcntl flags.  Open flags and f_flags
+ * are inter-convertible using OFLAGS(fflags) and FFLAGS(oflags).
+ * Open/fcntl flags begin with O_; kernel-internal flags begin with F.
+ */
+/* open-only flags */
+#define	VKI_O_RDONLY	0x00000000	/* open for reading only */
+#define	VKI_O_WRONLY	0x00000001	/* open for writing only */
+#define	VKI_O_RDWR	0x00000002	/* open for reading and writing */
+#define	VKI_O_ACCMODE	0x00000003	/* mask for above modes */
 
-#define VKI_F_NOTIFY	(VKI_F_LINUX_SPECIFIC_BASE+2)
+#define	VKI_O_NONBLOCK	0x00000004	/* no delay */
+#define	VKI_O_APPEND	0x00000008	/* set append mode */
+#define	VKI_O_SHLOCK	0x00000010	/* open with shared file lock */
+#define	VKI_O_EXLOCK	0x00000020	/* open with exclusive file lock */
+#define	VKI_O_ASYNC	0x00000040	/* signal pgrp when data ready */
+#define	VKI_O_SYNC	0x00000080	/* synchronous writes */
+#define	VKI_O_NOFOLLOW	0x00000100	/* don't follow symlinks on the last */
+					/* path component */
+
+#define	VKI_O_CREAT	0x00000200	/* create if nonexistent */
+#define	VKI_O_TRUNC	0x00000400	/* truncate to zero length */
+#define	VKI_O_EXCL	0x00000800	/* error if already exists */
+
+#define	VKI_O_DSYNC	0x00010000	/* write: I/O data completion */
+#define	VKI_O_RSYNC	0x00020000	/* read: I/O completion as for write */
+
+#define	VKI_O_ALT_IO	0x00040000	/* use alternate i/o semantics */
+#define	VKI_O_NOCTTY	0x00008000	/* don't assign controlling terminal */
+
+#define	VKI_O_MASK	(VKI_O_ACCMODE|VKI_O_NONBLOCK|VKI_O_APPEND|\
+			 VKI_O_SHLOCK|VKI_O_EXLOCK|VKI_O_ASYNC|VKI_O_SYNC|\
+			 VKI_O_CREAT|VKI_O_TRUNC|VKI_O_EXCL|VKI_O_DSYNC|\
+			 VKI_O_RSYNC|VKI_O_NOCTTY|VKI_O_ALT_IO|VKI_O_NOFOLLOW)
+
+#define	VKI_FMARK	0x00001000	/* mark during gc() */
+#define	VKI_FDEFER	0x00002000	/* defer for next gc pass */
+#define	VKI_FHASLOCK	0x00004000	/* descriptor holds advisory lock */
+#define	VKI_FKIOCTL	0x80000000	/* kernel originated ioctl */
+/* bits to save after open(2) */
+#define	VKI_FMASK	(VKI_FREAD|VKI_FWRITE|VKI_FAPPEND|VKI_FASYNC|\
+			 VKI_FFSYNC|VKI_FNONBLOCK|VKI_FDSYNC|\
+			 VKI_FRSYNC|VKI_FALTIO)
+/* bits settable by fcntl(F_SETFL, ...) */
+#define	VKI_FCNTLFLAGS	(VKI_FAPPEND|VKI_FASYNC|VKI_FFSYNC|VKI_FNONBLOCK|\
+			 VKI_FDSYNC|VKI_FRSYNC|VKI_FALTIO)
+
+/*
+ * The O_* flags used to have only F* names, which were used in the kernel
+ * and by fcntl.  We retain the F* names for the kernel f_flags field
+ * and for backward compatibility for fcntl.
+ */
+#define	VKI_FAPPEND		VKI_O_APPEND	/* kernel/compat */
+#define	VKI_FASYNC		VKI_O_ASYNC	/* kernel/compat */
+#define	VKI_O_FSYNC		VKI_O_SYNC	/* compat */
+#define	VKI_FNDELAY		VKI_O_NONBLOCK	/* compat */
+#define	VKI_O_NDELAY	        VKI_O_NONBLOCK	/* compat */
+#define	VKI_FNONBLOCK	        VKI_O_NONBLOCK	/* kernel */
+#define	VKI_FFSYNC		VKI_O_SYNC	/* kernel */
+#define	VKI_FDSYNC		VKI_O_DSYNC	/* kernel */
+#define	VKI_FRSYNC		VKI_O_RSYNC	/* kernel */
+#define	VKI_FALTIO	        VKI_O_ALT_IO	/* kernel */
+
+/*
+ * Constants used for fcntl(2)
+ */
+
+/* command values */
+#define	VKI_F_DUPFD		0	/* duplicate file descriptor */
+#define	VKI_F_GETFD		1	/* get file descriptor flags */
+#define VKI_F_SETFD		2	/* set file descriptor flags */
+#define VKI_F_GETFL		3	/* get file status flags */
+#define VKI_F_SETFL		4	/* set file status flags */
+#define VKI_F_GETOWN		5	/* get SIGIO/SIGURG proc/pgrp */
+#define VKI_F_SETOWN		6	/* set SIGIO/SIGURG proc/pgrp */
+#define VKI_F_GETLK		7	/* get record locking information */
+#define VKI_F_SETLK		8	/* set record locking information */
+#define VKI_F_SETLKW		9	/* F_SETLK; wait if blocked */
+#define VKI_F_CLOSEM		10	/* close all fds >= to the one given */
+#define VKI_F_MAXFD		11	/* return the max open fd */
+
+/* file descriptor flags (F_GETFD, F_SETFD) */
+#define VKI_FD_CLOEXEC		1	/* close-on-exec flag */
+
+/* record locking flags (F_GETLK, F_SETLK, F_SETLKW) */
+#define VKI_F_RDLCK		1	/* shared or read lock */
+#define VKI_F_UNLCK		2	/* unlock */
+#define VKI_F_WRLCK		3	/* exclusive or write lock */
+#define VKI_F_WAIT		0x010	/* Wait until lock is granted */
+#define VKI_F_FLOCK		0x020 	/* Use flock(2) semantics for lock */
+#define VKI_F_POSIX		0x040 	/* Use POSIX semantics for lock */
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/sysctl.h

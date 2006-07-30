@@ -261,42 +261,6 @@ typedef struct vki_sigcontext {
 #define VKI_MAP_NORESERVE	0x40		/* don't check for reservations */
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/fcntl.h
-//----------------------------------------------------------------------
-
-#define VKI_O_RDONLY	     00
-#define VKI_O_WRONLY	     01
-#define VKI_O_RDWR	     02
-#define VKI_O_CREAT	   0100	/* not fcntl */
-#define VKI_O_EXCL	   0200	/* not fcntl */
-#define VKI_O_TRUNC	  01000	/* not fcntl */
-#define VKI_O_APPEND	  02000
-#define VKI_O_NONBLOCK	  04000
-
-#define VKI_F_DUPFD		0	/* dup */
-#define VKI_F_GETFD		1	/* get close_on_exec */
-#define VKI_F_SETFD		2	/* set/clear close_on_exec */
-#define VKI_F_GETFL		3	/* get file->f_flags */
-#define VKI_F_SETFL		4	/* set file->f_flags */
-#define VKI_F_GETLK		5
-#define VKI_F_SETLK		6
-#define VKI_F_SETLKW		7
-
-#define VKI_F_SETOWN		8	/*  for sockets. */
-#define VKI_F_GETOWN		9	/*  for sockets. */
-#define VKI_F_SETSIG		10	/*  for sockets. */
-#define VKI_F_GETSIG		11	/*  for sockets. */
-
-#define VKI_F_GETLK64		12	/*  using 'struct flock64' */
-#define VKI_F_SETLK64		13
-#define VKI_F_SETLKW64		14
-
-/* for F_[GET|SET]FL */
-#define VKI_FD_CLOEXEC	1	/* actually anything with low bit set goes */
-
-#define VKI_F_LINUX_SPECIFIC_BASE	1024
-
-//----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/resource.h
 //----------------------------------------------------------------------
 

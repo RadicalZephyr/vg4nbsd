@@ -264,6 +264,7 @@ m_syswrap/syscall-amd64-linux.S:	 libvex_guest_offsets.h
 m_syswrap/syscall-ppc32-linux.S:	 libvex_guest_offsets.h
 m_syswrap/syscall-x86-netbsdelf2.S:	 libvex_guest_offsets.h
 m_syswrap/syswrap-main.c: 		 libvex_guest_offsets.h
+m_machine.c: 		 		libvex_guest_offsets.h
 
 
 libvex_guest_offsets.h:

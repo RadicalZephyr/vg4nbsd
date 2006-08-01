@@ -452,7 +452,7 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
                          prot, flags, fd, offset);
 // XXX Is this correct? - sjamaan. netbsd uses 7 param mmap call -kailash
 # elif defined(VGP_x86_netbsdelf2)
-	VG_(debugLog)(1, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d\n ",offset,offset/VKI_PAGE_SIZE); 
+	VG_(debugLog)(9, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d\n ",offset,offset/VKI_PAGE_SIZE); 
    res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
                           prot, flags, fd,0,  offset  );
 

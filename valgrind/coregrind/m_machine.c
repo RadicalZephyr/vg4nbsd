@@ -84,42 +84,32 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
                                  UChar* area )
 {
    ThreadState* tst;
-#ifdef VGO_netbsdelf2
-   if(offset > 1000)  /* see the horrible hackery in syswrap-main.c line 526 */
-     offset -= 1000;
-#endif
 
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
-   VG_(debugLog)(4,"m_machine","Offset in get regs area = %d\n" , offset);
+
    // Bounds check
-   //#ifndef VGO_netbsdelf2
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
    VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
-   //#else
    if(offset < 1000 ) 
 	   VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
    else {
 	   VG_(printf)("In messing up shadow state\n");
-/* 	   vg_assert(size == 1);  */
+	   vg_assert(size == 1); 
 	   offset -= 1000;  /* Or offset %= 1000 ? */
 	   *(UWord *)area =  ((UChar *)tst->arch.vex_shadow.guest_ESP)[offset];
    }
-   //#endif
 }
 
 void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
                                  const UChar* area )
 {
    ThreadState* tst;
-#ifdef VGO_netbsdelf2
-   if (offset > 1000)
-     offset -= 1000; /* see the horrible hackery in syswrap-main.c line 526 */
-#endif
+
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
-   VG_(debugLog)(4,"m_machine","Offset in set regs area = %d, size of Arch State %d\n" , offset, sizeof(VexGuestArchState));
+
    // Bounds check
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));

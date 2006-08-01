@@ -87,19 +87,24 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
 
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
-
+#ifndef VGO_netbsdelf2
    // Bounds check
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
    VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
-   if(offset < 1000 ) 
-	   VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
-   else {
-	   VG_(printf)("In messing up shadow state\n");
-	   vg_assert(size == 1); 
-	   offset -= 1000;  /* Or offset %= 1000 ? */
-	   *(UWord *)area =  ((UChar *)tst->arch.vex_shadow.guest_ESP)[offset];
+#else
+   if(offset < 1000 ) {
+     vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
+     vg_assert(offset + size <= sizeof(VexGuestArchState));
+     VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
    }
+   else {
+	   VG_(printf)("In messing up shadow state (Get)\n");
+	   //	   vg_assert(size == 1); 
+	   offset -= 1000;  /* Or offset %= 1000 ? */
+	   VG_(memcpy)(area,(void *)((Addr)(&(tst)->arch.vex_shadow.guest_ESP)+offset ), size);
+   }
+#endif
 }
 
 void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
@@ -109,12 +114,27 @@ void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
 
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
-
+#ifndef VGO_netbsdelf2
    // Bounds check
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
-
    VG_(memcpy)( (void*)(((Addr)(&tst->arch.vex_shadow)) + offset), area, size);
+#else 
+    if(offset < 1000) {
+      vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
+      vg_assert(offset + size <= sizeof(VexGuestArchState));
+      VG_(memcpy)( (void*)(((Addr)(&tst->arch.vex_shadow)) + offset), area, size); 
+    }
+    else { 
+
+      VG_(printf)("In messing up shadow state offset = %d (Set) \n",offset);
+      // vg_assert(size == 1); 
+      offset -= 1000;  /* Or offset %= 1000 ? */
+      
+      VG_(memcpy)( (void*)((Addr)(&(tst)->arch.vex_shadow.guest_ESP) + offset), area, size); 
+      
+    }
+#endif
 }
 
 

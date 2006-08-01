@@ -2599,7 +2599,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-   //   VG_(sigstartup_actions)();
+   VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
    // Read suppression file

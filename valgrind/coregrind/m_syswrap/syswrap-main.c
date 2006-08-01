@@ -311,7 +311,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 {
 #if defined(VGP_x86_linux) 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   canonical->sysno = gst->guest_EAXr;
+   canonical->sysno = gst->guest_EAX;
    canonical->arg1  = gst->guest_EBX;
    canonical->arg2  = gst->guest_ECX;
    canonical->arg3  = gst->guest_EDX;

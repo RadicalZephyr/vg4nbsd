@@ -460,7 +460,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    if (canonical->what == SsFailure)  /* SET cf bit (bit 0) */
 	   gst->guest_CC_NDEP |= gst->guest_CC_NDEP & 1;
    else /* (canonical->what == SsSuccess) */ /* UNSET cf bit (still bit 0) */
-	   gst->guest_CC_NDEP ^= gst->guest_CC_NDEP & 1;
+	   gst->guest_CC_NDEP &= ~(gst->guest_CC_NDEP & 1);
    gst->guest_EAX = canonical->val;
    
 #elif defined(VGP_amd64_linux)

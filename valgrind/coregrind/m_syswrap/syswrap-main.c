@@ -412,7 +412,7 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
 
    /* We use the carry flag (very first bit) for status */
    canonical->what = (LibVEX_GuestX86_get_eflags(gst) & 0x01) ? SsFailure  : SsSuccess;
-   canonical->val  = (Int)gst->guest_EAX;
+   canonical->val  = (UWord)gst->guest_EAX;
    
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;

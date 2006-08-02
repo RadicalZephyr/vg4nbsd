@@ -5283,7 +5283,7 @@ PRE(sys_wait4)
    *flags |= SfMayBlock;
    PRINT("sys_wait4 ( %d, %p, %d, %p )", ARG1,ARG2,ARG3,ARG4);
 
-   PRE_REG_READ4(long, "wait4", 
+   PRE_REG_READ4(long, "wait4",
                  vki_pid_t, pid, unsigned int *, status, int, options,
                  struct rusage *, rusage);
    if (ARG2 != (Addr)NULL)

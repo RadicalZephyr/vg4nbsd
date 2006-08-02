@@ -458,7 +458,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
     * of thing.
     */
    if (canonical->what == SsFailure)  /* SET cf bit (bit 0) */
-	   gst->guest_CC_NDEP |= gst->guest_CC_NDEP & 1;
+	   gst->guest_CC_NDEP |= 1;
    else /* (canonical->what == SsSuccess) */ /* UNSET cf bit (still bit 0) */
 	   gst->guest_CC_NDEP &= ~(gst->guest_CC_NDEP & 1);
    gst->guest_EAX = canonical->val;
@@ -870,6 +870,7 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Dump the syscall result back in the guest state.  This is
       a platform-specific action. */
 
+   VG_(printf)("CURRENT STATUS = %d\n", sci->status.what);
    putSyscallStatusIntoGuestState( &sci->status, &tst->arch.vex );
 
    /* Situation now:

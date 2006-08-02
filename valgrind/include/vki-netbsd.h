@@ -185,8 +185,8 @@ struct vki_timespec {
 
 
 struct vki_timeval {
-	vki_time_t	tv_sec;		/* seconds */
-	vki_suseconds_t	tv_usec;	/* microseconds */
+	long	tv_sec;		/* seconds */
+	long	tv_usec;	/* microseconds */
 };
 
 struct vki_timezone {
@@ -794,7 +794,7 @@ struct vki_sctp_getaddrs {
 };
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/resource.h
+// From /usr/include/sys/resource.h
 //----------------------------------------------------------------------
 
 struct	vki_rusage {

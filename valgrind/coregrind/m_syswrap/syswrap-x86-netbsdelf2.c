@@ -134,13 +134,14 @@ asm(
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
 extern
-Int do_syscall_clone_x86_netbsd ( Int (*fn)(void *), 
+Int do_syscall_clone_x86_netbsd (Int (*fn)(void *), 
                                  void* stack, 
                                  Int   flags, 
                                  void* arg,
                                  Int*  child_tid, 
                                  Int*  parent_tid, 
-                                 vki_modify_ldt_t * );
+                                 vki_modify_ldt_t *,
+				  Int *errflag);
 asm(
 "\n"
 "do_syscall_clone_x86_netbsd:\n"
@@ -162,7 +163,9 @@ asm(
 "        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg5: child tid * */
 "        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg4: tls_ptr * */
 "        movl    $"__NR_CLONE", %eax\n"
+"        movl    $0,28+"FSZ"(%esp)\n"
 "        int     $0x80\n"                   /* clone() */
+"	 jc      err\n"
 "        testl   %eax, %eax\n"              /* child if retval == 0 */
 "        jnz     1f\n"
 
@@ -178,6 +181,8 @@ asm(
          /* Hm, exit returned */
 "        ud2\n"
 
+"err:\n"
+"        movl    $1,28+"FSZ"(%esp)\n"
 "1:\n"   /* PARENT or ERROR */
 "        pop     %esi\n"
 "        pop     %edi\n"
@@ -221,6 +226,7 @@ static SysRes do_clone ( ThreadId ptid,
    NSegment*    seg;
    SysRes       res;
    Int          eax;
+   Int          errflag;
    vki_sigset_t blockall, savedmask;
 
    VG_(sigfillset)(&blockall);
@@ -305,9 +311,9 @@ static SysRes do_clone ( ThreadId ptid,
    /* Create the new thread */
    eax = do_syscall_clone_x86_netbsd(
             ML_(start_thread_NORETURN), stack, flags, &VG_(threads)[ctid],
-            child_tidptr, parent_tidptr, NULL
+            child_tidptr, parent_tidptr, NULL, &errflag
          );
-   res = VG_(mk_SysRes_x86_netbsdelf2)( eax );
+   res = VG_(mk_SysRes_x86_netbsdelf2)( eax, errflag );
 
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
@@ -998,7 +1004,7 @@ PRE(sys_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX, tst->arch.vex.guest_CFFLAG ) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;

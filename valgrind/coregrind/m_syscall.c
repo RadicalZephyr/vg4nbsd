@@ -77,13 +77,9 @@ SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag ) {
    return res;
 }
 
-SysRes VG_(mk_SysRes_x86_netbsdelf2) ( Word val ) {
+SysRes VG_(mk_SysRes_x86_netbsdelf2) ( UWord val, UWord errflag ) {
    SysRes res;
-   res.isError = val >= -4095 && val <= -1; /* XXX -NetBSD */
-   /* iserror is set when val is between -1 and -4095 so why are we
-      inversing this if there is an error?  why cant we handle this
-   the ppc32 way?  */
-    res.val     = res.isError ? -val : val;
+   res.isError = errflag; /* XXX -NetBSD */
    res.val = val; 
    return res;
 }
@@ -105,6 +101,7 @@ SysRes VG_(mk_SysRes_Success) ( UWord val ) {
 
 #if defined(VGP_x86_netbsdelf2)
 extern UWord do_syscall_WRK (
+	UWord *carry_addr,
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
           UWord a4, UWord a5, UWord a6, ULong a7
@@ -118,12 +115,15 @@ asm(
 	".text\n"
     "do_syscall_WRK:\n"
     "popl %ecx\n"
+    "popl %edx\n" /* Carry flag address */
+    "movl $0,0+(%edx)\n" /* Store zero there */
     "popl %eax\n"
-    "push %ecx\n"
+    "push %ecx\n" /* C calling convention; "rubbish" before first arg */
     "int $0x80\n"
+    "push %edx\n" /* Even up stack level */
     "push %ecx\n" /* see /usr/src/lib/libc/arch/i386/sys/__syscall.S */
-    "jae 1f\n"
-    "movl $-1,%eax\n"
+    "jnc 1f\n"
+    "movl $1,0+(%edx)\n"  /* Carry set? Then store 1 */
     "1:\n"
     "ret\n"
     ".previous"
@@ -283,11 +283,12 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
   UInt  errflag = (UInt)(ret);
   return VG_(mk_SysRes_ppc32_linux)( val, errflag );
 #elif defined(VGP_x86_netbsdelf2)
-  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6,a7);
+  UWord carry = 0;
+  UWord val = do_syscall_WRK(&carry,sysno,a1,a2,a3,a4,a5,a6,a7);
   SysRes res;
-  res = VG_(mk_SysRes_x86_netbsdelf2)( val );
-  if (sysno == 25)
-	  VG_(debugLog)(1, "do_syscall", "SYSRES AFTER 25: val = %d\nres.val = %d, res.isError = %d\n", sysno, val, res.val, res.isError);
+  res = VG_(mk_SysRes_x86_netbsdelf2)( val, carry );
+  if (sysno == 280)
+	  VG_(debugLog)(1, "do_syscall", "SYSRES AFTER %d: val = %d\nres.val = %d, res.isError = %d, carry = %d\n", sysno, val, res.val, res.isError, carry);
   return res;
 #else
 #  error Unknown platform

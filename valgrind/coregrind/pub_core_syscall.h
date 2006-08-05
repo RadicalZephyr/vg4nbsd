@@ -82,7 +82,7 @@ extern  SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 #endif
 /* This whole cludge is required because our Mmap has  7 arguments! - kailash*/
 extern SysRes VG_(mk_SysRes_x86_linux)      ( Word val );
-extern SysRes VG_(mk_SysRes_x86_netbsdelf2) ( Word val );
+extern SysRes VG_(mk_SysRes_x86_netbsdelf2) ( UWord val, UWord errflag );
 extern SysRes VG_(mk_SysRes_amd64_linux)    ( Word val );
 extern SysRes VG_(mk_SysRes_ppc32_linux)    ( UInt val, UInt errflag );
 extern SysRes VG_(mk_SysRes_Error)          ( UWord val );

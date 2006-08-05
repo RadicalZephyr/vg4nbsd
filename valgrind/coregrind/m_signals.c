@@ -168,7 +168,7 @@ typedef struct SigQueue {
 #  define VG_UCONTEXT_SYSCALL_NUM(uc)    ((uc)->uc_mcontext.__gregs[_REG_EAX])
 #  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                       \
       /* Convert the value in uc_mcontext.eax into a SysRes. */ \
-      VG_(mk_SysRes_x86_netbsdelf2)( (uc)->uc_mcontext.__gregs[_REG_EAX] )
+      VG_(mk_SysRes_x86_netbsdelf2)( (uc)->uc_mcontext.__gregs[_REG_EAX], (uc)->uc_mcontext.__gregs[_REG_EFL] & 1 )
 #else
 #  error Unknown platform
 #endif

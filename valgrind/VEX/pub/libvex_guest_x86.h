@@ -172,20 +172,20 @@ typedef
       UInt  guest_IDFLAG;      /* 52 */
       /* Bit 18 (AC) of eflags stored here, as either 0 or 1. */
       UInt  guest_ACFLAG;      /* 56 */
-
+      UInt  guest_CFFLAG;      /* 60 */
       /* EIP */
-      UInt  guest_EIP;         /* 60 */
+      UInt  guest_EIP;         /* 64 */
 
       /* FPU */
-      ULong guest_FPREG[8];    /* 64 */
-      UChar guest_FPTAG[8];   /* 128 */
-      UInt  guest_FPROUND;    /* 136 */
-      UInt  guest_FC3210;     /* 140 */
-      UInt  guest_FTOP;       /* 144 */
+      ULong guest_FPREG[8];    /* 68 */
+      UChar guest_FPTAG[8];   /* 132 */
+      UInt  guest_FPROUND;    /* 140 */
+      UInt  guest_FC3210;     /* 144 */
+      UInt  guest_FTOP;       /* 148 */
 
       /* SSE */
-      UInt  guest_SSEROUND;   /* 148 */
-      U128  guest_XMM0;       /* 152 */
+      UInt  guest_SSEROUND;   /* 152 */
+      U128  guest_XMM0;       /* 156 */
       U128  guest_XMM1;
       U128  guest_XMM2;
       U128  guest_XMM3;
@@ -219,7 +219,7 @@ typedef
       UInt guest_TILEN;
 
       /* Padding to make it have an 8-aligned size */
-      /* UInt   padding; */
+      UInt   padding;
    }
    VexGuestX86State;
 

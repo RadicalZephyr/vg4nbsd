@@ -134,6 +134,7 @@ cfdone:
 	movl    %ebx, %esp
 
 	/* Restore carry flag */
+	movl	%edx, OFFSET_x86_CFFLAG(%ecx)
 	cmp     $0, %edx
 5:	/* now safe from signals */
 

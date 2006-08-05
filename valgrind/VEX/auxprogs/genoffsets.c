@@ -82,6 +82,8 @@ Int main ( void )
 
   printf("#define OFFSET_x86_EIP %3d\n", 
          offsetof(VexGuestX86State,guest_EIP));
+  printf("#define OFFSET_x86_CFFLAG %3d\n", 
+         offsetof(VexGuestX86State,guest_CFFLAG));
   printf("\n");
 
   // amd64

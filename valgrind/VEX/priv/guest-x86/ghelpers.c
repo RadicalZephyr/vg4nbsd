@@ -739,6 +739,8 @@ UInt LibVEX_GuestX86_get_eflags ( /*IN*/VexGuestX86State* vex_state )
       eflags |= (1<<21);
    if (vex_state->guest_ACFLAG == 1)
       eflags |= (1<<18);
+   if (vex_state->guest_CFFLAG == 1)
+      eflags |= 1;
 					     
    return eflags;
 }
@@ -2190,6 +2192,7 @@ void LibVEX_GuestX86_initialise ( /*OUT*/VexGuestX86State* vex_state )
    vex_state->guest_DFLAG   = 1; /* forwards */
    vex_state->guest_IDFLAG  = 0;
    vex_state->guest_ACFLAG  = 0;
+   vex_state->guest_CFFLAG  = 0;
 
    vex_state->guest_EIP = 0;
 
@@ -2299,23 +2302,24 @@ VexGuestLayout
                  /*  2 */ ALWAYSDEFD(guest_DFLAG),
                  /*  3 */ ALWAYSDEFD(guest_IDFLAG),
                  /*  4 */ ALWAYSDEFD(guest_ACFLAG),
-                 /*  5 */ ALWAYSDEFD(guest_EIP),
-                 /*  6 */ ALWAYSDEFD(guest_FTOP),
-                 /*  7 */ ALWAYSDEFD(guest_FPTAG),
-                 /*  8 */ ALWAYSDEFD(guest_FPROUND),
-                 /*  9 */ ALWAYSDEFD(guest_FC3210),
-                 /* 10 */ ALWAYSDEFD(guest_CS),
-                 /* 11 */ ALWAYSDEFD(guest_DS),
-                 /* 12 */ ALWAYSDEFD(guest_ES),
-                 /* 13 */ ALWAYSDEFD(guest_FS),
-                 /* 14 */ ALWAYSDEFD(guest_GS),
-                 /* 15 */ ALWAYSDEFD(guest_SS),
-                 /* 16 */ ALWAYSDEFD(guest_LDT),
-                 /* 17 */ ALWAYSDEFD(guest_GDT),
-                 /* 18 */ ALWAYSDEFD(guest_EMWARN),
-                 /* 19 */ ALWAYSDEFD(guest_SSEROUND),
-                 /* 20 */ ALWAYSDEFD(guest_TISTART),
-                 /* 21 */ ALWAYSDEFD(guest_TILEN)
+                 /*  5 */ ALWAYSDEFD(guest_CFFLAG),
+                 /*  6 */ ALWAYSDEFD(guest_EIP),
+                 /*  7 */ ALWAYSDEFD(guest_FTOP),
+                 /*  8 */ ALWAYSDEFD(guest_FPTAG),
+                 /*  9 */ ALWAYSDEFD(guest_FPROUND),
+                 /* 10 */ ALWAYSDEFD(guest_FC3210),
+                 /* 11 */ ALWAYSDEFD(guest_CS),
+                 /* 12 */ ALWAYSDEFD(guest_DS),
+                 /* 13 */ ALWAYSDEFD(guest_ES),
+                 /* 14 */ ALWAYSDEFD(guest_FS),
+                 /* 15 */ ALWAYSDEFD(guest_GS),
+                 /* 16 */ ALWAYSDEFD(guest_SS),
+                 /* 17 */ ALWAYSDEFD(guest_LDT),
+                 /* 18 */ ALWAYSDEFD(guest_GDT),
+                 /* 19 */ ALWAYSDEFD(guest_EMWARN),
+                 /* 20 */ ALWAYSDEFD(guest_SSEROUND),
+                 /* 21 */ ALWAYSDEFD(guest_TISTART),
+                 /* 22 */ ALWAYSDEFD(guest_TILEN)
                }
         };
 

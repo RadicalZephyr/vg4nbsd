@@ -411,7 +411,7 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
 
    /* We use the carry flag (very first bit) for status */
-   canonical->what = (LibVEX_GuestX86_get_eflags(gst) & 0x01) ? SsFailure  : SsSuccess;
+   canonical->what = (gst->guest_CFFLAG & 0x01) ? SsFailure  : SsSuccess;
    canonical->val  = (UWord)gst->guest_EAX;
    
 #elif defined(VGP_amd64_linux)
@@ -452,17 +452,9 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
 
    /* We use the carry flag (very first bit) for status */
-   /*
-    * XXX Note that this is a huge hack, we're not using any kind
-    * of abstraction.  Beside geteflags, we also want a seteflags kind
-    * of thing.
-    */
-   if (canonical->what == SsFailure)  /* SET cf bit (bit 0) */
-	   gst->guest_CC_NDEP |= 1;
-   else /* (canonical->what == SsSuccess) */ /* UNSET cf bit (still bit 0) */
-	   gst->guest_CC_NDEP &= ~(gst->guest_CC_NDEP & 1);
+   gst->guest_CFFLAG = canonical->what == SsFailure ? 1 : 0;
    gst->guest_EAX = canonical->val;
-   
+
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    vg_assert(canonical->what == SsSuccess 

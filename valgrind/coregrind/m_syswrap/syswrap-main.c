@@ -343,7 +343,6 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAX;
-   VG_(debugLog)(9,"syswrap-main","syscall #%d\n", canonical->sysno);
    canonical->argp  = (UInt*)gst->guest_ESP + 1;
    
 #else
@@ -411,7 +410,7 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
 
    /* We use the carry flag (very first bit) for status */
-   canonical->what = (gst->guest_CFFLAG & 0x01) ? SsFailure  : SsSuccess;
+   canonical->what = (LibVEX_GuestX86_get_eflags(gst) & 0x01) ? SsFailure  : SsSuccess;
    canonical->val  = (UWord)gst->guest_EAX;
    
 #elif defined(VGP_amd64_linux)
@@ -450,11 +449,9 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    }
 #elif defined (VGP_x86_netbsdelf2)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-
-   /* We use the carry flag (very first bit) for status */
-   gst->guest_CFFLAG = canonical->what == SsFailure ? 1 : 0;
+   LibVEX_GuestX86_put_eflag_c(canonical->what == SsFailure ? 1 : 0, gst);
    gst->guest_EAX = canonical->val;
-
+   
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    vg_assert(canonical->what == SsSuccess 
@@ -862,8 +859,8 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Dump the syscall result back in the guest state.  This is
       a platform-specific action. */
 
+   VG_(printf)("CURRENT STATUS = %d\n", sci->status.what);
    putSyscallStatusIntoGuestState( &sci->status, &tst->arch.vex );
-   VG_(printf)("Client EAX = %d, CLIENT CFFLAG = %d\n", tst->arch.vex.guest_EAX, tst->arch.vex.guest_CFFLAG);
 
    /* Situation now:
       - the guest state is now correctly modified following the syscall

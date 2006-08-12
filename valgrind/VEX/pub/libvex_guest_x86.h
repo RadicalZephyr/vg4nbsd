@@ -172,20 +172,20 @@ typedef
       UInt  guest_IDFLAG;      /* 52 */
       /* Bit 18 (AC) of eflags stored here, as either 0 or 1. */
       UInt  guest_ACFLAG;      /* 56 */
-      UInt  guest_CFFLAG;      /* 60 */
+
       /* EIP */
-      UInt  guest_EIP;         /* 64 */
+      UInt  guest_EIP;         /* 60 */
 
       /* FPU */
-      ULong guest_FPREG[8];    /* 68 */
-      UChar guest_FPTAG[8];   /* 132 */
-      UInt  guest_FPROUND;    /* 140 */
-      UInt  guest_FC3210;     /* 144 */
-      UInt  guest_FTOP;       /* 148 */
+      ULong guest_FPREG[8];    /* 64 */
+      UChar guest_FPTAG[8];   /* 128 */
+      UInt  guest_FPROUND;    /* 136 */
+      UInt  guest_FC3210;     /* 140 */
+      UInt  guest_FTOP;       /* 144 */
 
       /* SSE */
-      UInt  guest_SSEROUND;   /* 152 */
-      U128  guest_XMM0;       /* 156 */
+      UInt  guest_SSEROUND;   /* 148 */
+      U128  guest_XMM0;       /* 152 */
       U128  guest_XMM1;
       U128  guest_XMM2;
       U128  guest_XMM3;
@@ -219,7 +219,7 @@ typedef
       UInt guest_TILEN;
 
       /* Padding to make it have an 8-aligned size */
-      UInt   padding;
+      /* UInt   padding; */
    }
    VexGuestX86State;
 
@@ -277,7 +277,12 @@ void LibVEX_GuestX86_initialise ( /*OUT*/VexGuestX86State* vex_state );
 extern 
 UInt LibVEX_GuestX86_get_eflags ( /*IN*/VexGuestX86State* vex_state );
 
-
+/* Set the carry flag in the given state to 'new_carry_flag', which
+   should be zero or one. */
+extern
+void
+LibVEX_GuestX86_put_eflag_c ( UInt new_carry_flag,
+                              /*MOD*/VexGuestX86State* vex_state );
 
 #endif /* ndef __LIBVEX_PUB_GUEST_X86_H */
 

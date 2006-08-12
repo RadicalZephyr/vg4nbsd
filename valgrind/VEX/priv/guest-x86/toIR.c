@@ -200,7 +200,6 @@ static IRBB* irbb;
 #define OFFB_DFLAG     offsetof(VexGuestX86State,guest_DFLAG)
 #define OFFB_IDFLAG    offsetof(VexGuestX86State,guest_IDFLAG)
 #define OFFB_ACFLAG    offsetof(VexGuestX86State,guest_ACFLAG)
-#define OFFB_CFFLAG    offsetof(VexGuestX86State,guest_CFFLAG)
 #define OFFB_FTOP      offsetof(VexGuestX86State,guest_FTOP)
 #define OFFB_FC3210    offsetof(VexGuestX86State,guest_FC3210)
 #define OFFB_FPROUND   offsetof(VexGuestX86State,guest_FPROUND)
@@ -11253,18 +11252,6 @@ DisResult disInstr_X86_WRK (
                   mkU32(1))) 
           );
 
-      /* Set the Carry Flag */
-      stmt( IRStmt_Put( 
-		    OFFB_CFFLAG,
-		    IRExpr_Mux0X( 
-			    unop(Iop_32to8,
-				 binop(Iop_And32, 
-				       mkexpr(t1),
-				       mkU32(1))),
-			    mkU32(0), 
-			    mkU32(1))) 
-			    );
-
       /* And set the AC flag.  If setting it 1 to, emit an emulation
          warning. */
       stmt( IRStmt_Put( 
@@ -11443,20 +11430,11 @@ DisResult disInstr_X86_WRK (
                               mkU32(1<<18)))
             );
 
-      /* And the CF flag */
-      t6 = newTemp(Ity_I32);
-      assign( t6, binop(Iop_Or32,
-                        mkexpr(t5),
-                        binop(Iop_And32,
-                              IRExpr_Get(OFFB_CFFLAG,Ity_I32),
-                              mkU32(1)))
-			      );
-
       /* if sz==2, the stored value needs to be narrowed. */
       if (sz == 2)
-        storeLE( mkexpr(t1), unop(Iop_32to16,mkexpr(t6)) );
+        storeLE( mkexpr(t1), unop(Iop_32to16,mkexpr(t5)) );
       else 
-        storeLE( mkexpr(t1), mkexpr(t6) );
+        storeLE( mkexpr(t1), mkexpr(t5) );
 
       DIP("pushf%c\n", nameISize(sz));
       break;

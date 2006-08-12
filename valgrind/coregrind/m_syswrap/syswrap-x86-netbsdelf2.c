@@ -134,14 +134,14 @@ asm(
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
 extern
-Int do_syscall_clone_x86_netbsd (Int (*fn)(void *), 
+Int do_syscall_clone_x86_netbsd (Word (*fn)(void *), 
                                  void* stack, 
                                  Int   flags, 
                                  void* arg,
                                  Int*  child_tid, 
                                  Int*  parent_tid, 
                                  vki_modify_ldt_t *,
-				  Int *errflag);
+				 UWord *errflag);
 asm(
 "\n"
 "do_syscall_clone_x86_netbsd:\n"
@@ -226,7 +226,7 @@ static SysRes do_clone ( ThreadId ptid,
    NSegment*    seg;
    SysRes       res;
    Int          eax;
-   Int          errflag;
+   UWord        errflag;
    vki_sigset_t blockall, savedmask;
 
    VG_(sigfillset)(&blockall);
@@ -1004,7 +1004,7 @@ PRE(sys_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX, tst->arch.vex.guest_CFFLAG ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX, LibVEX_GuestX86_get_eflags(&tst->arch.vex) & 1) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;

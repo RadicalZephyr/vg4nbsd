@@ -85,7 +85,7 @@ static void check_mmap(SysRes res, Addr base, SizeT len)
  */
 struct ume_auxv *VG_(find_auxv)(UWord* sp)
 {
-	char ** argu;
+	const char ** argu;
 	long argc = 0;
 	argu = ( const char **) &sp[1];
 	VG_(printf)("The argu is %s\n",argu[0]);

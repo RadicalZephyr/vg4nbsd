@@ -406,6 +406,17 @@ Int VG_(getegid) ( void )
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
    return VG_(do_syscall0)(__NR_getegid) . val;
 }
+Int VG_(getuid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getuid) . val;
+}
+
+Int VG_(getgid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getgid) . val;
+}
 
 /* Get supplementary groups into list[0 .. size-1].  Returns the
    number of groups written, or -1 if error.  Note that in order to be

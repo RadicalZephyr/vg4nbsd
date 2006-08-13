@@ -211,11 +211,11 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
    if (act == NULL) {
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
-				  NULL, 0);
+				  (UWord)NULL, 0);
    } else {
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
-				  __sigtramp_sigcontext_1, 1);
+				  (UWord)__sigtramp_sigcontext_1, 1);
    }
    return res.isError ? -1 : 0;
 #endif

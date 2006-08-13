@@ -313,7 +313,9 @@ Addr setup_client_stack( void*  init_sp,
    Addr *ptr;
    struct ume_auxv *auxv;
    const struct ume_auxv *orig_auxv;
+#if !defined(VGO_netbsdelf2)
    const struct ume_auxv *cauxv;
+#endif
    unsigned stringsize;		/* total size of strings in bytes */
    unsigned auxsize;		/* total size of auxv in bytes */
    Int argc;			/* total argc */
@@ -449,7 +451,7 @@ Addr setup_client_stack( void*  init_sp,
         anon_size += VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
      }
 
-     VG_(debugLog)(2, "main", "REDZONE size = 0x%x\n", VG_STACK_REDZONE_SZB);
+     VG_(debugLog)(2, "main", "REDZONE size = 0x%lx\n", VG_STACK_REDZONE_SZB);
 
      vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
@@ -533,13 +535,13 @@ Addr setup_client_stack( void*  init_sp,
    auxv[5].a_type = AT_FLAGS;
    auxv[6].a_type = AT_ENTRY; /* overwritten later */
    auxv[7].a_type = AT_EUID;
-   auxv[7].u.a_val = VG_(geteuid);
+   auxv[7].u.a_val = VG_(geteuid)();
    auxv[8].a_type = AT_RUID;
-   auxv[8].u.a_val =   VG_(geteuid);
+   auxv[8].u.a_val =   VG_(getuid)();
    auxv[9].a_type = AT_EGID;
-   auxv[9].u.a_val =   VG_(getegid);
+   auxv[9].u.a_val =   VG_(getegid)();
    auxv[9].a_type = AT_RGID;
-   auxv[9].u.a_val =   VG_(getegid);
+   auxv[9].u.a_val =   VG_(getgid)();
    auxv[10].a_type = AT_NULL;
 #endif
 #  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)

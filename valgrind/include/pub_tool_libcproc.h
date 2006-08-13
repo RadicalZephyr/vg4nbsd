@@ -68,6 +68,8 @@ extern Int VG_(gettid)  ( void );
 extern Int VG_(getpid)  ( void );
 extern Int VG_(getppid) ( void );
 extern Int VG_(getpgrp) ( void );
+extern Int VG_(getuid) ( void );
+extern Int VG_(getgid) ( void );
 extern Int VG_(geteuid) ( void );
 extern Int VG_(getegid) ( void );
 

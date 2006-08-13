@@ -42,6 +42,8 @@
                                  // VG_IS_PAGE_ALIGNED
                                  // VG_PGROUNDDN, VG_PGROUNDUP
 
+#include "pub_core_libcprint.h"
+
 #include "pub_core_syscall.h"    // VG_(do_syscallN)
                                  // VG_(mk_SysRes_Error)
                                  // VG_(mk_SysRes_Success)
@@ -452,7 +454,7 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
                          prot, flags, fd, offset);
 // XXX Is this correct? - sjamaan. netbsd uses 7 param mmap call -kailash
 # elif defined(VGP_x86_netbsdelf2)
-	VG_(debugLog)(9, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d\n ",offset,offset/VKI_PAGE_SIZE); 
+	VG_(debugLog)(9, "aspacemgr ", "mmap : offset = %d\n offset/Page size = %d\n ",(int)offset,(int)(offset/VKI_PAGE_SIZE));
    res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
                           prot, flags, fd,0,  offset  );
 
@@ -2319,7 +2321,7 @@ SysRes VG_(am_mmap_file_fixed_client)
       any resulting failure immediately. */
 
 
-	VG_(debugLog)(1, "aspacemgr", "offset = %d\n ",offset); 
+	VG_(debugLog)(1, "aspacemgr", "offset = %d\n ",(int)offset); 
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
 	     VKI_MAP_FIXED|VKI_MAP_PRIVATE, 

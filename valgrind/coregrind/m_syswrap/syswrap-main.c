@@ -343,7 +343,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    canonical->sysno = gst->guest_EAX;
-   canonical->argp  = (UInt*)gst->guest_ESP + 1;
+   canonical->argp  = (UWord*)gst->guest_ESP + 1;
    
 #else
    I_die_here;

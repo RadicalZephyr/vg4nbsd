@@ -2313,7 +2313,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDXY(__NR_uuidgen,          sys_uuidgen),         // 355
    GENX_(356,                    sys_ni_syscall),     // 356
    GENX_(357,                    sys_ni_syscall),     // 357
-   GENX_(358,                    sys_ni_syscall),     // 358
+   NBSDXY(__NR_fstatvfs1,         sys_fstatvfs1),     // 358
    GENX_(359,                    sys_ni_syscall),     // 359
    GENX_(360,                    sys_ni_syscall),     // 360
    GENX_(361,                    sys_ni_syscall),     // 361

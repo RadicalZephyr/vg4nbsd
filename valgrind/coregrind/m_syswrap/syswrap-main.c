@@ -859,7 +859,7 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Dump the syscall result back in the guest state.  This is
       a platform-specific action. */
 
-   VG_(printf)("CURRENT STATUS = %d\n", sci->status.what);
+   VG_(debugLog)(9,"syswrap-main","CURRENT STATUS = %d\n", sci->status.what);
    putSyscallStatusIntoGuestState( &sci->status, &tst->arch.vex );
 
    /* Situation now:

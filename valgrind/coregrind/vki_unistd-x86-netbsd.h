@@ -902,6 +902,9 @@
 
 #define	__NR_uuidgen	355
 
+/* syscall: "fstatvfs1" ret: "int" args: "int" "struct statvfs *" "int" */
+#define __NR_fstatvfs1   358
+
 
 /* syscall: "__fstat30" ret: "int" args: "int" "struct stat *" */
 #define __NR___fstat30   388

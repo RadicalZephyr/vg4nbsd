@@ -1453,6 +1453,7 @@ PRE(sys_issetugid)
    //I_die_here;  // Do we even need to do anything here?  I don't think so...
 }
 
+
 PRE(sys_kqueue)
 {
    I_die_here;
@@ -1489,6 +1490,14 @@ POST(sys_uuidgen)
    I_die_here;
 }
 
+PRE(sys_fstatvfs1)
+{
+  I_die_here;
+}
+POST(sys_fstatvfs1)
+{
+  I_die_here;
+}
 #undef PRE
 #undef POST
 

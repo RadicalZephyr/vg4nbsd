@@ -64,7 +64,7 @@
       1  some sanity checking, fast cases are used
       2  max sanity checking, only slow cases are used
 */
-#define VG_DEBUG_MEMORY 0
+#define VG_DEBUG_MEMORY 2
 
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
 

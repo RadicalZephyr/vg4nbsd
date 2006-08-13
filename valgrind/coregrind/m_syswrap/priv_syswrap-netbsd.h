@@ -158,6 +158,7 @@ DECL_TEMPLATE(netbsdelf2, sys_kqueue);
 DECL_TEMPLATE(netbsdelf2, sys_kevent);
 DECL_TEMPLATE(netbsdelf2, sys_fsync_range);
 DECL_TEMPLATE(netbsdelf2, sys_uuidgen);
+DECL_TEMPLATE(netbsdelf2, sys_fstatvfs1);
 
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 

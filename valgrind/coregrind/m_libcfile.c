@@ -32,18 +32,15 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_mallocfree.h"
-#include "pub_core_options.h"
+#include "pub_core_libcprint.h"     // VG_(sprintf)
+#include "pub_core_libcproc.h"      // VG_(getpid), VG_(getppid)
+#include "pub_core_clientstate.h"   // VG_(fd_hard_limit)
 #include "pub_core_syscall.h"
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
    File stuff
    ------------------------------------------------------------------ */
-
-/* Application-visible file descriptor limits */
-Int VG_(fd_soft_limit) = -1;
-Int VG_(fd_hard_limit) = -1;
 
 static inline Bool fd_exists(Int fd)
 {
@@ -69,11 +66,26 @@ Int VG_(safe_fd)(Int oldfd)
    return newfd;
 }
 
-/* Returns -1 on failure. */
-Int VG_(open) ( const Char* pathname, Int flags, Int mode )
+/* Given a file descriptor, attempt to deduce its filename.  To do
+   this, we use /proc/self/fd/<FD>.  If this doesn't point to a file,
+   or if it doesn't exist, we return False. */
+Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
+{
+   HChar tmp[64];
+
+   VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
+   VG_(memset)(buf, 0, n_buf);
+
+   if (VG_(readlink)(tmp, buf, n_buf) > 0 && buf[0] == '/')
+      return True;
+   else
+      return False;
+}
+
+SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 {  
    SysRes res = VG_(do_syscall3)(__NR_open, (UWord)pathname, flags, mode);
-   return res.isError ? -1 : res.val;
+   return res;
 }
 
 void VG_(close) ( Int fd )
@@ -92,23 +104,66 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
    return res.isError ? -1 : res.val;
 }
+/* XXX (sjamaan): WTF is this for, again? */
+/* THis is for VG_pipe to work under netbsd - kailash. Our pipe has a different semantic than Linux's pipe, hence we have a kludge to transform it back and forth. While keeping VG_(pipe)'s semantics the same,  otherwise we would ahve to hack around everywhere vg_pope is implemented and change it around.   */
+#if defined (VGP_x86_netbsdelf2) 
+/* Int VG_(do_pipe_inner)(int pipeno ,Int fd[2]) */
+/* { */
+	asm(
+		"do_pipe_inner:\n"
+		"popl %ecx\n"
+		"popl %eax\n"
+		"push %ecx\n"
+		"int     $0x80\n"
+		"jb      1f\n"
+		"movl    4(%esp),%ecx\n"  /* fill in fd1 and 2 */
+		"movl    %eax,(%ecx)\n"
+		"movl    %edx,4(%ecx)\n"
+		"movl    $0,%eax\n"
+		"ret\n"
+		"1:\n"
+		"negl    %eax\n"
+		"ret\n"
+		);
 
+Int VG_(pipe) ( Int fd[2])
+{ int ret;
+	ret =   do_pipe_inner(__NR_pipe, fd);
+VG_(printf)("fd 1 is %d\n",fd[0]);
+VG_(printf)("fd 2 is %d\n",fd[1]);
+
+	return ret;
+}
+
+#else
 Int VG_(pipe) ( Int fd[2] )
 {
    SysRes res = VG_(do_syscall1)(__NR_pipe, (UWord)fd);
    return res.isError ? -1 : 0;
 }
-
-OffT VG_(lseek) ( Int fd, OffT offset, Int whence)
+#endif 
+#if defined (VGO_netbsdelf2)
+OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
+{
+	SysRes res = VG_(do_syscall4)(__NR_lseek, fd,0 /* pad */, offset, whence);
+   return res.isError ? (-1) : 0;
+   /* if you change the error-reporting conventions of this, also
+      change VG_(pread) and all other usage points. */
+}
+#else
+OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
    SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
-   return res.isError ? (-1) : 0;
+   return res.isError ? (-1) : res.val;
+   /* if you change the error-reporting conventions of this, also
+      change VG_(pread) and all other usage points. */
 }
+#endif 
 
-Int VG_(stat) ( Char* file_name, struct vki_stat* buf )
+SysRes VG_(stat) ( Char* file_name, struct vki_stat* buf )
 {
    SysRes res = VG_(do_syscall2)(__NR_stat, (UWord)file_name, (UWord)buf);
-   return res.isError ? (-1) : 0;
+   return res;
 }
 
 Int VG_(fstat) ( Int fd, struct vki_stat* buf )
@@ -117,10 +172,24 @@ Int VG_(fstat) ( Int fd, struct vki_stat* buf )
    return res.isError ? (-1) : 0;
 }
 
-Int VG_(dup2) ( Int oldfd, Int newfd )
+Int VG_(fsize) ( Int fd )
 {
-   SysRes res = VG_(do_syscall2)(__NR_dup2, oldfd, newfd);
-   return res.isError ? (-1) : res.val;
+   struct vki_stat buf;
+   SysRes res = VG_(do_syscall2)(__NR_fstat, fd, (UWord)&buf);
+   return res.isError ? (-1) : buf.st_size;
+}
+
+Bool VG_(is_dir) ( HChar* f )
+{
+   struct vki_stat buf;
+   SysRes res = VG_(do_syscall2)(__NR_stat, (UWord)f, (UWord)&buf);
+   return res.isError ? False
+                      : VKI_S_ISDIR(buf.st_mode) ? True : False;
+}
+
+SysRes VG_(dup) ( Int oldfd )
+{
+   return VG_(do_syscall1)(__NR_dup, oldfd);
 }
 
 /* Returns -1 on error. */
@@ -144,31 +213,12 @@ Int VG_(unlink) ( Char* file_name )
 
 /* Nb: we do not allow the Linux extension which malloc()s memory for the
    buffer if buf==NULL, because we don't want Linux calling malloc() */
-Char* VG_(getcwd) ( Char* buf, SizeT size )
+Bool VG_(getcwd) ( Char* buf, SizeT size )
 {
    SysRes res;
    vg_assert(buf != NULL);
    res = VG_(do_syscall2)(__NR_getcwd, (UWord)buf, size);
-   return res.isError ? ((Char*)NULL) : (Char*)res.val;
-}
-
-/* Alternative version that does allocate the memory.  Easier to use. */
-Bool VG_(getcwd_alloc) ( Char** out )
-{
-   SizeT size = 4;
-
-   *out = NULL;
-   while (True) {
-      *out = VG_(malloc)(size);
-      if (NULL == VG_(getcwd)(*out, size)) {
-         VG_(free)(*out);
-         if (size > 65535)
-            return False;
-         size *= 2;
-      } else {
-         return True;
-      }
-   }
+   return res.isError ? False : True;
 }
 
 Int VG_(readlink) (Char* path, Char* buf, UInt bufsiz)
@@ -187,6 +237,139 @@ Int VG_(getdents) (UInt fd, struct vki_dirent *dirp, UInt count)
    return res.isError ? -1 : res.val;
 }
 
+/* Check accessibility of a file.  Returns zero for access granted,
+   nonzero otherwise. */
+Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
+{
+#if defined(VGO_linux) || defined(VGO_netbsdelf2) 
+/* I have verified that the numbers are the same for netbsd - kailash
+ * vg4nbsd */ 
+   /* Very annoyingly, I cannot find any definition for R_OK et al in
+      the kernel interfaces.  Therefore I reluctantly resort to
+      hardwiring in these magic numbers that I determined by
+      experimentation. */
+   UWord w = (irusr ? 4/*R_OK*/ : 0)
+             | (iwusr ? 2/*W_OK*/ : 0)
+             | (ixusr ? 1/*X_OK*/ : 0);
+   SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
+   return res.isError ? 1 : res.val;
+#elif defined(VGO_netbsdelf2) 
+   I_die_here;
+#else
+#  error "Don't know how to do VG_(access) on this OS"
+#endif
+}
+
+/* 
+   Emulate the normal Unix permissions checking algorithm.
+
+   If owner matches, then use the owner permissions, else
+   if group matches, then use the group permissions, else
+   use other permissions.
+
+   Note that we can't deal with SUID/SGID, so we refuse to run them
+   (otherwise the executable may misbehave if it doesn't have the
+   permissions it thinks it does).
+*/
+/* returns: 0 = success, non-0 is failure */
+Int VG_(check_executable)(HChar* f)
+{
+   struct vki_stat st;
+   SysRes res;
+
+   res = VG_(stat)(f, &st);
+   if (res.isError) {
+      return res.val;
+   }
+
+   if (st.st_mode & (VKI_S_ISUID | VKI_S_ISGID)) {
+      //VG_(printf)("Can't execute suid/sgid executable %s\n", exe);
+      return VKI_EACCES;
+   }
+
+   if (VG_(geteuid)() == st.st_uid) {
+      if (!(st.st_mode & VKI_S_IXUSR))
+         return VKI_EACCES;
+   } else {
+      int grpmatch = 0;
+
+      if (VG_(getegid)() == st.st_gid)
+	 grpmatch = 1;
+      else {
+	 UInt groups[32];
+	 Int ngrp = VG_(getgroups)(32, groups);
+	 Int i;
+         /* ngrp will be -1 if VG_(getgroups) failed. */
+         for (i = 0; i < ngrp; i++) {
+	    if (groups[i] == st.st_gid) {
+	       grpmatch = 1;
+	       break;
+	    }
+         }
+      }
+
+      if (grpmatch) {
+	 if (!(st.st_mode & VKI_S_IXGRP)) {
+            return VKI_EACCES;
+         }
+      } else if (!(st.st_mode & VKI_S_IXOTH)) {
+         return VKI_EACCES;
+      }
+   }
+
+   return 0;
+}
+
+SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset )
+{
+   OffT off = VG_(lseek)( fd, (OffT)offset, VKI_SEEK_SET);
+   if (off < 0)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   return VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
+}
+
+/* Create and open (-rw------) a tmp file name incorporating said arg.
+   Returns -1 on failure, else the fd of the file.  If fullname is
+   non-NULL, the file's name is written into it.  The number of bytes
+   written is guaranteed not to exceed 64+strlen(part_of_name). */
+
+Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname )
+{
+   HChar  buf[200];
+   Int    n, tries, fd;
+   UInt   seed;
+   SysRes sres;
+
+   vg_assert(part_of_name);
+   n = VG_(strlen)(part_of_name);
+   vg_assert(n > 0 && n < 100);
+
+   seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
+
+   tries = 0;
+   while (True) {
+      if (tries > 10) 
+         return -1;
+      VG_(sprintf)( buf, "/tmp/valgrind_%s_%08x", 
+                         part_of_name, VG_(random)( &seed ));
+      if (0)
+         VG_(printf)("VG_(mkstemp): trying: %s\n", buf);
+
+      sres = VG_(open)(buf,
+                       VKI_O_CREAT|VKI_O_RDWR|VKI_O_EXCL|VKI_O_TRUNC,
+                       VKI_S_IRUSR|VKI_S_IWUSR);
+      if (sres.isError)
+         continue;
+      /* VG_(safe_fd) doesn't return if it fails. */
+      fd = VG_(safe_fd)( sres.val );
+      if (fullname)
+         VG_(strcpy)( fullname, buf );
+      return fd;
+   }
+   /* NOTREACHED */
+}
+
+
 /* ---------------------------------------------------------------------
    Socket-related stuff.  This is very Linux-kernel specific.
    ------------------------------------------------------------------ */
@@ -201,19 +384,46 @@ static
 Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen );
 
-static 
-UInt my_htonl ( UInt x )
+UInt VG_(htonl) ( UInt x )
 {
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
    return
       (((x >> 24) & 0xFF) << 0) | (((x >> 16) & 0xFF) << 8)
       | (((x >> 8) & 0xFF) << 16) | (((x >> 0) & 0xFF) << 24);
+#  endif
 }
 
-static
-UShort my_htons ( UShort x )
+UInt VG_(ntohl) ( UInt x )
 {
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
+   return
+      (((x >> 24) & 0xFF) << 0) | (((x >> 16) & 0xFF) << 8)
+      | (((x >> 8) & 0xFF) << 16) | (((x >> 0) & 0xFF) << 24);
+#  endif
+}
+
+UShort VG_(htons) ( UShort x )
+{
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
    return
       (((x >> 8) & 0xFF) << 0) | (((x >> 0) & 0xFF) << 8);
+#  endif
+}
+
+UShort VG_(ntohs) ( UShort x )
+{
+#  if defined(VG_BIGENDIAN)
+   return x;
+#  else
+   return
+      (((x >> 8) & 0xFF) << 0) | (((x >> 0) & 0xFF) << 8);
+#  endif
 }
 
 
@@ -244,22 +454,22 @@ Int VG_(connect_via_socket)( UChar* str )
    //               (UInt)port );
 
    servAddr.sin_family = VKI_AF_INET;
-   servAddr.sin_addr.s_addr = my_htonl(ip);
-   servAddr.sin_port = my_htons(port);
+   servAddr.sin_addr.s_addr = VG_(htonl)(ip);
+   servAddr.sin_port = VG_(htons)(port);
 
    /* create socket */
    sd = my_socket(VKI_AF_INET, VKI_SOCK_STREAM, 0 /* IPPROTO_IP ? */);
    if (sd < 0) {
-     /* this shouldn't happen ... nevertheless */
-     return -2;
+      /* this shouldn't happen ... nevertheless */
+      return -2;
    }
-			
+		
    /* connect to server */
    res = my_connect(sd, (struct vki_sockaddr_in *) &servAddr, 
                         sizeof(servAddr));
    if (res < 0) {
-     /* connection failed */
-     return -2;
+      /* connection failed */
+      return -2;
    }
 
    return sd;
@@ -313,7 +523,7 @@ Int parse_inet_addr_and_port ( UChar* str, UInt* ip_addr, UShort* port )
 static
 Int my_socket ( Int domain, Int type, Int protocol )
 {
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[3];
    args[0] = domain;
@@ -321,18 +531,26 @@ Int my_socket ( Int domain, Int type, Int protocol )
    args[2] = protocol;
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_SOCKET, (UWord)&args);
    return res.isError ? -1 : res.val;
-#  else
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
+
+#elif defined(VGP_amd64_linux)
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_socket, domain, type, protocol );
+   return res.isError ? -1 : res.val;
+
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown arch
+#endif
 }
 
 static
 Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen )
 {
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[3];
    args[0] = sockfd;
@@ -340,11 +558,19 @@ Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr,
    args[2] = addrlen;
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_CONNECT, (UWord)&args);
    return res.isError ? -1 : res.val;
-#  else
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
+
+#elif defined(VGP_amd64_linux)
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_connect, sockfd, (UWord)serv_addr, addrlen);
+   return res.isError ? -1 : res.val;
+
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown arch
+#endif
 }
 
 Int VG_(write_socket)( Int sd, void *msg, Int count )
@@ -355,7 +581,7 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
       error is still returned. */
    Int flags = VKI_MSG_NOSIGNAL;
 
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    SysRes res;
    UWord  args[4];
    args[0] = sd;
@@ -364,21 +590,26 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
    args[3] = flags;
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_SEND, (UWord)&args);
    return res.isError ? -1 : res.val;
-#  else
-   // AMD64/Linux doesn't define __NR_socketcall... see comment above
-   // VG_(sigpending)() for more details.
-   //
-   // NOTE: Remember to put the Int flags in the Linux block if we're not going
-   // to use it here.
+
+#elif defined(VGP_amd64_linux)
+   SysRes res;
+   res = VG_(do_syscall6)(__NR_sendto, sd, (UWord)msg, count, flags, 0,0);
+   return res.isError ? -1 : res.val;
+
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown arch
+#endif
 }
 
 Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen)
 {
    SysRes res;
 
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    UWord  args[3];
    args[0] = sd;
    args[1] = (UWord)name;
@@ -386,24 +617,25 @@ Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen)
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_GETSOCKNAME, (UWord)&args);
    return res.isError ? -1 : res.val;
 
-#  elif defined(VGP_amd64_linux)
+#elif defined(VGP_amd64_linux)
    res = VG_(do_syscall3)( __NR_getsockname,
                            (UWord)sd, (UWord)name, (UWord)namelen );
    return res.isError ? -1 : res.val;
 
-#  else
-   //
-   // NOTE: Remember to put the SysRes res in #ifndef blahblah if we don't
-   // intend to use it here.
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown arch
+#endif
 }
 
 Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen)
 {
    SysRes res;
 
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    UWord  args[3];
    args[0] = sd;
    args[1] = (UWord)name;
@@ -411,14 +643,18 @@ Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen)
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_GETPEERNAME, (UWord)&args);
    return res.isError ? -1 : res.val;
 
-#  elif defined(VGP_amd64_linux)
+#elif defined(VGP_amd64_linux)
    res = VG_(do_syscall3)( __NR_getpeername,
                            (UWord)sd, (UWord)name, (UWord)namelen );
    return res.isError ? -1 : res.val;
 
-#  else
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown archx
+#endif
 }
 
 Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
@@ -426,7 +662,7 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
 {
    SysRes res;
 
-#  if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
    UWord  args[5];
    args[0] = sd;
    args[1] = level;
@@ -436,18 +672,19 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
    res = VG_(do_syscall2)(__NR_socketcall, VKI_SYS_GETSOCKOPT, (UWord)&args);
    return res.isError ? -1 : res.val;
 
-#  elif defined(VGP_amd64_linux)
+#elif defined(VGP_amd64_linux)
    res = VG_(do_syscall5)( __NR_getsockopt,
                            (UWord)sd, (UWord)level, (UWord)optname, 
                            (UWord)optval, (UWord)optlen );
    return res.isError ? -1 : res.val;
 
-#  else
-   //
-   // NOTE: Remember to put the SysRes res in #ifndef blahblah if we don't
-   // intend to use it here.
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: XXX TODO
    I_die_here;
-#  endif
+
+#else
+#  error Unknown arch
+#endif
 }
 
 

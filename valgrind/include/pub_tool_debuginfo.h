@@ -100,13 +100,14 @@ typedef struct _SegInfo SegInfo;
 
 /* Returns NULL if the SegInfo isn't found.  It doesn't matter if debug info
    is present or not. */
-extern SegInfo* VG_(get_obj)  ( Addr a );
+extern       SegInfo* VG_(find_seginfo)      ( Addr a );
 
-extern const SegInfo* VG_(next_seginfo)  ( const SegInfo *si );
-extern       Addr     VG_(seg_start)     ( const SegInfo *si );
-extern       SizeT    VG_(seg_size)      ( const SegInfo *si );
-extern const UChar*   VG_(seg_filename)  ( const SegInfo *si );
-extern       ULong    VG_(seg_sym_offset)( const SegInfo *si );
+extern const SegInfo* VG_(next_seginfo)      ( const SegInfo *si );
+extern       Addr     VG_(seginfo_start)     ( const SegInfo *si );
+extern       SizeT    VG_(seginfo_size)      ( const SegInfo *si );
+extern const UChar*   VG_(seginfo_soname)    ( const SegInfo *si );
+extern const UChar*   VG_(seginfo_filename)  ( const SegInfo *si );
+extern       ULong    VG_(seginfo_sym_offset)( const SegInfo *si );
 
 typedef
    enum {
@@ -119,7 +120,7 @@ typedef
    }
    VgSectKind;
 
-extern VgSectKind VG_(seg_sect_kind)(Addr);
+extern VgSectKind VG_(seginfo_sect_kind)(Addr);
 
 #endif   // __PUB_TOOL_DEBUGINFO_H
 

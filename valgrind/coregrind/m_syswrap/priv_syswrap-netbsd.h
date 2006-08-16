@@ -33,8 +33,15 @@
 
 /* requires #include "priv_types_n_macros.h" */
 
-// Run a thread from beginning to end. 
-extern VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tid);
+// Clone-related functions
+extern Word ML_(start_thread_NORETURN) ( void* arg );
+extern Addr ML_(allocstack)            ( ThreadId tid );
+extern void ML_(call_on_new_stack_0_1) ( Addr stack, Addr retaddr,
+			                 void (*f)(Word), Word arg1 );
+extern SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
+                                   Int* parent_tidptr, Int* child_tidptr );
+
+extern VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tid);
 DECL_TEMPLATE(netbsdelf2, sys_set_tid_address);
 DECL_TEMPLATE(netbsdelf2, sys_exit_group);
 DECL_TEMPLATE(netbsdelf2, sys_mount);
@@ -58,12 +65,6 @@ DECL_TEMPLATE(netbsdelf2, sys_sysinfo);
 DECL_TEMPLATE(netbsdelf2, sys_personality);
 DECL_TEMPLATE(netbsdelf2, sys_sysctl);
 DECL_TEMPLATE(netbsdelf2, sys_prctl);
-DECL_TEMPLATE(netbsdelf2, sys_futex);
-DECL_TEMPLATE(netbsdelf2, sys_epoll_create);
-DECL_TEMPLATE(netbsdelf2, sys_epoll_ctl);
-DECL_TEMPLATE(netbsdelf2, sys_epoll_wait);
-DECL_TEMPLATE(netbsdelf2, sys_gettid);
-DECL_TEMPLATE(netbsdelf2, sys_tgkill);
 DECL_TEMPLATE(netbsdelf2, sys_io_setup);
 DECL_TEMPLATE(netbsdelf2, sys_io_destroy);
 DECL_TEMPLATE(netbsdelf2, sys_io_getevents);
@@ -157,6 +158,7 @@ DECL_TEMPLATE(netbsdelf2, sys_kqueue);
 DECL_TEMPLATE(netbsdelf2, sys_kevent);
 DECL_TEMPLATE(netbsdelf2, sys_fsync_range);
 DECL_TEMPLATE(netbsdelf2, sys_uuidgen);
+DECL_TEMPLATE(netbsdelf2, sys_fstatvfs1);
 
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 

@@ -49,22 +49,28 @@ extern
 void VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
-                           UInt             code_len );
+                           UInt             code_len,
+                           Bool             is_self_checking );
 
 extern Bool VG_(search_transtab) ( /*OUT*/AddrH* result,
                                    Addr64        guest_addr, 
                                    Bool          upd_cache );
 
-extern void VG_(discard_translations) ( Addr64 start, UInt range );
-
-extern void VG_(sanity_check_tt_tc) ( Char* caller );
+extern void VG_(discard_translations) ( Addr64 start, ULong range,
+                                        HChar* who );
 
 extern void VG_(print_tt_tc_stats) ( void );
 
 extern UInt VG_(get_bbs_translated) ( void );
 
-extern void VG_(show_BB_profile) ( void );
+// BB profiling stuff
 
+typedef struct _BBProfEntry {
+   Addr64 addr;
+   ULong  score;
+} BBProfEntry;
+
+extern ULong VG_(get_BB_profile) ( BBProfEntry tops[], UInt n_tops );
 
 #endif   // __PUB_CORE_TRANSTAB_H
 

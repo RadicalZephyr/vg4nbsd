@@ -36,8 +36,7 @@
    as the first two fields match the sizes of these two fields.  Requires
    a bit of casting by the tool. */
 
-// Problems with this type:
-// - Table is fixed-size.  
+// Problems with this data structure:
 // - Separate chaining gives bad cache behaviour.  Hash tables with linear
 //   probing give better cache behaviour.
 // - It's not very abstract, eg. deleting nodes exposes more internals than
@@ -50,25 +49,29 @@ typedef
    }
    VgHashNode;
 
-typedef
-   VgHashNode**
-   VgHashTable;
+typedef struct _VgHashTable * VgHashTable;
 
 /* Make a new table.  Allocates the memory with VG_(calloc)(), so can be freed
- * with VG_(free)(). */
-extern VgHashTable VG_(HT_construct) ( void );
+   with VG_(free)().  n_chains should be prime. */
+extern VgHashTable VG_(HT_construct) ( UInt n_chains );
 
 /* Count the number of nodes in a table. */
 extern Int VG_(HT_count_nodes) ( VgHashTable table );
 
 /* Add a node to the table. */
-extern void VG_(HT_add_node) ( VgHashTable t, VgHashNode* node );
+extern void VG_(HT_add_node) ( VgHashTable t, void* node );
 
 /* Looks up a node in the hash table.  Also returns the address of the
    previous node's `next' pointer which allows it to be removed from the
    list later without having to look it up again.  */
-extern VgHashNode* VG_(HT_get_node) ( VgHashTable t, UWord key,
+extern void* VG_(HT_get_node) ( VgHashTable t, UWord key,
                                     /*OUT*/VgHashNode*** next_ptr );
+
+/* Looks up a VgHashNode in the table.  Returns NULL if not found. */
+extern void* VG_(HT_lookup) ( VgHashTable table, UWord key );
+
+/* Removes a VgHashNode from the table.  Returns NULL if not found. */
+extern void* VG_(HT_remove) ( VgHashTable table, UWord key );
 
 /* Allocates an array of pointers to all the shadow chunks of malloc'd
    blocks.  Must be freed with VG_(free)(). */
@@ -77,15 +80,23 @@ extern VgHashNode** VG_(HT_to_array) ( VgHashTable t, /*OUT*/ UInt* n_shadows );
 /* Returns first node that matches predicate `p', or NULL if none do.
    Extra arguments can be implicitly passed to `p' using `d' which is an
    opaque pointer passed to `p' each time it is called. */
-extern VgHashNode* VG_(HT_first_match) ( VgHashTable t,
-                                         Bool (*p)(VgHashNode*, void*),
-                                         void* d );
+extern void* VG_(HT_first_match) ( VgHashTable t,
+                                   Bool (*p)(VgHashNode*, void*),
+                                   void* d );
 
 /* Applies a function f() once to each node.  Again, `d' can be used
    to pass extra information to the function. */
 extern void VG_(HT_apply_to_all_nodes)( VgHashTable t,
                                         void (*f)(VgHashNode*, void*),
                                         void* d );
+
+/* Reset the table's iterator to point to the first element. */
+extern void VG_(HT_ResetIter) ( VgHashTable table );
+
+/* Return the element pointed to by the iterator and move on to the next
+   one.  Returns NULL if the last one has been passed, or if HT_ResetIter()
+   has not been called previously. */
+extern void* VG_(HT_Next) ( VgHashTable table );
 
 /* Destroy a table. */
 extern void VG_(HT_destruct) ( VgHashTable t );

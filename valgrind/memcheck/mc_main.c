@@ -64,7 +64,7 @@
       1  some sanity checking, fast cases are used
       2  max sanity checking, only slow cases are used
 */
-#define VG_DEBUG_MEMORY 0
+#define VG_DEBUG_MEMORY 2
 
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
 
@@ -98,29 +98,6 @@
 //zz    There are actually 4 distinguished secondaries.  These are used to
 //zz    represent a memory range which is either not addressable (validity
 //zz    doesn't matter), addressable+not valid, addressable+valid.
-//zz 
-//zz    [...] lots of stuff deleted due to out of date-ness
-//zz 
-//zz    As a final optimisation, the alignment and address checks for
-//zz    4-byte loads and stores are combined in a neat way.  The primary
-//zz    map is extended to have 262144 entries (2^18), rather than 2^16.
-//zz    The top 3/4 of these entries are permanently set to the
-//zz    distinguished secondary map.  For a 4-byte load/store, the
-//zz    top-level map is indexed not with (addr >> 16) but instead f(addr),
-//zz    where
-//zz 
-//zz     f( XXXX XXXX XXXX XXXX ____ ____ ____ __YZ )
-//zz         = ____ ____ ____ __YZ XXXX XXXX XXXX XXXX  or 
-//zz         = ____ ____ ____ __ZY XXXX XXXX XXXX XXXX
-//zz 
-//zz    ie the lowest two bits are placed above the 16 high address bits.
-//zz    If either of these two bits are nonzero, the address is misaligned;
-//zz    this will select a secondary map from the upper 3/4 of the primary
-//zz    map.  Because this is always the distinguished secondary map, a
-//zz    (bogus) address check failure will result.  The failure handling
-//zz    code can then figure out whether this is a genuine addr check
-//zz    failure or whether it is a possibly-legitimate access at a
-//zz    misaligned address.  
 //zz */
 
 /* --------------- Basic configuration --------------- */
@@ -134,9 +111,9 @@
 
 #else
 
-/* Just handle the first 16G fast and the rest via auxiliary
+/* Just handle the first 32G fast and the rest via auxiliary
    primaries. */
-#  define N_PRIMARY_BITS  18
+#  define N_PRIMARY_BITS  19
 
 #endif
 
@@ -175,7 +152,18 @@ typedef
 #define SM_DIST_ACCESS_DEFINED    2
 
 static SecMap sm_distinguished[3];
-
+#if defined (VGO_netbsdelf2)
+asm(
+"        .section \".note.netbsd.ident\", \"a\"\n"
+"        .long   2f-1f\n"
+"        .long   4f-3f\n"
+"        .long   1\n"
+"1:      .asciz \"NetBSD\"\n"
+"2:      .p2align 2\n"
+"3:      .long   200000\n"
+"4:      .p2align 2\n"
+	);
+#endif /* PT_Note section */
 static inline Bool is_distinguished_sm ( SecMap* sm ) {
    return sm >= &sm_distinguished[0] && sm <= &sm_distinguished[2];
 }
@@ -190,7 +178,10 @@ static SecMap* copy_for_writing ( SecMap* dist_sm )
              || dist_sm == &sm_distinguished[1]
 	     || dist_sm == &sm_distinguished[2]);
 
-   new_sm = VG_(shadow_alloc)(sizeof(SecMap));
+   new_sm = VG_(am_shadow_alloc)(sizeof(SecMap));
+   if (new_sm == NULL)
+      VG_(out_of_memory_NORETURN)( "memcheck:allocate new SecMap", 
+                                   sizeof(SecMap) );
    VG_(memcpy)(new_sm, dist_sm, sizeof(SecMap));
    n_secmaps_issued++;
    return new_sm;
@@ -414,7 +405,7 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
    SizeT i           = szB-1;
    SizeT n_addrs_bad = 0;
    Addr  ai;
-   Bool  aok;
+   Bool  aok, partial_load_exemption_applies;
    UWord abit, vbyte;
 
    PROF_EVENT(30, "mc_LOADVn_slow");
@@ -433,7 +424,25 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       i--;
    }
 
-   if (n_addrs_bad > 0)
+   /* This is a hack which avoids producing errors for code which
+      insists in stepping along byte strings in aligned word-sized
+      chunks, and there is a partially defined word at the end.  (eg,
+      optimised strlen).  Such code is basically broken at least WRT
+      semantics of ANSI C, but sometimes users don't have the option
+      to fix it, and so this option is provided.  Note it is now
+      defaulted to not-engaged.
+
+      A load from a partially-addressible place is allowed if:
+      - the command-line flag is set
+      - it's a word-sized, word-aligned load
+      - at least one of the addresses in the word *is* valid
+   */
+   partial_load_exemption_applies
+      = MAC_(clo_partial_loads_ok) && szB == VG_WORDSIZE 
+                                   && VG_IS_WORD_ALIGNED(a) 
+                                   && n_addrs_bad < VG_WORDSIZE;
+
+   if (n_addrs_bad > 0 && !partial_load_exemption_applies)
       MAC_(record_address_error)( VG_(get_running_tid)(), a, szB, False );
 
    return vw;
@@ -441,7 +450,7 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
 
 
 static 
-void mc_STOREVn_slow ( Addr a, SizeT szB, UWord vbytes, Bool bigendian )
+void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 {
    SizeT i;
    SizeT n_addrs_bad = 0;
@@ -555,6 +564,11 @@ static void set_address_range_perms ( Addr aA, SizeT len,
                                       UWord example_a_bit,
                                       UWord example_v_bit )
 {
+   UWord    a, vbits8, abits8, vbits32, v_off, a_off;
+   SecMap*  sm;
+   SecMap** binder;
+   SecMap*  example_dsm;
+
    PROF_EVENT(150, "set_address_range_perms");
 
    /* Check the permissions make sense. */
@@ -572,40 +586,37 @@ static void set_address_range_perms ( Addr aA, SizeT len,
       if (len > 100 * 1000 * 1000) {
          VG_(message)(Vg_UserMsg, 
                       "Warning: set address range perms: "
-                      "large range %u, a %d, v %d",
+                      "large range %lu, a %d, v %d",
                       len, example_a_bit, example_v_bit );
       }
    }
 
-   UWord a = (UWord)aA;
+   a = (UWord)aA;
 
 #  if VG_DEBUG_MEMORY >= 2
 
    /*------------------ debug-only case ------------------ */
-   SizeT i;
+   { SizeT i;
 
-   UWord example_vbyte = BIT_TO_BYTE(example_v_bit);
+     UWord example_vbyte = BIT_TO_BYTE(example_v_bit);
 
-   tl_assert(sizeof(SizeT) == sizeof(Addr));
+     tl_assert(sizeof(SizeT) == sizeof(Addr));
 
-   if (0 && len >= 4096)
-      VG_(printf)("s_a_r_p(0x%llx, %d, %d,%d)\n", 
-                  (ULong)a, len, example_a_bit, example_v_bit);
+     if (0 && len >= 4096)
+        VG_(printf)("s_a_r_p(0x%llx, %d, %d,%d)\n", 
+                    (ULong)a, len, example_a_bit, example_v_bit);
 
-   if (len == 0)
-      return;
+     if (len == 0)
+        return;
 
-   for (i = 0; i < len; i++) {
-      set_abit_and_vbyte(a+i, example_a_bit, example_vbyte);
+     for (i = 0; i < len; i++) {
+        set_abit_and_vbyte(a+i, example_a_bit, example_vbyte);
+     }
    }
 
 #  else
 
    /*------------------ standard handling ------------------ */
-   UWord    vbits8, abits8, vbits32, v_off, a_off;
-   SecMap*  sm;
-   SecMap** binder;
-   SecMap*  example_dsm;
 
    /* Decide on the distinguished secondary that we might want
       to use (part of the space-compression scheme). */
@@ -738,20 +749,34 @@ static void mc_make_readable ( Addr a, SizeT len )
 }
 
 
-/* --- Block-copy permissions (needed for implementing realloc()). --- */
+/* --- Block-copy permissions (needed for implementing realloc() and
+       sys_mremap). --- */
 
 static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
 {
-   SizeT i;
+   SizeT i, j;
    UWord abit, vbyte;
 
    DEBUG("mc_copy_address_range_state\n");
-
    PROF_EVENT(50, "mc_copy_address_range_state");
-   for (i = 0; i < len; i++) {
-      PROF_EVENT(51, "mc_copy_address_range_state(loop)");
-      get_abit_and_vbyte( &abit, &vbyte, src+i );
-      set_abit_and_vbyte( dst+i, abit, vbyte );
+
+   if (len == 0)
+      return;
+
+   if (src < dst) {
+      for (i = 0, j = len-1; i < len; i++, j--) {
+         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         get_abit_and_vbyte( &abit, &vbyte, src+j );
+         set_abit_and_vbyte( dst+j, abit, vbyte );
+      }
+   }
+
+   if (src > dst) {
+      for (i = 0; i < len; i++) {
+         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         get_abit_and_vbyte( &abit, &vbyte, src+i );
+         set_abit_and_vbyte( dst+i, abit, vbyte );
+      }
    }
 }
 
@@ -761,6 +786,9 @@ static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
 static __inline__
 void make_aligned_word32_writable ( Addr aA )
 {
+   UWord   a, sec_no, v_off, a_off, mask;
+   SecMap* sm;
+
    PROF_EVENT(300, "make_aligned_word32_writable");
 
 #  if VG_DEBUG_MEMORY >= 2
@@ -773,8 +801,8 @@ void make_aligned_word32_writable ( Addr aA )
       return;
    }
 
-   UWord a      = (UWord)aA;
-   UWord sec_no = (UWord)(a >> 16);
+   a      = (UWord)aA;
+   sec_no = (UWord)(a >> 16);
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
@@ -782,14 +810,14 @@ void make_aligned_word32_writable ( Addr aA )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
 
    /* Paint the new area as uninitialised. */
    ((UInt*)(sm->vbyte))[v_off >> 2] = VGM_WORD32_INVALID;
 
-   UWord mask = 0x0F;
+   mask = 0x0F;
    mask <<= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
    /* mask now contains 1s where we wish to make address bits valid
       (0s). */
@@ -801,6 +829,9 @@ void make_aligned_word32_writable ( Addr aA )
 static __inline__
 void make_aligned_word32_noaccess ( Addr aA )
 {
+   UWord   a, sec_no, v_off, a_off, mask;
+   SecMap* sm;
+
    PROF_EVENT(310, "make_aligned_word32_noaccess");
 
 #  if VG_DEBUG_MEMORY >= 2
@@ -813,8 +844,8 @@ void make_aligned_word32_noaccess ( Addr aA )
       return;
    }
 
-   UWord a      = (UWord)aA;
-   UWord sec_no = (UWord)(a >> 16);
+   a      = (UWord)aA;
+   sec_no = (UWord)(a >> 16);
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
@@ -822,15 +853,15 @@ void make_aligned_word32_noaccess ( Addr aA )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
 
    /* Paint the abandoned data as uninitialised.  Probably not
       necessary, but still .. */
    ((UInt*)(sm->vbyte))[v_off >> 2] = VGM_WORD32_INVALID;
 
-   UWord mask = 0x0F;
+   mask = 0x0F;
    mask <<= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
    /* mask now contains 1s where we wish to make address bits invalid
       (1s). */
@@ -843,6 +874,9 @@ void make_aligned_word32_noaccess ( Addr aA )
 static __inline__
 void make_aligned_word64_writable ( Addr aA )
 {
+   UWord   a, sec_no, v_off, a_off;
+   SecMap* sm;
+
    PROF_EVENT(320, "make_aligned_word64_writable");
 
 #  if VG_DEBUG_MEMORY >= 2
@@ -855,8 +889,8 @@ void make_aligned_word64_writable ( Addr aA )
       return;
    }
 
-   UWord a      = (UWord)aA;
-   UWord sec_no = (UWord)(a >> 16);
+   a      = (UWord)aA;
+   sec_no = (UWord)(a >> 16);
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
@@ -864,9 +898,9 @@ void make_aligned_word64_writable ( Addr aA )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
 
    /* Paint the new area as uninitialised. */
    ((ULong*)(sm->vbyte))[v_off >> 3] = VGM_WORD64_INVALID;
@@ -880,6 +914,9 @@ void make_aligned_word64_writable ( Addr aA )
 static __inline__
 void make_aligned_word64_noaccess ( Addr aA )
 {
+   UWord   a, sec_no, v_off, a_off;
+   SecMap* sm;
+
    PROF_EVENT(330, "make_aligned_word64_noaccess");
 
 #  if VG_DEBUG_MEMORY >= 2
@@ -892,8 +929,8 @@ void make_aligned_word64_noaccess ( Addr aA )
       return;
    }
 
-   UWord a      = (UWord)aA;
-   UWord sec_no = (UWord)(a >> 16);
+   a      = (UWord)aA;
+   sec_no = (UWord)(a >> 16);
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
@@ -901,9 +938,9 @@ void make_aligned_word64_noaccess ( Addr aA )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
 
    /* Paint the abandoned data as uninitialised.  Probably not
       necessary, but still .. */
@@ -1187,12 +1224,15 @@ void mc_check_is_readable ( CorePart part, ThreadId tid, Char* s,
 
    VGP_PUSHCC(VgpCheckMem);
    
-   /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
-                               base,base+size-1); */
    res = mc_check_readable ( base, size, &bad_addr );
+
+   if (0)
+      VG_(printf)("mc_check_is_readable(0x%x, %d, %s) -> %s\n",
+                  (UInt)base, (Int)size, s, res==MC_Ok ? "yes" : "no" );
+
    if (MC_Ok != res) {
       Bool isUnaddr = ( MC_AddrErr == res ? True : False );
-      
+
       switch (part) {
       case Vg_CoreSysCall:
          MAC_(record_param_error) ( tid, bad_addr, /*isReg*/False,
@@ -1472,319 +1512,364 @@ static Bool mc_recognised_suppression ( Char* name, Supp* su )
 
 /* ------------------------ Size = 8 ------------------------ */
 
-VGA_REGPARM(1)
-ULong MC_(helperc_LOADV8) ( Addr aA )
-{
-   PROF_EVENT(200, "helperc_LOADV8");
-
-#  if VG_DEBUG_MEMORY >= 2
-   return mc_LOADVn_slow( aA, 8, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(201, "helperc_LOADV8-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 8, False/*littleendian*/ );
+#define MAKE_LOADV8(nAME,iS_BIGENDIAN)                                  \
+                                                                        \
+   VG_REGPARM(1)							\
+   ULong nAME ( Addr aA )	                                        \
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;                     \
+      SecMap* sm;                                                       \
+                                                                        \
+      PROF_EVENT(200, #nAME);				                \
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         return mc_LOADVn_slow( aA, 8, iS_BIGENDIAN );		        \
+   									\
+      mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));	        \
+      a    = (UWord)aA;						        \
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(201, #nAME"-slow1");			        \
+         return (UWord)mc_LOADVn_slow( aA, 8, iS_BIGENDIAN );	        \
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];				        \
+      v_off = a & 0xFFFF;					        \
+      a_off = v_off >> 3;					        \
+      abits = (UWord)(sm->abits[a_off]);			        \
+   									\
+      if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {			\
+         /* Handle common case quickly: a is suitably aligned, */	\
+         /* is mapped, and is addressible. */				\
+         return ((ULong*)(sm->vbyte))[ v_off >> 3 ];			\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(202, #nAME"-slow2");			        \
+         return mc_LOADVn_slow( a, 8, iS_BIGENDIAN );		        \
+      }									\
    }
 
-   UWord sec_no = (UWord)(a >> 16);
+MAKE_LOADV8( MC_(helperc_LOADV8be), True /*bigendian*/    );
+MAKE_LOADV8( MC_(helperc_LOADV8le), False/*littleendian*/ );
 
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-
-   if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      return ((ULong*)(sm->vbyte))[ v_off >> 3 ];
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(202, "helperc_LOADV8-slow2");
-      return mc_LOADVn_slow( a, 8, False/*littleendian*/ );
+#define MAKE_STOREV8(nAME,iS_BIGENDIAN)                                 \
+                                                                        \
+   VG_REGPARM(1)							\
+   void nAME ( Addr aA, ULong vbytes )		                        \
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;                     \
+      SecMap* sm;                                                       \
+                                                                        \
+      PROF_EVENT(210, #nAME);				                \
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         mc_STOREVn_slow( aA, 8, vbytes, iS_BIGENDIAN );		\
+   									\
+      mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));	        \
+      a    = (UWord)aA;						        \
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(211, #nAME"-slow1");			        \
+         mc_STOREVn_slow( aA, 8, vbytes, iS_BIGENDIAN );		\
+         return;							\
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];					\
+      v_off = a & 0xFFFF;						\
+      a_off = v_off >> 3;						\
+      abits = (UWord)(sm->abits[a_off]);				\
+   									\
+      if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 			\
+                         && abits == VGM_BYTE_VALID)) {			\
+	/* Handle common case quickly: a is suitably aligned, */	\
+        /* is mapped, and is addressible. */				\
+         ((ULong*)(sm->vbyte))[ v_off >> 3 ] = vbytes;			\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(212, #nAME"-slow2");			        \
+         mc_STOREVn_slow( aA, 8, vbytes, iS_BIGENDIAN );		\
+      }									\
    }
 
-#  endif
-}
+MAKE_STOREV8( MC_(helperc_STOREV8be), True /*bigendian*/    );
+MAKE_STOREV8( MC_(helperc_STOREV8le), False/*littleendian*/ );
 
-VGA_REGPARM(1)
-void MC_(helperc_STOREV8) ( Addr aA, ULong vbytes )
-{
-   PROF_EVENT(210, "helperc_STOREV8");
-
-#  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(211, "helperc_STOREV8-slow1");
-      mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-      return;
-   }
-
-   UWord sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-
-   if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 
-                      && abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      ((ULong*)(sm->vbyte))[ v_off >> 3 ] = vbytes;
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(212, "helperc_STOREV8-slow2");
-      mc_STOREVn_slow( aA, 8, vbytes, False/*littleendian*/ );
-   }
-#  endif
-}
 
 /* ------------------------ Size = 4 ------------------------ */
 
-VGA_REGPARM(1)
-UWord MC_(helperc_LOADV4) ( Addr aA )
-{
-   PROF_EVENT(220, "helperc_LOADV4");
-
-#  if VG_DEBUG_MEMORY >= 2
-   return (UWord)mc_LOADVn_slow( aA, 4, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(221, "helperc_LOADV4-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 4, False/*littleendian*/ );
+#define MAKE_LOADV4(nAME,iS_BIGENDIAN)                                  \
+                                                                        \
+   VG_REGPARM(1)							\
+   UWord nAME ( Addr aA )						\
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;                     \
+      SecMap* sm;                                                       \
+                                                                        \
+      PROF_EVENT(220, #nAME);						\
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         return (UWord)mc_LOADVn_slow( aA, 4, iS_BIGENDIAN );		\
+   									\
+      mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));		\
+      a    = (UWord)aA;							\
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(221, #nAME"-slow1");				\
+         return (UWord)mc_LOADVn_slow( aA, 4, iS_BIGENDIAN );		\
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];					\
+      v_off = a & 0xFFFF;						\
+      a_off = v_off >> 3;						\
+      abits = (UWord)(sm->abits[a_off]);				\
+      abits >>= (a & 4);						\
+      abits &= 15;							\
+      if (EXPECTED_TAKEN(abits == VGM_NIBBLE_VALID)) {			\
+         /* Handle common case quickly: a is suitably aligned, */	\
+         /* is mapped, and is addressible. */				\
+         /* On a 32-bit platform, simply hoick the required 32 */	\
+         /* bits out of the vbyte array.  On a 64-bit platform, */	\
+         /* also set the upper 32 bits to 1 ("undefined"), just */	\
+         /* in case.  This almost certainly isn't necessary, */		\
+         /* but be paranoid. */						\
+         UWord ret = (UWord)0xFFFFFFFF00000000ULL;			\
+         ret |= (UWord)( ((UInt*)(sm->vbyte))[ v_off >> 2 ] );		\
+         return ret;							\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(222, #nAME"-slow2");				\
+         return (UWord)mc_LOADVn_slow( a, 4, iS_BIGENDIAN );		\
+      }									\
    }
 
-   UWord sec_no = (UWord)(a >> 16);
+MAKE_LOADV4( MC_(helperc_LOADV4be), True /*bigendian*/    );
+MAKE_LOADV4( MC_(helperc_LOADV4le), False/*littleendian*/ );
 
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-   abits >>= (a & 4);
-   abits &= 15;
-   if (EXPECTED_TAKEN(abits == VGM_NIBBLE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      /* On a 32-bit platform, simply hoick the required 32 bits out of
-         the vbyte array.  On a 64-bit platform, also set the upper 32
-         bits to 1 ("undefined"), just in case.  This almost certainly
-         isn't necessary, but be paranoid. */
-      UWord ret = (UWord)0xFFFFFFFF00000000ULL;
-      ret |= (UWord)( ((UInt*)(sm->vbyte))[ v_off >> 2 ] );
-      return ret;
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(222, "helperc_LOADV4-slow2");
-      return (UWord)mc_LOADVn_slow( a, 4, False/*littleendian*/ );
+#define MAKE_STOREV4(nAME,iS_BIGENDIAN)                                 \
+                                                                        \
+   VG_REGPARM(2)							\
+   void nAME ( Addr aA, UWord vbytes )					\
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;                     \
+      SecMap* sm;                                                       \
+                                                                        \
+      PROF_EVENT(230, #nAME);						\
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         mc_STOREVn_slow( aA, 4, (ULong)vbytes, iS_BIGENDIAN );		\
+   									\
+      mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));		\
+      a    = (UWord)aA;							\
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(231, #nAME"-slow1");				\
+         mc_STOREVn_slow( aA, 4, (ULong)vbytes, iS_BIGENDIAN );		\
+         return;							\
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];					\
+      v_off = a & 0xFFFF;						\
+      a_off = v_off >> 3;						\
+      abits = (UWord)(sm->abits[a_off]);				\
+      abits >>= (a & 4);						\
+      abits &= 15;							\
+      if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 			\
+                         && abits == VGM_NIBBLE_VALID)) {		\
+         /* Handle common case quickly: a is suitably aligned, */	\
+         /* is mapped, and is addressible. */				\
+         ((UInt*)(sm->vbyte))[ v_off >> 2 ] = (UInt)vbytes;		\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(232, #nAME"-slow2");				\
+         mc_STOREVn_slow( aA, 4, (ULong)vbytes, iS_BIGENDIAN );		\
+      }									\
    }
 
-#  endif
-}
+MAKE_STOREV4( MC_(helperc_STOREV4be), True /*bigendian*/    );
+MAKE_STOREV4( MC_(helperc_STOREV4le), False/*littleendian*/ );
 
-VGA_REGPARM(2)
-void MC_(helperc_STOREV4) ( Addr aA, UWord vbytes )
-{
-   PROF_EVENT(230, "helperc_STOREV4");
-
-#  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 4, (ULong)vbytes, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(231, "helperc_STOREV4-slow1");
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, False/*littleendian*/ );
-      return;
-   }
-
-   UWord sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-   abits >>= (a & 4);
-   abits &= 15;
-   if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 
-                      && abits == VGM_NIBBLE_VALID)) {
-      /* Handle common case quickly: a is suitably aligned, is mapped,
-         and is addressible. */
-      ((UInt*)(sm->vbyte))[ v_off >> 2 ] = (UInt)vbytes;
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(232, "helperc_STOREV4-slow2");
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, False/*littleendian*/ );
-   }
-#  endif
-}
 
 /* ------------------------ Size = 2 ------------------------ */
 
-VGA_REGPARM(1)
-UWord MC_(helperc_LOADV2) ( Addr aA )
-{
-   PROF_EVENT(240, "helperc_LOADV2");
-
-#  if VG_DEBUG_MEMORY >= 2
-   return (UWord)mc_LOADVn_slow( aA, 2, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(241, "helperc_LOADV2-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 2, False/*littleendian*/ );
+#define MAKE_LOADV2(nAME,iS_BIGENDIAN)                                  \
+                                                                        \
+   VG_REGPARM(1)							\
+   UWord nAME ( Addr aA )						\
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;			\
+      SecMap* sm;							\
+									\
+      PROF_EVENT(240, #nAME);						\
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         return (UWord)mc_LOADVn_slow( aA, 2, iS_BIGENDIAN );		\
+   									\
+      mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));		\
+      a    = (UWord)aA;							\
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(241, #nAME"-slow1");				\
+         return (UWord)mc_LOADVn_slow( aA, 2, iS_BIGENDIAN );		\
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];					\
+      v_off = a & 0xFFFF;						\
+      a_off = v_off >> 3;						\
+      abits = (UWord)(sm->abits[a_off]);				\
+      if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {			\
+         /* Handle common case quickly: a is mapped, and the */		\
+         /* entire word32 it lives in is addressible. */		\
+         /* Set the upper 16/48 bits of the result to 1 */		\
+         /* ("undefined"), just in case.  This almost certainly */	\
+         /* isn't necessary, but be paranoid. */			\
+         return (~(UWord)0xFFFF)					\
+                |							\
+                (UWord)( ((UShort*)(sm->vbyte))[ v_off >> 1 ] );	\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(242, #nAME"-slow2");				\
+         return (UWord)mc_LOADVn_slow( aA, 2, iS_BIGENDIAN );		\
+      }									\
    }
 
-   UWord sec_no = (UWord)(a >> 16);
+MAKE_LOADV2( MC_(helperc_LOADV2be), True /*bigendian*/    );
+MAKE_LOADV2( MC_(helperc_LOADV2le), False/*littleendian*/ );
 
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-   if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly: a is mapped, and the entire
-         word32 it lives in is addressible. */
-      /* Set the upper 16/48 bits of the result to 1 ("undefined"),
-         just in case.  This almost certainly isn't necessary, but be
-         paranoid. */
-      return (~(UWord)0xFFFF)
-             |
-             (UWord)( ((UShort*)(sm->vbyte))[ v_off >> 1 ] );
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(242, "helperc_LOADV2-slow2");
-      return (UWord)mc_LOADVn_slow( aA, 2, False/*littleendian*/ );
+#define MAKE_STOREV2(nAME,iS_BIGENDIAN)                                 \
+                                                                        \
+   VG_REGPARM(2)							\
+   void nAME ( Addr aA, UWord vbytes )					\
+   {									\
+      UWord   mask, a, sec_no, v_off, a_off, abits;			\
+      SecMap* sm;							\
+									\
+      PROF_EVENT(250, #nAME);						\
+   									\
+      if (VG_DEBUG_MEMORY >= 2)						\
+         mc_STOREVn_slow( aA, 2, (ULong)vbytes, iS_BIGENDIAN );		\
+   									\
+      mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));		\
+      a    = (UWord)aA;							\
+   									\
+      /* If any part of 'a' indicated by the mask is 1, either */	\
+      /* 'a' is not naturally aligned, or 'a' exceeds the range */	\
+      /* covered by the primary map.  Either way we defer to the */	\
+      /* slow-path case. */						\
+      if (EXPECTED_NOT_TAKEN(a & mask)) {				\
+         PROF_EVENT(251, #nAME"-slow1");				\
+         mc_STOREVn_slow( aA, 2, (ULong)vbytes, iS_BIGENDIAN );		\
+         return;							\
+      }									\
+   									\
+      sec_no = (UWord)(a >> 16);					\
+   									\
+      if (VG_DEBUG_MEMORY >= 1)						\
+         tl_assert(sec_no < N_PRIMARY_MAP);				\
+   									\
+      sm    = primary_map[sec_no];					\
+      v_off = a & 0xFFFF;						\
+      a_off = v_off >> 3;						\
+      abits = (UWord)(sm->abits[a_off]);				\
+      if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 			\
+                         && abits == VGM_BYTE_VALID)) {			\
+         /* Handle common case quickly. */				\
+         ((UShort*)(sm->vbyte))[ v_off >> 1 ] = (UShort)vbytes;		\
+      } else {								\
+         /* Slow but general case. */					\
+         PROF_EVENT(252, #nAME"-slow2");				\
+         mc_STOREVn_slow( aA, 2, (ULong)vbytes, iS_BIGENDIAN );		\
+      }									\
    }
 
-#  endif
-}
 
-VGA_REGPARM(2)
-void MC_(helperc_STOREV2) ( Addr aA, UWord vbytes )
-{
-   PROF_EVENT(250, "helperc_STOREV2");
+MAKE_STOREV2( MC_(helperc_STOREV2be), True /*bigendian*/    );
+MAKE_STOREV2( MC_(helperc_STOREV2le), False/*littleendian*/ );
 
-#  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 2, (ULong)vbytes, False/*littleendian*/ );
-#  else
-
-   const UWord mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
-
-   /* If any part of 'a' indicated by the mask is 1, either 'a' is not
-      naturally aligned, or 'a' exceeds the range covered by the
-      primary map.  Either way we defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
-      PROF_EVENT(251, "helperc_STOREV2-slow1");
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, False/*littleendian*/ );
-      return;
-   }
-
-   UWord sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
-   if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 
-                      && abits == VGM_BYTE_VALID)) {
-      /* Handle common case quickly. */
-      ((UShort*)(sm->vbyte))[ v_off >> 1 ] = (UShort)vbytes;
-   } else {
-      /* Slow but general case. */
-      PROF_EVENT(252, "helperc_STOREV2-slow2");
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, False/*littleendian*/ );
-   }
-#  endif
-}
 
 /* ------------------------ Size = 1 ------------------------ */
+/* Note: endianness is irrelevant for size == 1 */
 
-VGA_REGPARM(1)
+VG_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr aA )
 {
+   UWord   mask, a, sec_no, v_off, a_off, abits;
+   SecMap* sm;
+
    PROF_EVENT(260, "helperc_LOADV1");
 
 #  if VG_DEBUG_MEMORY >= 2
-   return (UWord)mc_LOADVn_slow( aA, 1, False/*littleendian*/ );
+   return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
 #  else
 
-   const UWord mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
+   mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
+   a    = (UWord)aA;
 
    /* If any part of 'a' indicated by the mask is 1, it means 'a'
       exceeds the range covered by the primary map.  In which case we
       defer to the slow-path case. */
    if (EXPECTED_NOT_TAKEN(a & mask)) {
       PROF_EVENT(261, "helperc_LOADV1-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 1, False/*littleendian*/ );
+      return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
    }
 
-   UWord sec_no = (UWord)(a >> 16);
+   sec_no = (UWord)(a >> 16);
 
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
+   abits = (UWord)(sm->abits[a_off]);
    if (EXPECTED_TAKEN(abits == VGM_BYTE_VALID)) {
       /* Handle common case quickly: a is mapped, and the entire
          word32 it lives in is addressible. */
@@ -1797,42 +1882,45 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
    } else {
       /* Slow but general case. */
       PROF_EVENT(262, "helperc_LOADV1-slow2");
-      return (UWord)mc_LOADVn_slow( aA, 1, False/*littleendian*/ );
+      return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
    }
 #  endif
 }
 
 
-VGA_REGPARM(2)
+VG_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
 {
+   UWord   mask, a, sec_no, v_off, a_off, abits;
+   SecMap* sm;
+
    PROF_EVENT(270, "helperc_STOREV1");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*littleendian*/ );
+   mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
 #  else
 
-   const UWord mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
-   UWord a = (UWord)aA;
+   mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
+   a    = (UWord)aA;
    /* If any part of 'a' indicated by the mask is 1, it means 'a'
       exceeds the range covered by the primary map.  In which case we
       defer to the slow-path case. */
    if (EXPECTED_NOT_TAKEN(a & mask)) {
       PROF_EVENT(271, "helperc_STOREV1-slow1");
-      mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*littleendian*/ );
+      mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
       return;
    }
 
-   UWord sec_no = (UWord)(a >> 16);
+   sec_no = (UWord)(a >> 16);
 
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(sec_no < N_PRIMARY_MAP);
 #  endif
 
-   SecMap* sm    = primary_map[sec_no];
-   UWord   v_off = a & 0xFFFF;
-   UWord   a_off = v_off >> 3;
-   UWord   abits = (UWord)(sm->abits[a_off]);
+   sm    = primary_map[sec_no];
+   v_off = a & 0xFFFF;
+   a_off = v_off >> 3;
+   abits = (UWord)(sm->abits[a_off]);
    if (EXPECTED_TAKEN(!is_distinguished_sm(sm) 
                       && abits == VGM_BYTE_VALID)) {
       /* Handle common case quickly: a is mapped, the entire word32 it
@@ -1840,7 +1928,7 @@ void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
       ((UChar*)(sm->vbyte))[ v_off ] = (UChar)vbyte;
    } else {
       PROF_EVENT(272, "helperc_STOREV1-slow2");
-      mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*littleendian*/ );
+      mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
    }
 
 #  endif
@@ -1872,7 +1960,7 @@ void MC_(helperc_value_check8_fail) ( void )
    mc_record_value_error ( VG_(get_running_tid)(), 8 );
 }
 
-VGA_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
+VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 {
    mc_record_value_error ( VG_(get_running_tid)(), (Int)sz );
 }
@@ -2172,32 +2260,21 @@ static Bool mc_expensive_sanity_check ( void )
 /*--- Command line args                                    ---*/
 /*------------------------------------------------------------*/
 
-Bool MC_(clo_avoid_strlen_errors)    = True;
-
 static Bool mc_process_cmd_line_option(Char* arg)
 {
-        VG_BOOL_CLO(arg, "--avoid-strlen-errors", MC_(clo_avoid_strlen_errors))
-   else
-      return MAC_(process_common_cmd_line_option)(arg);
-
-   return True;
+   return MAC_(process_common_cmd_line_option)(arg);
 }
 
 static void mc_print_usage(void)
 {  
    MAC_(print_common_usage)();
-   VG_(printf)(
-"    --avoid-strlen-errors=no|yes  suppress errs from inlined strlen [yes]\n"
-   );
 }
 
 static void mc_print_debug_usage(void)
 {  
    MAC_(print_common_debug_usage)();
-   VG_(printf)(
-"    --cleanup=no|yes          improve after instrumentation? [yes]\n"
-   );
 }
+
 
 /*------------------------------------------------------------*/
 /*--- Client requests                                      ---*/
@@ -2220,7 +2297,7 @@ typedef
       Addr          start;
       SizeT         size;
       ExeContext*   where;
-      Char*	    desc;
+      Char*            desc;
    } 
    CGenBlock;
 
@@ -2284,14 +2361,6 @@ static void show_client_block_stats ( void )
    );
 }
 
-static Bool find_addr(VgHashNode* sh_ch, void* ap)
-{
-  MAC_Chunk *m = (MAC_Chunk*)sh_ch;
-  Addr a = *(Addr*)ap;
-
-  return VG_(addr_is_in_block)(a, m->data, m->size, MAC_MALLOC_REDZONE_SZB);
-}
-
 static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai )
 {
    UInt i;
@@ -2303,36 +2372,35 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai )
          continue;
       // Use zero as the redzone for client blocks.
       if (VG_(addr_is_in_block)(a, cgbs[i].start, cgbs[i].size, 0)) {
-         MAC_Mempool **d, *mp;
-
          /* OK - maybe it's a mempool, too? */
-         mp = (MAC_Mempool*)VG_(HT_get_node)(MAC_(mempool_list),
-                                             (UWord)cgbs[i].start,
-                                             (void*)&d);
-         if(mp != NULL) {
-            if(mp->chunks != NULL) {
-               MAC_Chunk *mc;
-
-               mc = (MAC_Chunk*)VG_(HT_first_match)(mp->chunks, find_addr, &a);
-               if(mc != NULL) {
-                  ai->akind = UserG;
-                  ai->blksize = mc->size;
-                  ai->rwoffset = (Int)(a) - (Int)mc->data;
-                  ai->lastchange = mc->where;
-                  return True;
+         MAC_Mempool* mp = VG_(HT_lookup)(MAC_(mempool_list),
+                                          (UWord)cgbs[i].start);
+         if (mp != NULL) {
+            if (mp->chunks != NULL) {
+               MAC_Chunk* mc;
+               VG_(HT_ResetIter)(mp->chunks);
+               while ( (mc = VG_(HT_Next)(mp->chunks)) ) {
+                  if (VG_(addr_is_in_block)(a, mc->data, mc->size,
+                                            MAC_MALLOC_REDZONE_SZB)) {
+                     ai->akind      = UserG;
+                     ai->blksize    = mc->size;
+                     ai->rwoffset   = (Int)(a) - (Int)mc->data;
+                     ai->lastchange = mc->where;
+                     return True;
+                  }
                }
             }
-            ai->akind = Mempool;
-            ai->blksize = cgbs[i].size;
-            ai->rwoffset  = (Int)(a) - (Int)(cgbs[i].start);
+            ai->akind      = Mempool;
+            ai->blksize    = cgbs[i].size;
+            ai->rwoffset   = (Int)(a) - (Int)(cgbs[i].start);
             ai->lastchange = cgbs[i].where;
             return True;
          }
-         ai->akind = UserG;
-         ai->blksize = cgbs[i].size;
-         ai->rwoffset  = (Int)(a) - (Int)(cgbs[i].start);
+         ai->akind      = UserG;
+         ai->blksize    = cgbs[i].size;
+         ai->rwoffset   = (Int)(a) - (Int)(cgbs[i].start);
          ai->lastchange = cgbs[i].where;
-	 ai->desc = cgbs[i].desc;
+         ai->desc       = cgbs[i].desc;
          return True;
       }
    }
@@ -2361,7 +2429,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
             mc_record_user_error ( tid, bad_addr, /*isWrite*/True,
                                    /*isUnaddr*/True );
          *ret = ok ? (UWord)NULL : bad_addr;
-	 break;
+         break;
 
       case VG_USERREQ__CHECK_READABLE: { /* check readable */
          MC_ReadResult res;
@@ -2373,56 +2441,56 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
             mc_record_user_error ( tid, bad_addr, /*isWrite*/False,
                                    /*isUnaddr*/False );
          *ret = ( res==MC_Ok ? (UWord)NULL : bad_addr );
-	 break;
+         break;
       }
 
       case VG_USERREQ__DO_LEAK_CHECK:
          mc_detect_memory_leaks(tid, arg[1] ? LC_Summary : LC_Full);
-	 *ret = 0; /* return value is meaningless */
-	 break;
+         *ret = 0; /* return value is meaningless */
+         break;
 
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
          mc_make_noaccess ( arg[1], arg[2] );
-	 *ret = -1;
-	 break;
+         *ret = -1;
+         break;
 
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
          mc_make_writable ( arg[1], arg[2] );
          *ret = -1;
-	 break;
+         break;
 
       case VG_USERREQ__MAKE_READABLE: /* make readable */
          mc_make_readable ( arg[1], arg[2] );
-	 *ret = -1;
+         *ret = -1;
          break;
 
       case VG_USERREQ__CREATE_BLOCK: /* describe a block */
-	 if (arg[1] != 0 && arg[2] != 0) {
-	    i = alloc_client_block();
-	    /* VG_(printf)("allocated %d %p\n", i, cgbs); */
-	    cgbs[i].start = arg[1];
-	    cgbs[i].size  = arg[2];
-	    cgbs[i].desc  = VG_(strdup)((Char *)arg[3]);
-	    cgbs[i].where = VG_(record_ExeContext) ( tid );
+         if (arg[1] != 0 && arg[2] != 0) {
+            i = alloc_client_block();
+            /* VG_(printf)("allocated %d %p\n", i, cgbs); */
+            cgbs[i].start = arg[1];
+            cgbs[i].size  = arg[2];
+            cgbs[i].desc  = VG_(strdup)((Char *)arg[3]);
+            cgbs[i].where = VG_(record_ExeContext) ( tid );
 
-	    *ret = i;
-	 } else
-	    *ret = -1;
-	 break;
+            *ret = i;
+         } else
+            *ret = -1;
+         break;
 
       case VG_USERREQ__DISCARD: /* discard */
          if (cgbs == NULL 
              || arg[2] >= cgb_used ||
-	     (cgbs[arg[2]].start == 0 && cgbs[arg[2]].size == 0)) {
+             (cgbs[arg[2]].start == 0 && cgbs[arg[2]].size == 0)) {
             *ret = 1;
-	 } else {
-	    tl_assert(arg[2] >= 0 && arg[2] < cgb_used);
-	    cgbs[arg[2]].start = cgbs[arg[2]].size = 0;
-	    VG_(free)(cgbs[arg[2]].desc);
-	    cgb_discards++;
-	    *ret = 0;
-	 }
-	 break;
+         } else {
+            tl_assert(arg[2] >= 0 && arg[2] < cgb_used);
+            cgbs[arg[2]].start = cgbs[arg[2]].size = 0;
+            VG_(free)(cgbs[arg[2]].desc);
+            cgb_discards++;
+            *ret = 0;
+         }
+         break;
 
 //zz       case VG_USERREQ__GET_VBITS:
 //zz          /* Returns: 1 == OK, 2 == alignment error, 3 == addressing
@@ -2470,10 +2538,10 @@ static void mc_post_clo_init ( void )
 
 static void mc_fini ( Int exitcode )
 {
-   MAC_(common_fini)( mc_detect_memory_leaks );
-
    Int     i, n_accessible_dist;
    SecMap* sm;
+
+   MAC_(common_fini)( mc_detect_memory_leaks );
 
    if (VG_(clo_verbosity) > 1) {
       VG_(message)(Vg_DebugMsg,
@@ -2552,9 +2620,8 @@ static void mc_pre_clo_init(void)
    VG_(needs_client_requests)     (mc_handle_client_request);
    VG_(needs_sanity_checks)       (mc_cheap_sanity_check,
                                    mc_expensive_sanity_check);
-   VG_(needs_shadow_memory)       ();
 
-   VG_(malloc_funcs)              (MAC_(malloc),
+   VG_(needs_malloc_replacement)  (MAC_(malloc),
                                    MAC_(__builtin_new),
                                    MAC_(__builtin_vec_new),
                                    MAC_(memalign),
@@ -2577,6 +2644,17 @@ static void mc_pre_clo_init(void)
    VG_(track_new_mem_mmap)        ( & mc_new_mem_mmap );
    
    VG_(track_copy_mem_remap)      ( & mc_copy_address_range_state );
+
+   // Nb: we don't do anything with mprotect.  This means that V bits are
+   // preserved if a program, for example, marks some memory as inaccessible
+   // and then later marks it as accessible again.
+   // 
+   // If an access violation occurs (eg. writing to read-only memory) we let
+   // it fault and print an informative termination message.  This doesn't
+   // happen if the program catches the signal, though, which is bad.  If we
+   // had two A bits (for readability and writability) that were completely
+   // distinct from V bits, then we could handle all this properly.
+   VG_(track_change_mem_mprotect) ( NULL );
       
    VG_(track_die_mem_stack_signal)( & mc_make_noaccess ); 
    VG_(track_die_mem_brk)         ( & mc_make_noaccess );
@@ -2621,7 +2699,7 @@ static void mc_pre_clo_init(void)
    tl_assert( mc_expensive_sanity_check() );
 }
 
-VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init, 9./8)
+VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                mc_main.c ---*/

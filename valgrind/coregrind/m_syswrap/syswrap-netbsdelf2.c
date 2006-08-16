@@ -30,6 +30,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
@@ -39,33 +40,36 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_tooliface.h"
+#include "pub_core_transtab.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_signals.h"
 #include "pub_core_syscall.h"
+#include "pub_core_syswrap.h"
 
 #include "priv_types_n_macros.h"
 #include "priv_syswrap-generic.h"
 #include "priv_syswrap-netbsd.h"
 
+#include "vki_unistd.h"
+
 // Run a thread from beginning to end and return the thread's
 // scheduler-return-code.
-VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
+static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
 {
-   VG_(debugLog)(1, "core_os",
-                    "VG_(thread_wrapper)(tid=%lld): entry\n",
-                    (ULong)tidW);
-
    VgSchedReturnCode ret;
    ThreadId     tid = (ThreadId)tidW;
    ThreadState* tst = VG_(get_ThreadState)(tid);
+
+   VG_(debugLog)(1, "syswrap-netbsdelf2", 
+                    "thread_wrapper(tid=%lld): entry\n", 
+                    (ULong)tidW);
 
    vg_assert(tst->status == VgTs_Init);
 
    /* make sure we get the CPU lock before doing anything significant */
    VG_(set_running)(tid);
 
-   if (0)
+   if (1)
       VG_(printf)("thread tid %d started: stack = %p\n",
 		  tid, &tid);
 
@@ -84,14 +88,175 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
    vg_assert(tst->status == VgTs_Runnable);
    vg_assert(VG_(is_running_thread)(tid));
 
-   VG_(debugLog)(1, "core_os",
-                    "VG_(thread_wrapper)(tid=%lld): done\n",
+   VG_(debugLog)(1, "syswrap-netbsdelf2", 
+                    "thread_wrapper(tid=%lld): exit\n", 
                     (ULong)tidW);
 
    /* Return to caller, still holding the lock. */
    return ret;
 }
 
+static void run_a_thread_NORETURN ( Word tidW )
+{
+	VG_(printf)("in run a thread_noreturn\n");
+   ThreadId tid = (ThreadId)tidW;
+   VgSchedReturnCode src;
+Int c;
+   VG_(debugLog)(1, "syswrap-netbsd", 
+                    "run_a_thread_NORETURN(tid=%lld): "
+                       "ML_(thread_wrapper_NORETURN) called\n",
+                       (ULong)tidW);
+
+   /* Run the thread all the way through. */
+src = thread_wrapper(tid);
+
+   VG_(debugLog)(1, "syswrap-netbsd", 
+                    "run_a_thread_NORETURN(tid=%lld): "
+                       "ML_(thread_wrapper) done\n",
+                       (ULong)tidW);
+
+   c = VG_(count_living_threads)();
+   vg_assert(c >= 1); /* stay sane */
+
+   if (c == 1) {
+
+      VG_(debugLog)(1, "syswrap-netbsd", 
+                       "run_a_thread_NORETURN(tid=%lld): "
+                          "last one standing\n",
+                          (ULong)tidW);
+
+      /* We are the last one standing.  Keep hold of the lock and
+         carry on to show final tool results, then exit the entire system. */
+      ( * VG_(address_of_m_main_shutdown_actions_NORETURN) ) (tid, src);
+
+   } else {
+
+      VG_(debugLog)(1, "syswrap-netbsd", 
+                       "run_a_thread_NORETURN(tid=%lld): "
+                          "not last one standing\n",
+                          (ULong)tidW);
+
+      /* OK, thread is dead, but others still exist.  Just exit. */
+      ThreadState *tst = VG_(get_ThreadState)(tid);
+
+      /* This releases the run lock */
+      VG_(exit_thread)(tid);
+      vg_assert(tst->status == VgTs_Zombie);
+
+      /* We have to use this sequence to terminate the thread to
+         prevent a subtle race.  If VG_(exit_thread)() had left the
+         ThreadState as Empty, then it could have been reallocated,
+         reusing the stack while we're doing these last cleanups.
+         Instead, VG_(exit_thread) leaves it as Zombie to prevent
+         reallocation.  We need to make sure we don't touch the stack
+         between marking it Empty and exiting.  Hence the
+         assembler. */
+      asm volatile (
+         "movl	%1, %0\n"	/* set tst->status = VgTs_Empty */
+         "movl	%2, %%eax\n"    /* set %eax = __NR_exit */
+         "movl	%3, %%ebx\n"    /* set %ebx = tst->os_state.exitcode */
+         "int	$0x80\n"	/* exit(tst->os_state.exitcode) */
+         : "=m" (tst->status)
+         : "n" (VgTs_Empty), "n" (__NR_exit), "m" (tst->os_state.exitcode));
+
+      VG_(core_panic)("Thread exit failed?\n");
+   }
+
+   /*NOTREACHED*/
+   vg_assert(0);
+}
+Word ML_(start_thread_NORETURN) ( void* arg )
+{
+   ThreadState* tst = (ThreadState*)arg;
+   ThreadId     tid = tst->tid;
+
+   run_a_thread_NORETURN ( (Word)tid );
+   /*NOTREACHED*/
+   vg_assert(0);
+}
+
+/* Allocate a stack for this thread, if it doesn't already have one.
+   They're allocated lazily, and never freed.  Returns the initial stack
+   pointer value to use, or 0 if allocation failed. */
+Addr ML_(allocstack)(ThreadId tid)
+{
+   ThreadState* tst = VG_(get_ThreadState)(tid);
+   VgStack*     stack;
+   Addr         initial_SP;
+
+   /* Either the stack_base and stack_init_SP are both zero (in which
+      case a stack hasn't been allocated) or they are both non-zero,
+      in which case it has. */
+
+   if (tst->os_state.valgrind_stack_base == 0)
+      vg_assert(tst->os_state.valgrind_stack_init_SP == 0);
+
+   if (tst->os_state.valgrind_stack_base != 0)
+      vg_assert(tst->os_state.valgrind_stack_init_SP != 0);
+
+   /* If no stack is present, allocate one. */
+
+   if (tst->os_state.valgrind_stack_base == 0) {
+      stack = VG_(am_alloc_VgStack)( &initial_SP );
+      if (stack) {
+         tst->os_state.valgrind_stack_base    = (Addr)stack;
+         tst->os_state.valgrind_stack_init_SP = initial_SP;
+      }
+   }
+
+   if (0)
+      VG_(printf)( "stack for tid %d at %p; init_SP=%p\n",
+                   tid, 
+                   (void*)tst->os_state.valgrind_stack_base, 
+                   (void*)tst->os_state.valgrind_stack_init_SP );
+                  
+   return tst->os_state.valgrind_stack_init_SP;
+}
+
+/* Allocate a stack for the main thread, and run it all the way to the
+   end.  Although we already have a working VgStack
+   (VG_(interim_stack)) it's better to allocate a new one, so that
+   overflow detection works uniformly for all threads.
+*/
+void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
+{
+   Addr sp;
+   VG_(debugLog)(1, "syswrap-linux", 
+                    "entering VG_(main_thread_wrapper_NORETURN)\n");
+
+   sp = ML_(allocstack)(tid);
+
+#if defined(VGP_ppc32_linux)
+   /* make a stack frame */
+   sp -= 16;
+   sp &= ~0xF;
+   *(UWord *)sp = 0;
+#endif
+
+   /* If we can't even allocate the first thread's stack, we're hosed.
+      Give up. */
+   vg_assert2(sp != 0, "Cannot allocate main thread's stack.");
+
+   /* shouldn't be any other threads around yet */
+   vg_assert( VG_(count_living_threads)() == 1 );
+
+   ML_(call_on_new_stack_0_1)( 
+      (Addr)sp,               /* stack */
+      0,                      /* bogus return address */
+      run_a_thread_NORETURN,  /* fn to call */
+      (Word)tid               /* arg to give it */
+   );
+
+   /*NOTREACHED*/
+   vg_assert(0);
+}
+
+
+SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
+                            Int* parent_tidptr, Int* child_tidptr )
+{
+	I_die_here;
+}
 
 /* ---------------------------------------------------------------------
    PRE/POST wrappers for arch-specific, NetBSD-specific syscalls
@@ -106,6 +271,7 @@ VgSchedReturnCode VG_(thread_wrapper)(Word /*ThreadId*/ tidW)
 
 #define PRE(name)       DEFN_PRE_TEMPLATE(netbsdelf2, name)
 #define POST(name)      DEFN_POST_TEMPLATE(netbsdelf2, name)
+
 PRE(sys_ni_syscall)
 {
    PRINT("non-existent syscall! (ni_syscall)");
@@ -180,10 +346,12 @@ PRE(sys_unmount)
 //zz    PRE_REG_READ1(long, "adjtimex", struct timex *, buf);
 //zz    PRE_MEM_READ( "adjtimex(timex->modes)", ARG1, sizeof(tx->modes));
 //zz
-//zz #define ADJX(bit,field) 				
-//zz    if (tx->modes & bit)					
-//zz       PRE_MEM_READ( "adjtimex(timex->"#field")",  
-//zz 		    (Addr)&tx->field, sizeof(tx->field))
+#if 0 //zz  (avoiding warnings about multi-line comments)
+zz #define ADJX(bit,field) 				\
+zz    if (tx->modes & bit)					\
+zz       PRE_MEM_READ( "adjtimex(timex->"#field")",	\
+zz 		    (Addr)&tx->field, sizeof(tx->field))
+#endif
 //zz    ADJX(ADJ_FREQUENCY, freq);
 //zz    ADJX(ADJ_MAXERROR, maxerror);
 //zz    ADJX(ADJ_ESTERROR, esterror);
@@ -351,9 +519,6 @@ PRE(sys_ioperm)
 }
 PRE(sys_vfork)
 { 
-	I_die_here;
-}
-PRE(sys_munmap){
 	I_die_here;
 }
 PRE(sys_mprotect){
@@ -612,7 +777,17 @@ PRE(sys_sysctl)
 /*       PRE_MEM_READ("sysctl(oldlenp)", (Addr)args->oldlenp, sizeof(*args->oldlenp)); */
 /*       PRE_MEM_WRITE("sysctl(oldval)", (Addr)args->oldval, *args->oldlenp); */
 /*    } */
-	I_die_here;
+ 	PRINT("__sysctl(%p , %d , %p, %p, %p, %d)",
+ 	      ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+
+	PRE_MEM_READ("sysctl(name)", (Addr)ARG1, ARG2 * sizeof(int));
+
+/*	We don't know the type that it will return, therefore */
+/*	if (ARG5 != NULL)
+	PRE_MEM_READ("sysctl(newp)", (Addr)ARG5, ARG6);*/
+/*	if (ARG3 == null)
+		PRE_MEM_READ("sysctl(oldp)", (Addr)ARG3, ARG4); */
+/* 	I_die_here; */
 }
 
 POST(sys_sysctl)
@@ -623,7 +798,7 @@ POST(sys_sysctl)
 /*       POST_MEM_WRITE((Addr)args->oldlenp, sizeof(*args->oldlenp)); */
 /*       POST_MEM_WRITE((Addr)args->oldval, 1 + *args->oldlenp); */
 /*    } */
-	I_die_here;
+	//I_die_here;
 }
 
 PRE(sys_prctl)
@@ -639,212 +814,31 @@ PRE(sys_prctl)
    // PRE_MEM_READs/PRE_MEM_WRITEs as necessary...
 }
 
-PRE(sys_futex)
-{
-   /*
-      arg    param                              used by ops
-
-      ARG1 - u32 *futex				all
-      ARG2 - int op
-      ARG3 - int val				WAIT,WAKE,FD,REQUEUE,CMP_REQUEUE
-      ARG4 - struct timespec *utime		WAIT:time*	REQUEUE,CMP_REQUEUE:val2
-      ARG5 - u32 *uaddr2			REQUEUE,CMP_REQUEUE
-      ARG6 - int val3				CMP_REQUEUE
-    */
-   PRINT("sys_futex ( %p, %d, %d, %p, %p )", ARG1,ARG2,ARG3,ARG4,ARG5);
-   PRE_REG_READ6(long, "futex",
-                 vki_u32 *, futex, int, op, int, val,
-                 struct timespec *, utime, vki_u32 *, uaddr2, int, val3);
-
-   PRE_MEM_READ( "futex(futex)", ARG1, sizeof(Int) );
-
-   *flags |= SfMayBlock;
-
-   switch(ARG2) {
-   case VKI_FUTEX_WAIT:
-      if (ARG4 != 0)
-	 PRE_MEM_READ( "futex(timeout)", ARG4, sizeof(struct vki_timespec) );
-      break;
-
-   case VKI_FUTEX_REQUEUE:
-   case VKI_FUTEX_CMP_REQUEUE:
-      PRE_MEM_READ( "futex(futex2)", ARG5, sizeof(Int) );
-      break;
-
-   case VKI_FUTEX_WAKE:
-   case VKI_FUTEX_FD:
-      /* no additional pointers */
-      break;
-
-   default:
-      SET_STATUS_Failure( VKI_ENOSYS );   // some futex function we don't understand
-      break;
-   }
-}
-
-POST(sys_futex)
-{
-   vg_assert(SUCCESS);
-   POST_MEM_WRITE( ARG1, sizeof(int) );
-   if (ARG2 == VKI_FUTEX_FD) {
-      if (!VG_(fd_allowed)(RES, "futex", tid, True)) {
-         VG_(close)(RES);
-         SET_STATUS_Failure( VKI_EMFILE );
-      } else {
-         if (VG_(clo_track_fds))
-            VG_(record_fd_open)(tid, RES, VG_(arena_strdup)(VG_AR_CORE, (Char*)ARG1));
-      }
-   }
-}
-
-PRE(sys_epoll_create)
-{
-   PRINT("sys_epoll_create ( %d )", ARG1);
-   PRE_REG_READ1(long, "epoll_create", int, size);
-}
-POST(sys_epoll_create)
-{
-   vg_assert(SUCCESS);
-   if (!VG_(fd_allowed)(RES, "epoll_create", tid, True)) {
-      VG_(close)(RES);
-      SET_STATUS_Failure( VKI_EMFILE );
-   } else {
-      if (VG_(clo_track_fds))
-         VG_(record_fd_open) (tid, RES, NULL);
-   }
-}
-
-PRE(sys_epoll_ctl)
-{
-   static const HChar* epoll_ctl_s[3] = {
-      "EPOLL_CTL_ADD",
-      "EPOLL_CTL_DEL",
-      "EPOLL_CTL_MOD"
-   };
-   PRINT("sys_epoll_ctl ( %d, %s, %d, %p )",
-         ARG1, ( ARG2<3 ? epoll_ctl_s[ARG2] : "?" ), ARG3, ARG4);
-   PRE_REG_READ4(long, "epoll_ctl",
-                 int, epfd, int, op, int, fd, struct epoll_event *, event);
-   PRE_MEM_READ( "epoll_ctl(event)", ARG4, sizeof(struct epoll_event) );
-}
-
-PRE(sys_epoll_wait)
-{
-   *flags |= SfMayBlock;
-   PRINT("sys_epoll_wait ( %d, %p, %d, %d )", ARG1, ARG2, ARG3, ARG4);
-   PRE_REG_READ4(long, "epoll_wait",
-                 int, epfd, struct epoll_event *, events,
-                 int, maxevents, int, timeout);
-   PRE_MEM_WRITE( "epoll_wait(events)", ARG2, sizeof(struct epoll_event)*ARG3);
-}
-POST(sys_epoll_wait)
-{
-   vg_assert(SUCCESS);
-   if (RES > 0)
-      POST_MEM_WRITE( ARG2, sizeof(struct epoll_event)*RES ) ;
-}
-
-PRE(sys_gettid)
-{
-   PRINT("sys_gettid ()");
-   PRE_REG_READ0(long, "gettid");
-}
-
-//zz PRE(sys_tkill, Special)
-//zz {
-//zz    /* int tkill(pid_t tid, int sig); */
-//zz    PRINT("sys_tkill ( %d, %d )", ARG1,ARG2);
-//zz    PRE_REG_READ2(long, "tkill", int, tid, int, sig);
-//zz    if (!VG_(client_signal_OK)(ARG2)) {
-//zz       SET_STATUS_( -VKI_EINVAL );
-//zz       return;
-//zz    }
-//zz
-//zz    /* If we're sending SIGKILL, check to see if the target is one of
-//zz       our threads and handle it specially. */
-//zz    if (ARG2 == VKI_SIGKILL && VG_(do_sigkill)(ARG1, -1))
-//zz       SET_STATUS_(0);
-//zz    else
-//zz       SET_STATUS_(VG_(do_syscall2)(SYSNO, ARG1, ARG2));
-//zz
-//zz    if (VG_(clo_trace_signals))
-//zz       VG_(message)(Vg_DebugMsg, "tkill: sent signal %d to pid %d",
-//zz 		   ARG2, ARG1);
-//zz    // Check to see if this kill gave us a pending signal
-//zz    XXX FIXME VG_(poll_signals)(tid);
-//zz }
-
-PRE(sys_tgkill)
-{
-   /* int tgkill(pid_t tgid, pid_t tid, int sig); */
-   PRINT("sys_tgkill ( %d, %d, %d )", ARG1,ARG2,ARG3);
-   PRE_REG_READ3(long, "tgkill", int, tgid, int, tid, int, sig);
-   if (!VG_(client_signal_OK)(ARG3)) {
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-   
-   /* If we're sending SIGKILL, check to see if the target is one of
-      our threads and handle it specially. */
-   if (ARG3 == VKI_SIGKILL && VG_(do_sigkill)(ARG2, ARG1))
-      SET_STATUS_Success(0);
-   else
-      SET_STATUS_from_SysRes(VG_(do_syscall3)(SYSNO, ARG1, ARG2, ARG3));
-
-   if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
-		   ARG3, ARG1, ARG2);
-   /* Check to see if this kill gave us a pending signal */
-   *flags |= SfPollAfter;
-}
-
-POST(sys_tgkill)
-{
-   if (VG_(clo_trace_signals))
-      VG_(message)(Vg_DebugMsg, "tgkill: sent signal %d to pid %d/%d",
-                   ARG3, ARG1, ARG2);
-}
-
 // Nb: this wrapper has to pad/unpad memory around the syscall itself,
 // and this allows us to control exactly the code that gets run while
 // the padding is in place.
 PRE(sys_io_setup)
 {
-   SizeT size;
-   Addr addr;
-
    PRINT("sys_io_setup ( %u, %p )", ARG1,ARG2);
    PRE_REG_READ2(long, "io_setup",
                  unsigned, nr_events, vki_aio_context_t *, ctxp);
    PRE_MEM_WRITE( "io_setup(ctxp)", ARG2, sizeof(vki_aio_context_t) );
-   
+}
+POST(sys_io_setup)
+{
+   SizeT size;
+   struct vki_aio_ring *r;
+           
    size = VG_PGROUNDUP(sizeof(struct vki_aio_ring) +
                        ARG1*sizeof(struct vki_io_event));
-   addr = VG_(find_map_space)(0, size, True);
-   
-   if (addr == 0) {
-      SET_STATUS_Failure( VKI_ENOMEM );
-      return;
-   }
+   r = *(struct vki_aio_ring **)ARG2;
+   vg_assert(ML_(valid_client_addr)((Addr)r, size, tid, "io_setup"));
 
-   VG_(map_segment)(addr, size, VKI_PROT_READ|VKI_PROT_WRITE, SF_FIXED);
-   
-   VG_(pad_address_space)(0);
-   SET_STATUS_from_SysRes( VG_(do_syscall2)(SYSNO, ARG1, ARG2) );
-   VG_(unpad_address_space)(0);
+   ML_(notify_aspacem_and_tool_of_mmap)( (Addr)r, size,
+                                         VKI_PROT_READ | VKI_PROT_WRITE,
+                                         VKI_MAP_ANONYMOUS, -1, 0 );
 
-   if (SUCCESS && RES == 0) {
-      struct vki_aio_ring *r = *(struct vki_aio_ring **)ARG2;
-        
-      vg_assert(addr == (Addr)r);
-      vg_assert(VG_(valid_client_addr)(addr, size, tid, "io_setup"));
-                
-      VG_TRACK( new_mem_mmap, addr, size, True, True, False );
-      POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
-   }
-   else {
-      VG_(unmap_range)(addr, size);
-   }
+   POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
 }
 
 // Nb: This wrapper is "Special" because we need 'size' to do the unmap
@@ -857,7 +851,6 @@ PRE(sys_io_setup)
 // file-descriptors are closed...
 PRE(sys_io_destroy)
 {
-   Segment *s = VG_(find_segment)(ARG1);
    struct vki_aio_ring *r;
    SizeT size;
       
@@ -866,17 +859,20 @@ PRE(sys_io_destroy)
 
    // If we are going to seg fault (due to a bogus ARG1) do it as late as
    // possible...
-   r = *(struct vki_aio_ring **)ARG1;
-   size = VG_PGROUNDUP(sizeof(struct vki_aio_ring) +
+   r = (struct vki_aio_ring *)ARG1;
+   size = VG_PGROUNDUP(sizeof(struct vki_aio_ring) + 
                        r->nr*sizeof(struct vki_io_event));
 
    SET_STATUS_from_SysRes( VG_(do_syscall1)(SYSNO, ARG1) );
 
-   if (SUCCESS && RES == 0 && s != NULL) {
+   if (SUCCESS && RES == 0) { 
+      Bool d = VG_(am_notify_munmap)( ARG1, size );
       VG_TRACK( die_mem_munmap, ARG1, size );
-      VG_(unmap_range)(ARG1, size);
-   }
-}
+      if (d)
+         VG_(discard_translations)( (Addr64)ARG1, (ULong)size, 
+                                    "PRE(sys_io_destroy)" );
+   }  
+}  
 
 PRE(sys_io_getevents)
 {
@@ -927,7 +923,7 @@ PRE(sys_io_submit)
 {
    Int i;
 
-   PRINT("sys_io_submit( %llu, %lld, %p )", (ULong)ARG1,(Long)ARG2,ARG3);
+   PRINT("sys_io_submit ( %llu, %lld, %p )", (ULong)ARG1,(Long)ARG2,ARG3);
    PRE_REG_READ3(long, "io_submit",
                  vki_aio_context_t, ctx_id, long, nr,
                  struct iocb **, iocbpp);
@@ -956,7 +952,7 @@ PRE(sys_io_submit)
 
 PRE(sys_io_cancel)
 {
-   PRINT("sys_io_cancel( %llu, %p, %p )", (ULong)ARG1,ARG2,ARG3);
+   PRINT("sys_io_cancel ( %llu, %p, %p )", (ULong)ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "io_cancel",
                  vki_aio_context_t, ctx_id, struct iocb *, iocb,
                  struct io_event *, result);
@@ -1453,8 +1449,11 @@ POST(sys_fhstatfs)
 
 PRE(sys_issetugid)
 {
-   I_die_here;  // Do we even need to do anything here?  I don't think so...
+   PRINT("sys_issetugid ()");
+      PRE_REG_READ0(int, "issetugid");
+   //I_die_here;  // Do we even need to do anything here?  I don't think so...
 }
+
 
 PRE(sys_kqueue)
 {
@@ -1492,6 +1491,14 @@ POST(sys_uuidgen)
    I_die_here;
 }
 
+PRE(sys_fstatvfs1)
+{
+  I_die_here;
+}
+POST(sys_fstatvfs1)
+{
+  I_die_here;
+}
 #undef PRE
 #undef POST
 

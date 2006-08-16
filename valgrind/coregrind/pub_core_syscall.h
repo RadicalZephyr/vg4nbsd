@@ -44,11 +44,12 @@
 // because the top 32-bits might not be zeroed appropriately, eg. as would
 // happen with the 6th arg on AMD64 which is passed on the stack.
 
+
+/* Macros make life easier. */
+#ifndef VGP_x86_netbsdelf2
 extern SysRes VG_(do_syscall) ( UWord sysno, 
                                 UWord, UWord, UWord, 
                                 UWord, UWord, UWord );
-
-/* Macros make life easier. */
 
 #define vgPlain_do_syscall0(s)             VG_(do_syscall)((s),0,0,0,0,0,0)
 #define vgPlain_do_syscall1(s,a)           VG_(do_syscall)((s),(a),0,0,0,0,0)
@@ -61,23 +62,42 @@ extern SysRes VG_(do_syscall) ( UWord sysno,
 #define vgPlain_do_syscall6(s,a,b,c,d,e,f) VG_(do_syscall)((s),(a),(b),\
                                                            (c),(d),(e),(f))
 
-extern SysRes VG_(mk_SysRes)         ( UWord val );
-extern SysRes VG_(mk_SysRes_Error)   ( UWord val );
-extern SysRes VG_(mk_SysRes_Success) ( UWord val );
+#else
+extern  SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3, 
+				 UWord a4, UWord a5, UWord a6,ULong a7 );
 
-// The _WRK function is handwritten assembly.  It has some very magic
-// properties.  See comments at the top of
-// VG_(fixup_guest_state_after_syscall_interrupted) below for details.
-extern
-void VG_(do_syscall_for_client_WRK)( Int syscallno, 
-                                     void* guest_state,
-                                     const vki_sigset_t *syscall_mask,
-                                     const vki_sigset_t *restore_mask,
-                                     Int nsigwords );
+#define vgPlain_do_syscall0(s)             VG_(do_syscall)((s),0,0,0,0,0,0,0)
+#define vgPlain_do_syscall1(s,a)           VG_(do_syscall)((s),(a),0,0,0,0,0,0)
+#define vgPlain_do_syscall2(s,a,b)         VG_(do_syscall)((s),(a),(b),0,0,0,0,0)
+#define vgPlain_do_syscall3(s,a,b,c)       VG_(do_syscall)((s),(a),(b),(c),0,0,0,0)
+#define vgPlain_do_syscall4(s,a,b,c,d)     VG_(do_syscall)((s),(a),(b),\
+                                                           (c),(d),0,0,0)
+#define vgPlain_do_syscall5(s,a,b,c,d,e)   VG_(do_syscall)((s),(a),(b),\
+                                                           (c),(d),(e),0,0)
+#define vgPlain_do_syscall6(s,a,b,c,d,e,f) VG_(do_syscall)((s),(a),(b),\
+                                                           (c),(d),(e),(f),0)
+
+#define vgPlain_do_syscall7(s,a,b,c,d,e,f,g) VG_(do_syscall)((s),(a),(b),\
+                                                           (c),(d),(e),(f),(g))
+#endif
+/* This whole cludge is required because our Mmap has  7 arguments! - kailash*/
+extern SysRes VG_(mk_SysRes_x86_linux)      ( Word val );
+extern SysRes VG_(mk_SysRes_x86_netbsdelf2) ( UWord val, UWord errflag );
+extern SysRes VG_(mk_SysRes_amd64_linux)    ( Word val );
+extern SysRes VG_(mk_SysRes_ppc32_linux)    ( UInt val, UInt errflag );
+extern SysRes VG_(mk_SysRes_Error)          ( UWord val );
+extern SysRes VG_(mk_SysRes_Success)        ( UWord val );
+
+
+/* Return a string which gives the name of an error value.  Note,
+   unlike the standard C syserror fn, the returned string is not
+   malloc-allocated or writable -- treat it as a constant. */
+
+extern const HChar* VG_(strerror) ( UWord errnum );
+
 
 #endif   // __PUB_CORE_SYSCALL_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-

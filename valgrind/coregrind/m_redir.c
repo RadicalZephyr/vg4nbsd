@@ -1,11 +1,11 @@
+
 /*--------------------------------------------------------------------*/
-/*--- Management of function redirection and wrapping.             ---*/
-/*---                                                   vg_redir.c ---*/
+/*--- Function replacement and wrapping.                 m_redir.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Valgrind, an extensible x86 protected-mode
-   emulator for monitoring program execution on x86-Unixes.
+   This file is part of Valgrind, a dynamic binary instrumentation
+   framework.
 
    Copyright (C) 2000-2005 Julian Seward 
       jseward@acm.org
@@ -31,23 +31,26 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_threadstate.h"   // needed for pub_core_main.h
-#include "pub_core_aspacemgr.h"
+#include "pub_core_debuglog.h"
+#include "pub_core_debuginfo.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_main.h"       // for VG_(set_libc_freeres_wrapper_addr)
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
+#include "pub_core_oset.h"
 #include "pub_core_redir.h"
-#include "pub_core_skiplist.h"
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
-#include "m_debuginfo/priv_symtab.h"  // XXX: bad!
+#include "pub_core_tooliface.h"    // VG_(needs).malloc_replacement
+
 
 /*------------------------------------------------------------*/
 /*--- General purpose redirection.                         ---*/
 /*------------------------------------------------------------*/
+
+#define TRACE_REDIR(format, args...) \
+   if (VG_(clo_trace_redir)) { VG_(message)(Vg_DebugMsg, format, ## args); }
 
 /*
   wraps and redirections, indexed by from_addr
@@ -64,6 +67,8 @@
   function's arguments and return value.
  */
 struct _CodeRedirect {
+   Addr		from_addr;	/* old addr -- MUST BE THE FIRST WORD! */
+
    enum redir_type {
       R_REDIRECT,		/* plain redirection */
       R_WRAPPER,		/* wrap with valgrind-internal code */
@@ -72,86 +77,61 @@ struct _CodeRedirect {
    
    const Char	*from_lib;	/* library qualifier pattern */
    const Char	*from_sym;	/* symbol */
-   Addr		from_addr;	/* old addr */
 
-   /* used for redirection */
-   Addr		to_addr;	/* new addr */
+   Addr		to_addr;	/* used for redirection -- new addr */
+   const FuncWrapper *wrapper;  /* used for wrapping */
 
-   /* used for wrapping */
-   const FuncWrapper *wrapper;
-
-   CodeRedirect *next;	/* next pointer on unresolved list */
+   CodeRedirect *next;	        /* next pointer on unresolved list */
 };
 
-static Char *straddr(void *p)
+static OSet* resolved_redirs;
+
+// We use a linked list here rather than an OSet, because we want to
+// traverse it and possibly remove elements as we look at them.  OSet
+// doesn't support this very well.
+static CodeRedirect *unresolved_redirs = NULL;
+
+static Bool soname_matches(const Char *pattern, const Char* soname)
 {
-   static Char buf[16];
+   // pattern must start with "soname:"
+   vg_assert(NULL != pattern);
+   vg_assert(0 == VG_(strncmp)(pattern, "soname:", 7));
 
-   VG_(sprintf)(buf, "%p", *(Addr *)p);
-
-   return buf;
-}
-
-static SkipList sk_resolved_redir = VG_SKIPLIST_INIT(CodeRedirect, from_addr, 
-						  VG_(cmp_Addr), straddr, VG_AR_SYMTAB);
-static CodeRedirect *unresolved_redir = NULL;
-
-static Bool match_lib(const Char *pattern, const SegInfo *si)
-{
-   /* pattern == NULL matches everything, otherwise use globbing
-
-      If the pattern starts with:
-	file:, then match filename
-	soname:, then match soname
-	something else, match filename
-   */
-   const Char *name = si->filename;
-
-   if (pattern == NULL)
-      return True;
-
-   if (VG_(strncmp)(pattern, "file:", 5) == 0) {
-      pattern += 5;
-      name = si->filename;
-   }
-   if (VG_(strncmp)(pattern, "soname:", 7) == 0) {
-      pattern += 7;
-      name = si->soname;
-   }
-
-   if (name == NULL)
+   if (NULL == soname)
       return False;
    
-   return VG_(string_match)(pattern, name);
-}
-
-static inline Bool from_resolved(const CodeRedirect *redir)
-{
-   return redir->from_addr != 0;
+   return VG_(string_match)(pattern + 7, soname);
 }
 
 Bool VG_(is_resolved)(const CodeRedirect *redir)
 {
-   return from_resolved(redir);
+   return redir->from_addr != 0;
 }
 
-static void add_resolved(CodeRedirect *redir)
+// Prepends redir to the unresolved list.
+static void add_redir_to_unresolved_list(CodeRedirect *redir)
 {
-   switch(redir->type) {
-   case R_REDIRECT:
-      if (VG_(clo_trace_redir)) {
-         VG_(message)(Vg_DebugMsg, "  redir resolved (%s:%s=%p -> ",
-                      redir->from_lib, redir->from_sym, redir->from_addr);
-         VG_(message)(Vg_DebugMsg, "                  %p)", redir->to_addr);
-      }
+   redir->next = unresolved_redirs;
+   unresolved_redirs = redir;
+}
 
-      if (VG_(search_transtab)(NULL, (Addr64)redir->from_addr, False)) {
+static void add_redir_to_resolved_list(CodeRedirect *redir, Bool need_discard)
+{
+   vg_assert(redir->from_addr);
+
+   switch (redir->type) {
+   case R_REDIRECT: {
+      TRACE_REDIR("  redir resolved (%s:%s=%p -> %p)", 
+                  redir->from_lib, redir->from_sym, redir->from_addr,
+                  redir->to_addr);
+
+      vg_assert(redir->to_addr != 0);
+
+      if (need_discard) {
          /* For some given (from, to) redir, the "from" function got
-            called before the .so containing "to" became available.  We
-            know this because there is already a translation for the
-            entry point of the original "from".  So the redirect will
-            never actually take effect unless that translation is
-            discarded.  
+            loaded before the .so containing "to" became available so
+            we need to discard any existing translations involving
+            the "from" function.
 
             Note, we only really need to discard the first bb of the
             old entry point, and so we avoid the problem of having to
@@ -161,201 +141,187 @@ static void add_resolved(CodeRedirect *redir)
             rid of the translation. 
 
             Note, this is potentially expensive -- discarding
-            translations causes complete unchaining.  
+            translations requires a complete search through all of
+            them.
          */
-         if (VG_(clo_verbosity) > 2 && VG_(clo_trace_redir)) {
-            VG_(message)(Vg_UserMsg,   
-                         "Discarding translation due to redirect of already called function" );
-            VG_(message)(Vg_UserMsg,
-                         "   %s (%p -> %p)",
-                         redir->from_sym, redir->from_addr, redir->to_addr );
-         }
-         VG_(discard_translations)((Addr64)redir->from_addr, 1);
+         TRACE_REDIR("Discarding translation due to redirect of already loaded function" );
+         TRACE_REDIR("   %s:%s(%p) -> %p)", redir->from_lib, redir->from_sym,
+                                            redir->from_addr, redir->to_addr );
+         VG_(discard_translations)((Addr64)redir->from_addr, 1, 
+                                   "add_redir_to_resolved_list");
       }
 
-      {
-         CodeRedirect *r = VG_(SkipList_Find_Exact)(&sk_resolved_redir, &redir->from_addr);
-
-         if (r == NULL)
-            VG_(SkipList_Insert)(&sk_resolved_redir, redir);
-         else {
-            /* XXX leak redir */
-            if (VG_(clo_trace_redir))
-               VG_(message)(Vg_DebugMsg, "  redir %s:%s:%p->%p duplicated\n",
-                            redir->from_lib, redir->from_sym, redir->from_addr,
-                            redir->to_addr);
-         }
+      // This entails a possible double OSet lookup -- one for Contains(),
+      // one for Insert().  If we had OSet_InsertIfNonDup() we could do it
+      // with one lookup.
+      if ( ! VG_(OSet_Contains)(resolved_redirs, &redir->from_addr) ) {
+         VG_(OSet_Insert)(resolved_redirs, redir);
+      } else {
+         TRACE_REDIR("  redir %s:%s:%p->%p duplicated\n",
+                     redir->from_lib, redir->from_sym, redir->from_addr,
+                     redir->to_addr);
+         // jrs 20 Nov 05: causes this: m_mallocfree.c:170
+         // (mk_plain_bszB): Assertion 'bszB != 0' failed.
+         // Perhaps it is an invalid free?  Disable for now
+         // XXX leak?
+         //VG_(arena_free)(VG_AR_SYMTAB, redir);
       }
       break;
+   }
 
    case R_WRAPPER:
-      if (VG_(clo_trace_redir)) {
-         VG_(message)(Vg_DebugMsg, "  wrapper resolved (%s:%s=%p -> wrapper)",
-                      redir->from_lib, redir->from_sym, redir->from_addr);
-      }
+      TRACE_REDIR("  wrapper resolved (%s:%s=%p -> wrapper)",
+                  redir->from_lib, redir->from_sym, redir->from_addr);
+
+      vg_assert(redir->wrapper);
 
       /* XXX redir leaked */
       //VG_(wrap_function)(redir->from_addr, redir->wrapper);
       break;
 
    case R_CLIENT_WRAPPER:
+      vg_assert(redir->wrapper);
       VG_(core_panic)("not implemented");
       break;
    }
 }
 
-/* Resolve a redir using si if possible, and add it to the resolved
-   list */
-static Bool resolve_redir(CodeRedirect *redir, const SegInfo *si)
+// Resolve a redir using si if possible.  Returns True if it succeeded.
+static Bool resolve_redir_with_seginfo(CodeRedirect *redir, const SegInfo *si)
 {
-   Bool resolved;
+   Bool ok;
 
    vg_assert(si != NULL);
-   vg_assert(si->seg != NULL);
+   vg_assert(redir->from_addr == 0 );
+   vg_assert(redir->from_sym  != NULL);
 
-   /* no redirection from Valgrind segments */
-   if (si->seg->flags & SF_VALGRIND)
-      return False;
-
-   resolved = VG_(is_resolved)(redir);
-
-   vg_assert(!resolved);
-
-   if (!from_resolved(redir)) {
-      vg_assert(redir->from_sym != NULL);
-
-      if (match_lib(redir->from_lib, si)) {
-	 redir->from_addr = VG_(reverse_search_one_symtab)(si, redir->from_sym);
-	 if (VG_(clo_trace_redir) && redir->from_addr != 0)
-	    VG_(printf)("   bind FROM: %p = %s:%s\n", 
-                        redir->from_addr,redir->from_lib, redir->from_sym );
-      }
+   // Resolved if the soname matches and we find the symbol.
+   ok = soname_matches(redir->from_lib, VG_(seginfo_soname)(si));
+   if (ok) {
+      redir->from_addr = VG_(reverse_search_one_symtab)(si, redir->from_sym);
+      ok = ( redir->from_addr == 0 ? False : True );
    }
-
-   resolved = from_resolved(redir);
-
-   if (0 && VG_(clo_trace_redir))
-      VG_(printf)("resolve_redir: %s:%s from=%p to=%p\n",
-		  redir->from_lib, redir->from_sym, redir->from_addr, 
-		  redir->to_addr);
-
-   if (resolved) add_resolved(redir);
-
-   return resolved;
+   return ok;   
 }
 
-static Bool resolve_redir_allsegs(CodeRedirect *redir)
+// Resolve a redir using any SegInfo if possible.  This is called whenever
+// a new sym-to-addr redir is created.  It covers the case where a
+// replacement function is loaded after its replacee.
+static Bool resolve_redir_with_existing_seginfos(CodeRedirect *redir)
 {
    const SegInfo *si;
 
-   for(si = VG_(next_seginfo)(NULL); 
-       si != NULL; 
-       si = VG_(next_seginfo)(si))
+   for (si = VG_(next_seginfo)(NULL); 
+        si != NULL; 
+        si = VG_(next_seginfo)(si))
    {
-      if (resolve_redir(redir, si))
+      if (resolve_redir_with_seginfo(redir, si))
 	 return True;
    }
    return False;
 }
 
-/* Go through the complete redir list, resolving as much as possible with this SegInfo.
-
-    This should be called when a new SegInfo symtab is loaded.
- */
-void VG_(resolve_seg_redirs)(SegInfo *si)
+// Resolve as many unresolved redirs as possible with this SegInfo.  This
+// should be called when a new SegInfo symtab is loaded.  It covers the case
+// where a replacee function is loaded after its replacement function.
+void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si)
 {
-   CodeRedirect **prevp = &unresolved_redir;
+   CodeRedirect **prevp = &unresolved_redirs;
    CodeRedirect *redir, *next;
 
-   if (VG_(clo_trace_redir))
-      VG_(printf)("Considering redirs to/from %s(soname=%s)\n",
-                  si->filename, si->soname);
+   TRACE_REDIR("Just loaded %s (soname=%s),",
+               VG_(seginfo_filename)(si), VG_(seginfo_soname)(si));
+   TRACE_REDIR(" resolving any unresolved redirs with it");
 
-   /* visit each unresolved redir - if it becomes resolved, then
-      remove it from the unresolved list */
-   for(redir = unresolved_redir; redir != NULL; redir = next) {
+   // Visit each unresolved redir - if it becomes resolved, then
+   // move it from the unresolved list to the resolved list.
+   for (redir = unresolved_redirs; redir != NULL; redir = next) {
       next = redir->next;
 
-      if (resolve_redir(redir, si)) {
+      if (resolve_redir_with_seginfo(redir, si)) {
 	 *prevp = next;
 	 redir->next = NULL;
+         add_redir_to_resolved_list(redir, False);
       } else
 	 prevp = &redir->next;
    }
-}
 
-static void add_redirect_X_to_addr(
-   const Char *from_lib, const Char *from_sym, Addr from_addr, Addr to_addr
-)
-{
-   CodeRedirect *redir = VG_(SkipNode_Alloc)(&sk_resolved_redir);
-
-   redir->type = R_REDIRECT;
-
-   if (from_lib) redir->from_lib  = VG_(arena_strdup)(VG_AR_SYMTAB, from_lib);
-   else          redir->from_lib  = NULL;
-   if (from_sym) redir->from_sym  = VG_(arena_strdup)(VG_AR_SYMTAB, from_sym);
-   else          redir->from_sym  = NULL;
-                 redir->from_addr = from_addr;
-
-   vg_assert(0 != to_addr);
-   redir->to_addr = to_addr;
-   redir->wrapper = 0;
-
-   if (VG_(clo_verbosity) >= 2 && VG_(clo_trace_redir))
-      VG_(message)(Vg_UserMsg, 
-                   "REDIRECT %s:%s(%p) to %p",
-                   from_lib, from_sym, from_addr, to_addr);
-
-   /* Check against all existing segments to see if this redirection
-      can be resolved immediately */
-   if (VG_(is_resolved)(redir)) {
-      add_resolved(redir);
-   }
-   else if (!resolve_redir_allsegs(redir)) {
-      /* nope, add to list */
-      redir->next = unresolved_redir;
-      unresolved_redir = redir;
-   }
-}
-
-/* Redirect a lib/symbol reference to a function at addr */
-static void add_redirect_sym_to_addr(const Char *from_lib, const Char *from_sym,
-				     Addr to_addr)
-{
-   add_redirect_X_to_addr(from_lib, from_sym, 0, to_addr);
+   TRACE_REDIR(" Finished resolving");
 }
 
 /* Redirect a function at from_addr to a function at to_addr */
 __attribute__((unused))    // It is used, but not on all platforms...
-static void add_redirect_addr_to_addr(Addr from_addr, Addr to_addr)
+static void add_redirect_addr_to_addr( Addr from_addr, Addr to_addr )
 {
-   add_redirect_X_to_addr(NULL, NULL, from_addr, to_addr);
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
+   vg_assert(0 != from_addr && 0 != to_addr);
+
+   redir->type      = R_REDIRECT;
+
+   redir->from_lib  = NULL;
+   redir->from_sym  = NULL;
+   redir->from_addr = from_addr;
+
+   redir->to_addr   = to_addr;
+   redir->wrapper   = 0;
+
+   TRACE_REDIR("REDIRECT addr to addr: %p to %p", from_addr, to_addr);
+
+   // This redirection is already resolved, put it straight in the list.
+   add_redir_to_resolved_list(redir, True);
+}
+
+/* Redirect a lib/symbol reference to a function at addr */
+static void add_redirect_sym_to_addr(
+   const Char *from_lib, const Char *from_sym, Addr to_addr
+)
+{
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
+   vg_assert(from_lib && from_sym && 0 != to_addr);
+
+   redir->type      = R_REDIRECT;
+   redir->from_lib  = VG_(arena_strdup)(VG_AR_SYMTAB, from_lib);
+   redir->from_sym  = VG_(arena_strdup)(VG_AR_SYMTAB, from_sym);
+   redir->from_addr = 0;
+   redir->to_addr   = to_addr;
+   redir->wrapper   = 0;
+
+   TRACE_REDIR("REDIR sym to addr: %s:%s to %p", from_lib, from_sym, to_addr);
+
+   // Check against all existing segments to see if this redirection
+   // can be resolved immediately (as will be the case when the replacement
+   // function is loaded after the replacee).  Then add it to the
+   // appropriate list.
+   if (resolve_redir_with_existing_seginfos(redir)) {
+      add_redir_to_resolved_list(redir, True);
+   } else {
+      add_redir_to_unresolved_list(redir);
+   }
 }
 
 CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
 			       const FuncWrapper *wrapper)
 {
-   CodeRedirect *redir = VG_(SkipNode_Alloc)(&sk_resolved_redir);
-
-   if (0)
-      VG_(printf)("adding wrapper for %s:%s -> (%p,%p)\n",
-		  from_lib, from_sym, wrapper->before, wrapper->after);
-
-   redir->type = R_WRAPPER;
-
+   CodeRedirect* redir = VG_(OSet_AllocNode)(resolved_redirs,
+                                             sizeof(CodeRedirect));
+   redir->type      = R_WRAPPER;
    redir->from_lib  = VG_(arena_strdup)(VG_AR_SYMTAB, from_lib);
    redir->from_sym  = VG_(arena_strdup)(VG_AR_SYMTAB, from_sym);
    redir->from_addr = 0;
    redir->to_addr   = 0;
    redir->wrapper   = wrapper;
    
-   /* Check against all existing segments to see if this redirection
-      can be resolved immediately */
-   if (!resolve_redir_allsegs(redir)) {
-      /* nope, add to list */
-      redir->next = unresolved_redir;
-      unresolved_redir = redir;
+   TRACE_REDIR("REDIR sym to wrapper: %s:%s to (%p,%p)",
+               from_lib, from_sym, wrapper->before, wrapper->after);
+
+   // Check against all existing segments to see if this redirection
+   // can be resolved immediately.  Then add it to the appropriate list.
+   if (resolve_redir_with_existing_seginfos(redir)) {
+      add_redir_to_resolved_list(redir, True);
+   } else {
+      add_redir_to_unresolved_list(redir);
    }
 
    return redir;
@@ -365,9 +331,7 @@ CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
    address. */
 Addr VG_(code_redirect)(Addr a)
 {
-   CodeRedirect* r;
-
-   r = VG_(SkipList_Find_Exact)(&sk_resolved_redir, &a);
+   CodeRedirect* r = VG_(OSet_Lookup)(resolved_redirs, &a);
    if (r == NULL)
       return a;
 
@@ -376,22 +340,75 @@ Addr VG_(code_redirect)(Addr a)
    return r->to_addr;
 }
 
+static void* symtab_alloc(SizeT n)
+{
+   return VG_(arena_malloc)(VG_AR_SYMTAB, n);
+}
+
+static void symtab_free(void* p)
+{
+   return VG_(arena_free)(VG_AR_SYMTAB, p);
+}
+
 void VG_(setup_code_redirect_table) ( void )
 {
+   // Initialise resolved_redirs list.
+   resolved_redirs = VG_(OSet_Create)(offsetof(CodeRedirect, from_addr),
+                                      NULL,     // Use fast comparison
+                                      symtab_alloc,
+                                      symtab_free);
+
 #if defined(VGP_x86_linux)
    /* Redirect _dl_sysinfo_int80, which is glibc's default system call
-      routine, to the routine in our trampoline page so that the
-      special sysinfo unwind hack in m_stacktrace.c will kick in.  */
-   add_redirect_sym_to_addr("soname:ld-linux.so.2", "_dl_sysinfo_int80",
-                            VG_(client_trampoline_code)+VG_(tramp_syscall_offset));
+      routine, to our copy so that the special sysinfo unwind hack in
+      m_stacktrace.c will kick in.  */
+   add_redirect_sym_to_addr(
+      "soname:ld-linux.so.2", "_dl_sysinfo_int80",
+      (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80)
+   );
+   /* If we're using memcheck, use this intercept right from the
+      start, otherwise ld.so (glibc-2.3.5) makes a lot of noise. */
+   if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
+      add_redirect_sym_to_addr(
+         "soname:ld-linux.so.2", "index",
+         (Addr)&VG_(x86_linux_REDIR_FOR_index)
+      );   
+   }
+
 #elif defined(VGP_amd64_linux)
+
    /* Redirect vsyscalls to local versions */
-   add_redirect_addr_to_addr(0xFFFFFFFFFF600000ULL,
-                             VG_(client_trampoline_code)+VG_(tramp_gettimeofday_offset));
-   add_redirect_addr_to_addr(0xFFFFFFFFFF600400ULL,
-                             VG_(client_trampoline_code)+VG_(tramp_time_offset));
-#elif defined (VGP_x86_netbsdelf2)
-   I_die_here;
+   add_redirect_addr_to_addr(
+      0xFFFFFFFFFF600000ULL,
+      (Addr)&VG_(amd64_linux_REDIR_FOR_vgettimeofday) 
+   );
+   add_redirect_addr_to_addr( 
+      0xFFFFFFFFFF600400ULL,
+      (Addr)&VG_(amd64_linux_REDIR_FOR_vtime) 
+   );
+
+#elif defined(VGP_ppc32_linux)
+
+   /* If we're using memcheck, use these intercepts right from
+      the start, otherwise ld.so makes a lot of noise. */
+   if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
+
+      add_redirect_sym_to_addr(
+         "soname:ld.so.1", "strlen",
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen)
+      );   
+      add_redirect_sym_to_addr(
+         "soname:ld.so.1", "strcmp",
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp)
+      );
+
+#elif defined(VGP_x86_netbsdelf2)
+   // NetBSD: TODO - XXXX 
+/*  add_redirect_sym_to_addr( */
+/*       "soname:ld.elf_so", "_dl_sysinfo_int80", */
+/*       (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80) */
+/*    ); */
+
 #else
 #  error Unknown platform
 #endif
@@ -514,6 +531,13 @@ static void handle_replacement_function( Char* symbol, Addr addr )
    VG_(arena_free)(VG_AR_SYMTAB, lib);
 }
 
+static Addr __libc_freeres_wrapper = 0;
+
+Addr VG_(get_libc_freeres_wrapper)(void)
+{
+   return __libc_freeres_wrapper;
+}
+
 // This is specifically for stringifying VG_(x) function names.  We
 // need to do two macroexpansions to get the VG_ macro expanded before
 // stringifying.
@@ -523,7 +547,7 @@ static void handle_replacement_function( Char* symbol, Addr addr )
 static void handle_load_notifier( Char* symbol, Addr addr )
 {
    if (VG_(strcmp)(symbol, STR(VG_NOTIFY_ON_LOAD(freeres))) == 0)
-      VG_(set_libc_freeres_wrapper_addr)(addr);
+      __libc_freeres_wrapper = addr;
 //   else if (VG_(strcmp)(symbol, STR(VG_WRAPPER(pthread_startfunc_wrapper))) == 0)
 //      VG_(pthread_startfunc_wrapper)((Addr)(si->offset + sym->st_value));
    else
@@ -633,14 +657,14 @@ void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr )
 //:: /* Called from generated code via helper */
 //:: void VG_(wrap_before)(ThreadState *tst, const FuncWrapper *wrapper)
 //:: {
-//::    Addr retaddr = VGA_RETADDR(tst->arch);
-//::    Addr argp = (Addr)&VGA_FUNC_ARG(tst->arch, 0);
+//::    Addr retaddr = VG_RETADDR(tst->arch);
+//::    Addr argp = (Addr)&VG_FUNC_ARG(tst->arch, 0);
 //::    void *nonce = NULL;
 //::    Bool mf = VG_(my_fault);
 //::    VG_(my_fault) = True;
 //:: 
 //::    if (wrapper->before) {
-//::       va_list args = VGA_VA_LIST(tst->arch);
+//::       va_list args = VG_VA_LIST(tst->arch);
 //::       nonce = (*wrapper->before)(args);
 //::    }
 //:: 
@@ -678,9 +702,9 @@ void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr )
 //:: /* Called from generated code via helper */
 //:: void VG_(wrap_after)(ThreadState *tst)
 //:: {
-//::    Addr EIP = VGA_INSTR_PTR(tst->arch);	/* instruction after call */
-//::    Addr ESP = VGA_STACK_PTR(tst->arch);	/* pointer to args */
-//::    Word ret = VGA_RETVAL(tst->arch);		/* return value */
+//::    Addr EIP = VG_INSTR_PTR(tst->arch);	/* instruction after call */
+//::    Addr ESP = VG_STACK_PTR(tst->arch);	/* pointer to args */
+//::    Word ret = VG_RETVAL(tst->arch);		/* return value */
 //::    struct call_instance *call;
 //::    Bool mf = VG_(my_fault);
 //:: 
@@ -771,3 +795,7 @@ void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr )
 //:: 
 //::    VG_(SkipList_Insert)(&wrapper_returns, ret);
 //:: }
+
+/*--------------------------------------------------------------------*/
+/*--- end                                                          ---*/
+/*--------------------------------------------------------------------*/

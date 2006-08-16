@@ -33,8 +33,6 @@
 
    All code is copied verbatim from kernel source files, except that:
    - VKI_/vki_ prefixes are added
-   - a few extra constants are defined (eg. VKI_MAP_NOSYMS);  these are
-     marked 'internal'
    - some extra explanatory comments are included;  they are all within
      "[[ ]]"
    - for some types, we only care about the size;  for a few of them (big
@@ -70,6 +68,8 @@
 #  include "vki_posixtypes-x86-linux.h"
 #elif defined(VGA_amd64)
 #  include "vki_posixtypes-amd64-linux.h"
+#elif defined(VGA_ppc32)
+#  include "vki_posixtypes-ppc32-linux.h"
 #else
 #  error Unknown platform
 #endif
@@ -148,6 +148,8 @@ typedef unsigned int	        vki_uint;
 #  include "vki-x86-linux.h"
 #elif defined(VGA_amd64)
 #  include "vki-amd64-linux.h"
+#elif defined(VGA_ppc32)
+#  include "vki-ppc32-linux.h"
 #else
 #  error Unknown platform
 #endif
@@ -178,58 +180,6 @@ struct vki_sysinfo {
 	unsigned int mem_unit;		/* Memory unit size in bytes */
 	char _f[20-2*sizeof(long)-sizeof(int)];	/* Padding: libc5 uses this.. */
 };
-
-//----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/byteorder/swab.h
-//----------------------------------------------------------------------
-
-#define ___vki_swab16(x) \
-({ \
-	__vki_u16 __x = (x); \
-	((__vki_u16)( \
-		(((__vki_u16)(__x) & (__vki_u16)0x00ffU) << 8) | \
-		(((__vki_u16)(__x) & (__vki_u16)0xff00U) >> 8) )); \
-})
-
-/*
- * provide defaults when no architecture-specific optimization is detected
- */
-#ifndef __vki_arch__swab16
-#  define __vki_arch__swab16(x) ({ __vki_u16 __tmp = (x) ; ___vki_swab16(__tmp); })
-#endif
-
-// [[Nb: using the non-OPTIMIZE version here -- easier to understand, and
-//   we don't need the optimised version as we use this very rarely]]
-#  define __vki_swab16(x) __vki_fswab16(x)
-
-static __inline__ __attribute_const__ __vki_u16 __vki_fswab16(__vki_u16 x)
-{
-	return __vki_arch__swab16(x);
-}
-
-//----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/byteorder/little_endian.h
-//----------------------------------------------------------------------
-
-#ifdef VKI_LITTLE_ENDIAN
-#define __vki_be16_to_cpu(x) __vki_swab16((x))
-#endif // VKI_LITTLE_ENDIAN
-
-//----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/byteorder/big_endian.h
-//----------------------------------------------------------------------
-
-#ifdef VKI_BIG_ENDIAN
-#define __vki_be16_to_cpu(x) ((__vki_u16)(x))
-#endif // VKI_BIG_ENDIAN
-
-//----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/byteorder/generic.h
-//----------------------------------------------------------------------
-
-#define ___vki_ntohs(x) __vki_be16_to_cpu(x)
-
-#define vki_ntohs(x) ___vki_ntohs(x)
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/time.h
@@ -346,14 +296,6 @@ struct vki_sched_param {
 };
 
 //----------------------------------------------------------------------
-// From nowhere: constants internal to Valgrind
-//----------------------------------------------------------------------
-
-/* Use high signals because native pthreads wants to use low */
-#define VKI_SIGVGKILL       (VG_(max_signal)-0) // [[internal: kill]]
-#define VKI_SIGVGRTUSERMAX  (VG_(max_signal)-1) // [[internal: last user-usable RT signal]]
-
-//----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-generic/siginfo.h
 //----------------------------------------------------------------------
 
@@ -437,6 +379,8 @@ typedef struct vki_siginfo {
 	} _sifields;
 } vki_siginfo_t;
 
+#define __VKI_SI_FAULT	0
+
 /*
  * si_code values
  * Digital reserves positive values for kernel-generated signals.
@@ -444,13 +388,54 @@ typedef struct vki_siginfo {
 #define VKI_SI_USER	0		/* sent by kill, sigsend, raise */
 #define VKI_SI_TKILL	-6		/* sent by tkill system call */
 
-#define VKI_SIGEV_MAX_SIZE	64
-#ifndef VKI_SIGEV_PAD_SIZE
-#define VKI_SIGEV_PAD_SIZE	((VKI_SIGEV_MAX_SIZE/sizeof(int)) - 3)
+/*
+ * SIGILL si_codes
+ */
+#define VKI_ILL_ILLOPC	(__VKI_SI_FAULT|1)	/* illegal opcode */
+#define VKI_ILL_ILLOPN	(__VKI_SI_FAULT|2)	/* illegal operand */
+#define VKI_ILL_ILLADR	(__VKI_SI_FAULT|3)	/* illegal addressing mode */
+#define VKI_ILL_ILLTRP	(__VKI_SI_FAULT|4)	/* illegal trap */
+#define VKI_ILL_PRVOPC	(__VKI_SI_FAULT|5)	/* privileged opcode */
+#define VKI_ILL_PRVREG	(__VKI_SI_FAULT|6)	/* privileged register */
+#define VKI_ILL_COPROC	(__VKI_SI_FAULT|7)	/* coprocessor error */
+#define VKI_ILL_BADSTK	(__VKI_SI_FAULT|8)	/* internal stack error */
+
+/*
+ * SIGFPE si_codes
+ */
+#define VKI_FPE_INTDIV	(__VKI_SI_FAULT|1)	/* integer divide by zero */
+#define VKI_FPE_INTOVF	(__VKI_SI_FAULT|2)	/* integer overflow */
+#define VKI_FPE_FLTDIV	(__VKI_SI_FAULT|3)	/* floating point divide by zero */
+#define VKI_FPE_FLTOVF	(__VKI_SI_FAULT|4)	/* floating point overflow */
+#define VKI_FPE_FLTUND	(__VKI_SI_FAULT|5)	/* floating point underflow */
+#define VKI_FPE_FLTRES	(__VKI_SI_FAULT|6)	/* floating point inexact result */
+#define VKI_FPE_FLTINV	(__VKI_SI_FAULT|7)	/* floating point invalid operation */
+#define VKI_FPE_FLTSUB	(__VKI_SI_FAULT|8)	/* subscript out of range */
+
+/*
+ * SIGSEGV si_codes
+ */
+#define VKI_SEGV_MAPERR	(__VKI_SI_FAULT|1)	/* address not mapped to object */
+#define VKI_SEGV_ACCERR	(__VKI_SI_FAULT|2)	/* invalid permissions for mapped object */
+
+/*
+ * SIGBUS si_codes
+ */
+#define VKI_BUS_ADRALN	(__VKI_SI_FAULT|1)	/* invalid address alignment */
+#define VKI_BUS_ADRERR	(__VKI_SI_FAULT|2)	/* non-existant physical address */
+#define VKI_BUS_OBJERR	(__VKI_SI_FAULT|3)	/* object specific hardware error */
+
+/*
+ * This works because the alignment is ok on all current architectures
+ * but we leave open this being overridden in the future
+ */
+#ifndef VKI___ARCH_SIGEV_PREAMBLE_SIZE
+#define VKI___ARCH_SIGEV_PREAMBLE_SIZE	(sizeof(int) * 2 + sizeof(vki_sigval_t))
 #endif
 
-// [[Nb: in 2.6.8.1, this constant is never defined...]]
-#ifndef HAVE_ARCH_SIGEVENT_T
+#define VKI_SIGEV_MAX_SIZE	64
+#define VKI_SIGEV_PAD_SIZE	((VKI_SIGEV_MAX_SIZE - VKI___ARCH_SIGEV_PREAMBLE_SIZE) \
+		/ sizeof(int))
 
 typedef struct vki_sigevent {
 	vki_sigval_t sigev_value;
@@ -467,8 +452,6 @@ typedef struct vki_sigevent {
 	} _sigev_un;
 } vki_sigevent_t;
 
-#endif
-
 //----------------------------------------------------------------------
 // From elsewhere...
 //----------------------------------------------------------------------
@@ -478,10 +461,6 @@ typedef struct vki_sigevent {
 #define VKI_SEEK_SET              0
 #define VKI_SEEK_CUR              1
 #define VKI_SEEK_END              2
-
-// [[Our own additional mmap flags]]
-#define VKI_MAP_NOSYMS  0x40000000      // internal: disable symbol loading
-#define VKI_MAP_CLIENT  0x80000000      // internal: distinguish client mappings
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/net.h
@@ -588,6 +567,8 @@ __KINLINE struct vki_cmsghdr * vki_cmsg_nxthdr (struct vki_msghdr *__msg, struct
 #define VKI_AF_INET6	10	/* IP version 6			*/
 
 #define VKI_MSG_NOSIGNAL	0x4000	/* Do not generate SIGPIPE */
+
+#define VKI_SOL_SCTP	132
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/in.h
@@ -774,6 +755,73 @@ struct vki_rtentry
 };
 
 //----------------------------------------------------------------------
+// From linux-2.6.13-rc5/include/net/sctp/user.h
+//----------------------------------------------------------------------
+
+typedef __vki_s32 vki_sctp_assoc_t;
+
+enum vki_sctp_optname {
+	VKI_SCTP_RTOINFO,
+#define VKI_SCTP_RTOINFO VKI_SCTP_RTOINFO
+	VKI_SCTP_ASSOCINFO,
+#define VKI_SCTP_ASSOCINFO VKI_SCTP_ASSOCINFO
+	VKI_SCTP_INITMSG,
+#define VKI_SCTP_INITMSG VKI_SCTP_INITMSG
+	VKI_SCTP_NODELAY, 	/* Get/set nodelay option. */
+#define VKI_SCTP_NODELAY	VKI_SCTP_NODELAY
+	VKI_SCTP_AUTOCLOSE,
+#define VKI_SCTP_AUTOCLOSE VKI_SCTP_AUTOCLOSE
+	VKI_SCTP_SET_PEER_PRIMARY_ADDR, 
+#define VKI_SCTP_SET_PEER_PRIMARY_ADDR VKI_SCTP_SET_PEER_PRIMARY_ADDR
+	VKI_SCTP_PRIMARY_ADDR,
+#define VKI_SCTP_PRIMARY_ADDR VKI_SCTP_PRIMARY_ADDR
+	VKI_SCTP_ADAPTION_LAYER,      
+#define VKI_SCTP_ADAPTION_LAYER VKI_SCTP_ADAPTION_LAYER
+	VKI_SCTP_DISABLE_FRAGMENTS,
+#define VKI_SCTP_DISABLE_FRAGMENTS VKI_SCTP_DISABLE_FRAGMENTS
+	VKI_SCTP_PEER_ADDR_PARAMS,
+#define VKI_SCTP_PEER_ADDR_PARAMS VKI_SCTP_PEER_ADDR_PARAMS
+	VKI_SCTP_DEFAULT_SEND_PARAM,
+#define VKI_SCTP_DEFAULT_SEND_PARAM VKI_SCTP_DEFAULT_SEND_PARAM
+	VKI_SCTP_EVENTS,
+#define VKI_SCTP_EVENTS VKI_SCTP_EVENTS
+	VKI_SCTP_I_WANT_MAPPED_V4_ADDR,  /* Turn on/off mapped v4 addresses  */
+#define VKI_SCTP_I_WANT_MAPPED_V4_ADDR VKI_SCTP_I_WANT_MAPPED_V4_ADDR
+	VKI_SCTP_MAXSEG, 	/* Get/set maximum fragment. */
+#define VKI_SCTP_MAXSEG 	VKI_SCTP_MAXSEG
+	VKI_SCTP_STATUS,
+#define VKI_SCTP_STATUS VKI_SCTP_STATUS
+	VKI_SCTP_GET_PEER_ADDR_INFO,
+#define VKI_SCTP_GET_PEER_ADDR_INFO VKI_SCTP_GET_PEER_ADDR_INFO
+
+	/* Internal Socket Options. Some of the sctp library functions are 
+	 * implemented using these socket options.
+	 */
+	VKI_SCTP_SOCKOPT_BINDX_ADD = 100,/* BINDX requests for adding addresses. */
+#define VKI_SCTP_SOCKOPT_BINDX_ADD	VKI_SCTP_SOCKOPT_BINDX_ADD
+	VKI_SCTP_SOCKOPT_BINDX_REM, /* BINDX requests for removing addresses. */
+#define VKI_SCTP_SOCKOPT_BINDX_REM	VKI_SCTP_SOCKOPT_BINDX_REM
+	VKI_SCTP_SOCKOPT_PEELOFF, 	/* peel off association. */
+#define VKI_SCTP_SOCKOPT_PEELOFF	VKI_SCTP_SOCKOPT_PEELOFF
+	VKI_SCTP_GET_PEER_ADDRS_NUM, 	/* Get number of peer addresss. */
+#define VKI_SCTP_GET_PEER_ADDRS_NUM	VKI_SCTP_GET_PEER_ADDRS_NUM
+	VKI_SCTP_GET_PEER_ADDRS, 	/* Get all peer addresss. */
+#define VKI_SCTP_GET_PEER_ADDRS	VKI_SCTP_GET_PEER_ADDRS
+	VKI_SCTP_GET_LOCAL_ADDRS_NUM, 	/* Get number of local addresss. */
+#define VKI_SCTP_GET_LOCAL_ADDRS_NUM	VKI_SCTP_GET_LOCAL_ADDRS_NUM
+	VKI_SCTP_GET_LOCAL_ADDRS, 	/* Get all local addresss. */
+#define VKI_SCTP_GET_LOCAL_ADDRS	VKI_SCTP_GET_LOCAL_ADDRS
+	VKI_SCTP_SOCKOPT_CONNECTX, /* CONNECTX requests. */
+#define VKI_SCTP_SOCKOPT_CONNECTX	VKI_SCTP_SOCKOPT_CONNECTX
+};
+
+struct vki_sctp_getaddrs {
+	vki_sctp_assoc_t        assoc_id;
+	int			addr_num;
+	struct vki_sockaddr	*addrs;
+};
+
+//----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/resource.h
 //----------------------------------------------------------------------
 
@@ -849,8 +897,13 @@ struct vki_elf_prpsinfo
 };
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/linux/eventpoll.h
+// From linux-2.6.12.1/include/linux/eventpoll.h
 //----------------------------------------------------------------------
+
+/* Valid opcodes to issue to sys_epoll_ctl() */
+#define VKI_EPOLL_CTL_ADD 1
+#define VKI_EPOLL_CTL_DEL 2
+#define VKI_EPOLL_CTL_MOD 3
 
 #ifdef __x86_64__
 #define VKI_EPOLL_PACKED __attribute__((packed))
@@ -858,7 +911,7 @@ struct vki_elf_prpsinfo
 #define VKI_EPOLL_PACKED
 #endif
 
-struct epoll_event {
+struct vki_epoll_event {
 	__vki_u32 events;
 	__vki_u64 data;
 } VKI_EPOLL_PACKED;
@@ -1016,9 +1069,12 @@ struct  vki_seminfo {
 //----------------------------------------------------------------------
 
 #define	VKI_EPERM		 1	/* Operation not permitted */
+#define	VKI_ENOENT		 2	/* No such file or directory */
 #define	VKI_ESRCH		 3	/* No such process */
 #define	VKI_EINTR		 4	/* Interrupted system call */
+#define VKI_ENOEXEC              8      /* Exec format error */
 #define	VKI_EBADF		 9	/* Bad file number */
+#define VKI_ECHILD              10      /* No child processes */
 #define VKI_EAGAIN		11	/* Try again */
 #define VKI_EWOULDBLOCK		VKI_EAGAIN
 #define	VKI_ENOMEM		12	/* Out of memory */
@@ -1070,8 +1126,40 @@ struct  vki_seminfo {
 // From linux-2.6.8.1/include/linux/stat.h
 //----------------------------------------------------------------------
 
+#define VKI_S_IFMT  00170000
+#define VKI_S_IFSOCK 0140000
+#define VKI_S_IFLNK  0120000
+#define VKI_S_IFREG  0100000
+#define VKI_S_IFBLK  0060000
+#define VKI_S_IFDIR  0040000
+#define VKI_S_IFCHR  0020000
+#define VKI_S_IFIFO  0010000
+#define VKI_S_ISUID  0004000
+#define VKI_S_ISGID  0002000
+#define VKI_S_ISVTX  0001000
+
+#define VKI_S_ISLNK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFLNK)
+#define VKI_S_ISREG(m)	(((m) & VKI_S_IFMT) == VKI_S_IFREG)
+#define VKI_S_ISDIR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFDIR)
+#define VKI_S_ISCHR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFCHR)
+#define VKI_S_ISBLK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFBLK)
+#define VKI_S_ISFIFO(m)	(((m) & VKI_S_IFMT) == VKI_S_IFIFO)
+#define VKI_S_ISSOCK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFSOCK)
+
+#define VKI_S_IRWXU 00700
 #define VKI_S_IRUSR 00400
 #define VKI_S_IWUSR 00200
+#define VKI_S_IXUSR 00100
+
+#define VKI_S_IRWXG 00070
+#define VKI_S_IRGRP 00040
+#define VKI_S_IWGRP 00020
+#define VKI_S_IXGRP 00010
+
+#define VKI_S_IRWXO 00007
+#define VKI_S_IROTH 00004
+#define VKI_S_IWOTH 00002
+#define VKI_S_IXOTH 00001
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/dirent.h
@@ -1128,11 +1216,10 @@ struct vki_io_event {
 	__vki_s64	result2;	/* secondary result */
 };
 
-#define VKI_PADDED(x,y)	x, y
 #if defined(VKI_LITTLE_ENDIAN)
-#define VKI_PADDED(x,y)	x, y
+#  define VKI_PADDED(x,y)	x, y
 #elif defined(VKI_BIG_ENDIAN)
-#define VKI_PADDED(x,y)	y, x
+#  define VKI_PADDED(x,y)	y, x
 #else
 #error edit for your odd byteorder.
 #endif
@@ -1231,6 +1318,8 @@ struct vki_shmid_ds {
 	void 			*shm_unused2;	/* ditto - used by DIPC */
 	void			*shm_unused3;	/* unused */
 };
+
+#define VKI_SHM_RDONLY  010000  /* read-only access */
 
 #define VKI_SHM_STAT 	13
 #define VKI_SHM_INFO 	14
@@ -1423,7 +1512,18 @@ struct vki_ppdev_frob_struct {
 // From linux-2.6.8.1/include/linux/fs.h
 //----------------------------------------------------------------------
 
+#define VKI_BLKROSET   _VKI_IO(0x12,93)	/* set device read-only (0 = read-write) */
+#define VKI_BLKROGET   _VKI_IO(0x12,94)	/* get read-only status (0 = read_write) */
 #define VKI_BLKGETSIZE _VKI_IO(0x12,96) /* return device size /512 (long *arg) */
+#define VKI_BLKRASET   _VKI_IO(0x12,98)	/* set read ahead for block device */
+#define VKI_BLKRAGET   _VKI_IO(0x12,99)	/* get current read ahead setting */
+#define VKI_BLKFRASET  _VKI_IO(0x12,100)/* set filesystem (mm/filemap.c) read-ahead */
+#define VKI_BLKFRAGET  _VKI_IO(0x12,101)/* get filesystem (mm/filemap.c) read-ahead */
+#define VKI_BLKSECTGET _VKI_IO(0x12,103)/* get max sectors per request (ll_rw_blk.c) */
+#define VKI_BLKSSZGET  _VKI_IO(0x12,104)/* get block device sector size */
+#define VKI_BLKBSZGET  _VKI_IOR(0x12,112,vki_size_t)
+#define VKI_BLKBSZSET  _VKI_IOW(0x12,113,vki_size_t)
+#define VKI_BLKGETSIZE64 _VKI_IOR(0x12,114,vki_size_t) /* return device size in bytes (u64 *arg) */
 
 #define VKI_FIBMAP	_VKI_IO(0x00,1)	/* bmap access */
 #define VKI_FIGETBSZ    _VKI_IO(0x00,2)	/* get the block size used for bmap */
@@ -1708,6 +1808,14 @@ typedef struct vki_audio_buf_info {
 // From linux-2.6.8.1/include/linux/hdreg.h
 //----------------------------------------------------------------------
 
+struct vki_hd_geometry {
+      unsigned char heads;
+      unsigned char sectors;
+      unsigned short cylinders;
+      unsigned long start;
+};
+
+#define VKI_HDIO_GETGEO		0x0301	/* get device geometry */
 #define VKI_HDIO_GET_IDENTITY	0x030d	/* get IDE identification info */
 
 // [[Nb: done like this because the original type is a huge struct that will
@@ -1898,9 +2006,37 @@ typedef __vki_kernel_uid32_t vki_qid_t; /* Type in which we store ids in memory 
 // From linux-2.6.9/include/linux/ptrace.h
 //----------------------------------------------------------------------
 
+#define VKI_PTRACE_TRACEME         0
 #define VKI_PTRACE_PEEKTEXT	   1
 #define VKI_PTRACE_PEEKDATA	   2
 #define VKI_PTRACE_PEEKUSR	   3
+#define VKI_PTRACE_POKEUSR	   6
+
+#define VKI_PTRACE_DETACH       0x11
+
+//----------------------------------------------------------------------
+// From linux-2.6.14/include/sound/asound.h
+//----------------------------------------------------------------------
+
+enum {
+	VKI_SNDRV_PCM_IOCTL_HW_FREE = _VKI_IO('A', 0x12),
+	VKI_SNDRV_PCM_IOCTL_HWSYNC = _VKI_IO('A', 0x22),
+	VKI_SNDRV_PCM_IOCTL_PREPARE = _VKI_IO('A', 0x40),
+	VKI_SNDRV_PCM_IOCTL_RESET = _VKI_IO('A', 0x41),
+	VKI_SNDRV_PCM_IOCTL_START = _VKI_IO('A', 0x42),
+	VKI_SNDRV_PCM_IOCTL_DROP = _VKI_IO('A', 0x43),
+	VKI_SNDRV_PCM_IOCTL_DRAIN = _VKI_IO('A', 0x44),
+	VKI_SNDRV_PCM_IOCTL_RESUME = _VKI_IO('A', 0x47),
+	VKI_SNDRV_PCM_IOCTL_XRUN = _VKI_IO('A', 0x48),
+	VKI_SNDRV_PCM_IOCTL_UNLINK = _VKI_IO('A', 0x61),
+};
+
+enum {
+	VKI_SNDRV_TIMER_IOCTL_START = _VKI_IO('T', 0xa0),
+	VKI_SNDRV_TIMER_IOCTL_STOP = _VKI_IO('T', 0xa1),
+	VKI_SNDRV_TIMER_IOCTL_CONTINUE = _VKI_IO('T', 0xa2),
+	VKI_SNDRV_TIMER_IOCTL_PAUSE = _VKI_IO('T', 0xa3),
+};
 
 #endif // __VKI_LINUX_H
 

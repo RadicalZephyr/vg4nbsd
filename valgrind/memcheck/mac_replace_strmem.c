@@ -31,8 +31,6 @@
 */
 
 #include "pub_tool_basics.h"
-#include "pub_tool_errormgr.h"
-#include "pub_tool_execontext.h"
 #include "pub_tool_hashtable.h"
 #include "pub_tool_profile.h"
 #include "pub_tool_redir.h"
@@ -120,7 +118,7 @@ void complain3 ( Char* s, void* dst, const void* src, int n )
 }
 
 // Some handy Z-encoded names
-#define  m_libc_so_6             libcZdsoZd6                // libc.so.6
+#define  m_libc_so_star          libcZdsoZa                 // libc.so*
 #define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
 #define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
 
@@ -140,8 +138,8 @@ void complain3 ( Char* s, void* dst, const void* src, int n )
    }
 
 // Apparently rindex() is the same thing as strrchr()
-STRRCHR(m_libc_so_6,     strrchr)
-STRRCHR(m_libc_so_6,     rindex)
+STRRCHR(m_libc_so_star,  strrchr)
+STRRCHR(m_libc_so_star,  rindex)
 STRRCHR(m_ld_linux_so_2, rindex)
    
 
@@ -159,9 +157,10 @@ STRRCHR(m_ld_linux_so_2, rindex)
    }
 
 // Apparently index() is the same thing as strchr()
-STRCHR(m_libc_so_6,            strchr)
+STRCHR(m_libc_so_star,         strchr)
 STRCHR(m_ld_linux_so_2,        strchr)
-STRCHR(m_libc_so_6,            index)
+STRCHR(m_ld_linux_x86_64_so_2, strchr)
+STRCHR(m_libc_so_star,         index)
 STRCHR(m_ld_linux_so_2,        index)
 STRCHR(m_ld_linux_x86_64_so_2, index)
 
@@ -187,7 +186,7 @@ STRCHR(m_ld_linux_x86_64_so_2, index)
       return dst_orig; \
    }
 
-STRCAT(m_libc_so_6, strcat)
+STRCAT(m_libc_so_star, strcat)
 
 
 #define STRNCAT(soname, fnname) \
@@ -213,7 +212,7 @@ STRCAT(m_libc_so_6, strcat)
       return dst_orig; \
    }
 
-STRNCAT(m_libc_so_6, strncat)
+STRNCAT(m_libc_so_star, strncat)
    
 
 #define STRNLEN(soname, fnname) \
@@ -225,9 +224,13 @@ STRNCAT(m_libc_so_6, strncat)
       return i; \
    }
 
-STRNLEN(m_libc_so_6, strnlen)
+STRNLEN(m_libc_so_star, strnlen)
    
 
+// Note that this replacement often doesn't get used because gcc inlines
+// calls to strlen() with its own built-in version.  This can be very
+// confusing if you aren't expecting it.  Other small functions in this file
+// may also be inline by gcc.
 #define STRLEN(soname, fnname) \
    SizeT VG_REPLACE_FUNCTION(soname,fnname)( const char* str ); \
    SizeT VG_REPLACE_FUNCTION(soname,fnname)( const char* str ) \
@@ -237,7 +240,7 @@ STRNLEN(m_libc_so_6, strnlen)
       return i; \
    }
 
-STRLEN(m_libc_so_6,            strlen)
+STRLEN(m_libc_so_star,         strlen)
 STRLEN(m_ld_linux_so_2,        strlen)
 STRLEN(m_ld_linux_x86_64_so_2, strlen)
    
@@ -263,7 +266,7 @@ STRLEN(m_ld_linux_x86_64_so_2, strlen)
       return dst_orig; \
    }
 
-STRCPY(m_libc_so_6, strcpy)
+STRCPY(m_libc_so_star, strcpy)
 
 
 #define STRNCPY(soname, fnname) \
@@ -284,7 +287,7 @@ STRCPY(m_libc_so_6, strcpy)
       return dst_orig; \
    }
 
-STRNCPY(m_libc_so_6, strncpy)
+STRNCPY(m_libc_so_star, strncpy)
 
 
 #define STRNCMP(soname, fnname) \
@@ -305,7 +308,7 @@ STRNCPY(m_libc_so_6, strncpy)
       } \
    }
 
-STRNCMP(m_libc_so_6, strncmp)
+STRNCMP(m_libc_so_star, strncmp)
 
 
 #define STRCMP(soname, fnname) \
@@ -326,7 +329,7 @@ STRNCMP(m_libc_so_6, strncmp)
       return 0; \
    }
 
-STRCMP(m_libc_so_6,            strcmp)
+STRCMP(m_libc_so_star,         strcmp)
 STRCMP(m_ld_linux_x86_64_so_2, strcmp)
 
 
@@ -342,7 +345,7 @@ STRCMP(m_ld_linux_x86_64_so_2, strcmp)
       return NULL; \
    }
 
-MEMCHR(m_libc_so_6, memchr)
+MEMCHR(m_libc_so_star, memchr)
 
 
 #define MEMCPY(soname, fnname) \
@@ -388,7 +391,7 @@ MEMCHR(m_libc_so_6, memchr)
       return dst; \
    }
 
-MEMCPY(m_libc_so_6, memcpy)
+MEMCPY(m_libc_so_star, memcpy)
    
 
 #define MEMCMP(soname, fnname) \
@@ -414,8 +417,8 @@ MEMCPY(m_libc_so_6, memcpy)
       return 0; \
    }
 
-MEMCMP(m_libc_so_6, memcmp)
-MEMCMP(m_libc_so_6, bcmp)
+MEMCMP(m_libc_so_star, memcmp)
+MEMCMP(m_libc_so_star, bcmp)
 
 
 /* Copy SRC to DEST, returning the address of the terminating '\0' in
@@ -441,8 +444,9 @@ MEMCMP(m_libc_so_6, bcmp)
       return dst; \
    }
 
-STPCPY(m_libc_so_6,     stpcpy)
-STPCPY(m_ld_linux_so_2, stpcpy)
+STPCPY(m_libc_so_star,         stpcpy)
+STPCPY(m_ld_linux_so_2,        stpcpy)
+STPCPY(m_ld_linux_x86_64_so_2, stpcpy)
    
 
 #define MEMSET(soname, fnname) \
@@ -457,7 +461,7 @@ STPCPY(m_ld_linux_so_2, stpcpy)
       return s; \
    }
 
-MEMSET(m_libc_so_6, memset)
+MEMSET(m_libc_so_star, memset)
 
 
 #define MEMMOVE(soname, fnname) \
@@ -479,7 +483,7 @@ MEMSET(m_libc_so_6, memset)
       return dst; \
    }
 
-MEMMOVE(m_libc_so_6, memmove)
+MEMMOVE(m_libc_so_star, memmove)
 
 
 /* Find the first occurrence of C in S or the final NUL byte.  */
@@ -496,7 +500,7 @@ MEMMOVE(m_libc_so_6, memmove)
       } \
    }
 
-GLIBC232_STRCHRNUL(m_libc_so_6, strchrnul)
+GLIBC232_STRCHRNUL(m_libc_so_star, strchrnul)
 
 
 /* Find the first occurrence of C in S.  */
@@ -512,7 +516,7 @@ GLIBC232_STRCHRNUL(m_libc_so_6, strchrnul)
       } \
    }
 
-GLIBC232_RAWMEMCHR(m_libc_so_6, rawmemchr)
+GLIBC232_RAWMEMCHR(m_libc_so_star, rawmemchr)
 
 
 /*--------------------------------------------------------------------*/

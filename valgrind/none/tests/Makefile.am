@@ -1,14 +1,31 @@
-SUBDIRS      = ${VG_ARCH}     .
+SUBDIRS = .
+if VG_X86_LINUX
+SUBDIRS += x86
+endif
+if VG_X86_NETBSD
+SUBDIRS += x86
+endif
+if VG_AMD64_LINUX
+SUBDIRS += amd64
+endif
+if VG_PPC32_LINUX
+SUBDIRS += ppc32
+endif
+
 DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
-noinst_SCRIPTS = filter_none_discards filter_stderr
+noinst_SCRIPTS = \
+	filter_cmdline0 filter_linenos \
+	filter_fdleak filter_none_discards filter_stderr
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
+	ansi.stderr.exp ansi.vgtest \
 	args.stderr.exp args.stdout.exp args.vgtest \
 	async-sigs.stderr.exp async-sigs.stdout.exp async-sigs.vgtest \
 	bitfield1.stderr.exp bitfield1.vgtest \
 	blockfault.vgtest blockfault.stderr.exp blockfault.stdout.exp \
 	closeall.stderr.exp closeall.vgtest \
+	cmdline0.stderr.exp cmdline0.stdout.exp cmdline0.vgtest \
 	cmdline1.stderr.exp cmdline1.stdout.exp cmdline1.vgtest \
 	cmdline2.stderr.exp cmdline2.stdout.exp cmdline2.vgtest \
 	cmdline3.stderr.exp cmdline3.vgtest \
@@ -21,10 +38,27 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	discard.stderr.exp discard.stdout.exp \
 	discard.vgtest \
 	exec-sigmask.vgtest exec-sigmask.stdout.exp \
-	exec-sigmask.stdout.exp2 exec-sigmask.stderr.exp \
+	exec-sigmask.stdout.exp2 exec-sigmask.stdout.exp3 exec-sigmask.stderr.exp \
 	execve.vgtest execve.stdout.exp execve.stderr.exp \
 	faultstatus.vgtest faultstatus.stderr.exp \
 	fcntl_setown.vgtest fcntl_setown.stdout.exp fcntl_setown.stderr.exp \
+	fdleak_cmsg.stderr.exp fdleak_cmsg.stderr.exp2 fdleak_cmsg.stderr.exp3 \
+	fdleak_cmsg.vgtest \
+	fdleak_creat.stderr.exp fdleak_creat.stderr.exp2 \
+	fdleak_creat.stderr.exp3 fdleak_creat.vgtest \
+	fdleak_dup.stderr.exp fdleak_dup.stderr.exp2 \
+	fdleak_dup.stderr.exp3 fdleak_dup.vgtest \
+	fdleak_dup2.stderr.exp fdleak_dup2.stderr.exp2 \
+	fdleak_dup2.stderr.exp3 fdleak_dup2.vgtest \
+	fdleak_fcntl.stderr.exp fdleak_fcntl.stderr.exp2 \
+	fdleak_fcntl.stderr.exp3 fdleak_fcntl.stderr.exp4 \
+	fdleak_fcntl.vgtest \
+	fdleak_ipv4.stderr.exp fdleak_ipv4.stderr.exp2 \
+	fdleak_ipv4.stdout.exp fdleak_ipv4.vgtest \
+	fdleak_open.stderr.exp fdleak_open.stderr.exp2 fdleak_open.vgtest \
+	fdleak_pipe.stderr.exp fdleak_pipe.stderr.exp2 fdleak_pipe.vgtest \
+	fdleak_socketpair.stderr.exp fdleak_socketpair.stderr.exp2 \
+	fdleak_socketpair.vgtest \
 	floored.stderr.exp floored.stdout.exp \
 	floored.vgtest \
 	fork.stderr.exp fork.stdout.exp fork.vgtest \
@@ -34,107 +68,117 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	map_unaligned.stderr.exp map_unaligned.vgtest \
 	map_unmap.stderr.exp map_unmap.stdout.exp map_unmap.vgtest \
 	mq.stderr.exp mq.vgtest \
-	mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
+	nestedfns.stderr.exp nestedfns.stdout.exp nestedfns.vgtest \
 	pending.stdout.exp pending.stderr.exp pending.vgtest \
+	pth_atfork1.stderr.exp pth_atfork1.stdout.exp pth_atfork1.vgtest \
 	pth_blockedsig.stderr.exp \
 	pth_blockedsig.stdout.exp pth_blockedsig.vgtest \
+	pth_cancel1.stderr.exp pth_cancel1.stdout.exp pth_cancel1.vgtest \
+	pth_cancel2.stderr.exp pth_cancel2.vgtest \
+	pth_cvsimple.stderr.exp pth_cvsimple.stdout.exp pth_cvsimple.vgtest \
+	pth_empty.stderr.exp pth_empty.vgtest \
+	pth_exit.stderr.exp pth_exit.vgtest \
+	pth_exit2.stderr.exp pth_exit2.vgtest \
+	pth_mutexspeed.stderr.exp \
+	pth_mutexspeed.stdout.exp pth_mutexspeed.vgtest \
+	pth_once.stderr.exp pth_once.stdout.exp pth_once.vgtest \
+	pth_rwlock.stderr.exp pth_rwlock.vgtest \
 	pth_stackalign.stderr.exp \
 	pth_stackalign.stdout.exp pth_stackalign.vgtest \
 	rcrl.stderr.exp rcrl.stdout.exp rcrl.vgtest \
 	readline1.stderr.exp readline1.stdout.exp \
 	readline1.vgtest \
+	res_search.stderr.exp res_search.stdout.exp res_search.vgtest \
 	resolv.stderr.exp resolv.stdout.exp resolv.vgtest \
 	rlimit_nofile.stderr.exp rlimit_nofile.stdout.exp rlimit_nofile.vgtest \
 	selfrun.stderr.exp selfrun.stdout.exp selfrun.vgtest \
 	sem.stderr.exp sem.stdout.exp sem.vgtest \
 	semlimit.stderr.exp semlimit.stdout.exp semlimit.vgtest \
+	shell shell.vgtest shell.stderr.exp shell.stdout.exp \
+	shell_badinterp shell_badinterp.vgtest shell_badinterp.stderr.exp \
+	shell_binaryfile shell_binaryfile.vgtest shell_binaryfile.stderr.exp \
+	shell_dir.vgtest shell_dir.stderr.exp \
+	shell_nonexec.vgtest shell_nonexec.stderr.exp \
+	shell_nosuchfile.vgtest shell_nosuchfile.stderr.exp \
+	shell_valid1 shell_valid1.vgtest shell_valid1.stderr.exp \
+	shell_valid2 shell_valid2.vgtest shell_valid2.stderr.exp \
+	shell_valid3 shell_valid3.vgtest shell_valid3.stderr.exp \
+	shell_zerolength shell_zerolength.vgtest shell_zerolength.stderr.exp \
 	susphello.stdout.exp susphello.stderr.exp susphello.vgtest \
 	sha1_test.stderr.exp sha1_test.vgtest \
 	shortpush.stderr.exp shortpush.vgtest \
 	shorts.stderr.exp shorts.vgtest \
 	sigstackgrowth.stdout.exp sigstackgrowth.stderr.exp sigstackgrowth.vgtest \
-	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
 	stackgrowth.stdout.exp stackgrowth.stderr.exp stackgrowth.vgtest \
 	syscall-restart1.vgtest syscall-restart1.stdout.exp syscall-restart1.stderr.exp \
 	syscall-restart2.vgtest syscall-restart2.stdout.exp syscall-restart2.stderr.exp \
 	system.stderr.exp system.vgtest \
 	thread-exits.stderr.exp thread-exits.stdout.exp thread-exits.vgtest \
 	threaded-fork.stderr.exp threaded-fork.stdout.exp threaded-fork.vgtest \
-	tls.stderr.exp tls.stdout.exp  \
-	yield.stderr.exp yield.stdout.exp yield.vgtest
+	threadederrno.stderr.exp threadederrno.stdout.exp \
+	threadederrno.vgtest \
+	tls.vgtest tls.stderr.exp tls.stdout.exp  \
+	vgprintf.stderr.exp vgprintf.stdout.exp vgprintf.vgtest
+
+if !VG_X86_NETBSD
+EXTRA_DIST += mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
+	mremap2.stderr.exp mremap2.stdout.exp mremap2.vgtest
+endif
 
 check_PROGRAMS = \
-	args async-sigs bitfield1 blockfault closeall coolo_strlen \
-	discard exec-sigmask execve faultstatus fcntl_setown floored fork \
-	fucomip \
-	manythreads \
-	munmap_exe map_unaligned map_unmap mq mremap rcrl readline1 \
-	resolv rlimit_nofile selfrun sem semlimit sha1_test \
-	shortpush shorts \
-	stackgrowth sigstackgrowth \
-	smc1 susphello pending pth_blockedsig pth_stackalign \
+	ansi args \
+	async-sigs bitfield1 blockfault closeall coolo_strlen \
+	discard exec-sigmask execve faultstatus fcntl_setown \
+	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
+	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
+	fdleak_socketpair \
+	floored fork fucomip manythreads \
+	munmap_exe map_unaligned map_unmap mq \
+	nestedfns \
+	pending \
+	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
+	pth_empty pth_exit pth_exit2 pth_mutexspeed pth_once pth_rwlock \
+	pth_stackalign \
+	rcrl readline1 res_search resolv \
+	rlimit_nofile selfrun sem semlimit sha1_test \
+	shortpush shorts stackgrowth sigstackgrowth susphello \
 	syscall-restart1 syscall-restart2 system \
-	thread-exits threaded-fork \
-	tls tls.so tls2.so \
-	coolo_sigaction gxx304 yield
+	thread-exits threaded-fork threadederrno \
+	tls tls.so tls2.so vgprintf \
+	coolo_sigaction gxx304
+
+if !VG_X86_NETBSD
+check_PROGRAMS+= mremap mremap2 
+endif
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include
 AM_CXXFLAGS = $(AM_CFLAGS)
 
-# generic C ones
-args_SOURCES 		= args.c
-async_sigs_SOURCES	= async-sigs.c
-bitfield1_SOURCES 	= bitfield1.c
-blockfault_SOURCES	= blockfault.c
-closeall_SOURCES	= closeall.c
-coolo_strlen_SOURCES 	= coolo_strlen.c
-discard_SOURCES 	= discard.c
-exec_sigmask_SOURCES	= exec-sigmask.c
-execve_SOURCES		= execve.c
-faultstatus_SOURCES	= faultstatus.c
-fcntl_setown_SOURCES	= fcntl_setown.c
-fork_SOURCES 		= fork.c
-floored_SOURCES 	= floored.c
+# Extra stuff for C tests
+ansi_CFLAGS		= -ansi
 floored_LDADD 		= -lm
-fucomip_SOURCES 	= fucomip.c
-pending_SOURCES		= pending.c
-manythreads_SOURCES	= manythreads.c
 manythreads_LDADD	= -lpthread
-map_unaligned_SOURCES	= map_unaligned.c
-map_unmap_SOURCES	= map_unmap.c
-mq_SOURCES		= mq.c
 mq_LDADD		= -lrt
-mremap_SOURCES		= mremap.c
-munmap_exe_SOURCES 	= munmap_exe.c
-pth_blockedsig_SOURCES	= pth_blockedsig.c
+pth_atfork1_LDADD	= -lpthread
 pth_blockedsig_LDADD	= -lpthread
-pth_stackalign_SOURCES	= pth_stackalign.c
+pth_cancel1_LDADD	= -lpthread
+pth_cancel2_LDADD	= -lpthread
+pth_cvsimple_LDADD	= -lpthread
+pth_empty_LDADD 	= -lpthread
+pth_exit_LDADD	 	= -lpthread
+pth_exit2_LDADD	 	= -lpthread
+pth_mutexspeed_LDADD	= -lpthread
+pth_once_LDADD		= -lpthread
+pth_rwlock_LDADD	= -lpthread
 pth_stackalign_LDADD	= -lpthread
-rcrl_SOURCES 		= rcrl.c
-readline1_SOURCES 	= readline1.c
-resolv_SOURCES 		= resolv.c
-rlimit_nofile_SOURCES	= rlimit_nofile.c
-selfrun_SOURCES		= selfrun.c
-sem_SOURCES		= sem.c
-semlimit_SOURCES	= semlimit.c
+res_search_LDADD        = -lresolv -lpthread
 semlimit_LDADD		= -lpthread
-smc1_SOURCES 		= smc1.c
-sha1_test_SOURCES 	= sha1_test.c
-shortpush_SOURCES 	= shortpush.c
-shorts_SOURCES 		= shorts.c
-sigstackgrowth_SOURCES	= sigstackgrowth.c
-susphello_SOURCES	= susphello.c
 susphello_LDADD		= -lpthread
-stackgrowth_SOURCES	= stackgrowth.c
-syscall_restart1_SOURCES = syscall-restart1.c
-syscall_restart2_SOURCES = syscall-restart2.c
-system_SOURCES 		= system.c
-thread_exits_SOURCES	= thread-exits.c
 thread_exits_LDADD	= -lpthread
-threaded_fork_SOURCES	= threaded-fork.c
 threaded_fork_LDADD	= -lpthread
+threadederrno_LDADD	= -lpthread
 tls_SOURCES		= tls.c tls2.c
 tls_DEPENDENCIES	= tls.so
 tls_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests
@@ -146,14 +190,8 @@ tls_so_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests -shared -fPIC
 tls_so_CFLAGS		= -fPIC
 tls2_so_SOURCES		= tls2_so.c
 tls2_so_LDFLAGS		= -shared
-yield_SOURCES		= yield.c
-yield_CFLAGS		= $(AM_CFLAGS) -D__$(VG_ARCH)__
-yield_LDADD		= -lpthread
 
-# generic C++ ones
+# C++ tests
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp
 gxx304_SOURCES		= gxx304.cpp
-
-# must be built with these flags -- bug only occurred with them
-fpu_lazy_eflags.o: CFLAGS += -O2 -mcpu=pentiumpro -march=pentiumpro
 

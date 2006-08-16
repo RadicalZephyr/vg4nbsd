@@ -16,7 +16,7 @@
   </l:l10n>
 </l:i18n>
 
-<!-- don't generate sub-tocs for qanda sets -->
+<!-- do not generate sub-tocs for qanda sets -->
 <xsl:param name="generate.toc">
 set       toc,title
 book      toc,title,figure,table,example,equation
@@ -41,5 +41,11 @@ reference toc,title
 <xsl:attribute-set name="set.titlepage.recto.style">
   <xsl:attribute name="align">center</xsl:attribute>
 </xsl:attribute-set>
+
+<!-- per Bob Stayton: turn off xml:base processing pro tem -->
+<!-- should hopefully be fixed in next docbook stylesheets release (1.70) -->
+<xsl:template match="@fileref">
+  <xsl:value-of select="."/>
+</xsl:template>
 
 </xsl:stylesheet>

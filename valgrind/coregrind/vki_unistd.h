@@ -36,10 +36,10 @@
 #  include "vki_unistd-x86-linux.h"   
 #elif defined(VGP_amd64_linux)
 #  include "vki_unistd-amd64-linux.h" 
-#elif defined(VGP_arm_linux)
-#  include "vki_unistd-arm-linux.h" 
+#elif defined(VGP_ppc32_linux)
+#  include "vki_unistd-ppc32-linux.h" 
 #elif defined(VGP_x86_netbsdelf2)
-#include "vki_unistd-x86-netbsd.h"
+#  include "vki_unistd-x86-netbsd.h"
 #else
 #  error Unknown platform
 #endif

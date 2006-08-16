@@ -35,6 +35,7 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_syscall.h"
+#include "pub_core_clientstate.h"
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
@@ -43,8 +44,6 @@
 
 /* As deduced from sp_at_startup, the client's argc, argv[] and
    envp[] as extracted from the client's stack at startup-time. */
-Int    VG_(client_argc);
-Char** VG_(client_argv);
 Char** VG_(client_envp);
 
 /* Path to library directory */
@@ -71,7 +70,7 @@ void  VG_(env_unsetenv) ( Char **env, const Char *varname )
    Char **to = NULL;
    Int len = VG_(strlen)(varname);
 
-   for(from = to = env; from && *from; from++) {
+   for (from = to = env; from && *from; from++) {
       if (!(VG_(strncmp)(varname, *from, len) == 0 && (*from)[len] == '=')) {
 	 *to = *from;
 	 to++;
@@ -91,7 +90,7 @@ Char **VG_(env_setenv) ( Char ***envp, const Char* varname, const Char *val )
 
    VG_(sprintf)(valstr, "%s=%s", varname, val);
 
-   for(cpp = env; cpp && *cpp; cpp++) {
+   for (cpp = env; cpp && *cpp; cpp++) {
       if (VG_(strncmp)(varname, *cpp, len) == 0 && (*cpp)[len] == '=') {
 	 *cpp = valstr;
 	 return oldenv;
@@ -109,7 +108,7 @@ Char **VG_(env_setenv) ( Char ***envp, const Char* varname, const Char *val )
       Int envlen = (cpp-env) + 2;
       Char **newenv = VG_(arena_malloc)(VG_AR_CORE, envlen * sizeof(Char **));
 
-      for(cpp = newenv; *env; )
+      for (cpp = newenv; *env; )
 	 *cpp++ = *env++;
       *cpp++ = valstr;
       *cpp++ = NULL;
@@ -203,15 +202,13 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    buf = VG_(arena_malloc)(VG_AR_CORE, VG_(strlen)(VG_(libdir)) + 20);
 
    // Remove Valgrind-specific entries from LD_*.
-   VG_(sprintf)(buf, "%s*/vg_preload_core.so", VG_(libdir));
-   mash_colon_env(ld_preload_str, buf);
    VG_(sprintf)(buf, "%s*/vgpreload_*.so", VG_(libdir));
    mash_colon_env(ld_preload_str, buf);
    VG_(sprintf)(buf, "%s*", VG_(libdir));
    mash_colon_env(ld_library_path_str, buf);
 
-   // Remove VALGRIND_CLO variable.
-   VG_(env_unsetenv)(envp, VALGRINDCLO);
+   // Remove VALGRIND_LAUNCHER variable.
+   VG_(env_unsetenv)(envp, VALGRIND_LAUNCHER);
 
    // XXX if variable becomes empty, remove it completely?
 
@@ -236,7 +233,7 @@ Int VG_(poll)( struct vki_pollfd *ufds, UInt nfds, Int timeout)
 }
 
 /* clone the environment */
-static Char **env_clone ( Char **oldenv )
+Char **VG_(env_clone) ( Char **oldenv )
 {
    Char **oldenvp;
    Char **newenvp;
@@ -281,7 +278,7 @@ Int VG_(system) ( Char* cmd )
       /* restore the DATA rlimit for the child */
       VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
 
-      envp = env_clone(VG_(client_envp));
+      envp = VG_(env_clone)(VG_(client_envp));
       VG_(env_remove_valgrind_env_stuff)( envp ); 
 
       argv[0] = "/bin/sh";
@@ -304,9 +301,6 @@ Int VG_(system) ( Char* cmd )
 /* ---------------------------------------------------------------------
    Resource limits
    ------------------------------------------------------------------ */
-
-struct vki_rlimit VG_(client_rlimit_data);
-struct vki_rlimit VG_(client_rlimit_stack);
 
 /* Support for getrlimit. */
 Int VG_(getrlimit) (Int resource, struct vki_rlimit *rlim)
@@ -337,9 +331,17 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
 
 Int VG_(gettid)(void)
 {
-#  if !defined(VGP_x86_netbsdelf2)
-   SysRes res = VG_(do_syscall0)(__NR_gettid);
-
+#if defined (VGO_netbsdelf2)
+	return VG_(getpid)();
+#endif 
+#if !defined(VGO_netbsdelf2) 
+   SysRes res = VG_(do_syscall0)(__NR_gettid); 
+#else 
+/* fake up a res as this not available on NetBSD -HACK */
+   SysRes res;
+   res.isError = 1;
+   res.val = VKI_ENOSYS;
+#endif
    if (res.isError && res.val == VKI_ENOSYS) {
       Char pid[16];      
       /*
@@ -355,9 +357,13 @@ Int VG_(gettid)(void)
        * So instead of calling getpid here we use readlink to see where
        * the /proc/self link is pointing...
        */
-
+#ifdef VGO_netbsdelf2
+      res = VG_(do_syscall3)(__NR_readlink, (UWord)"/proc/curproc",
+                             (UWord)pid, sizeof(pid));
+#else
       res = VG_(do_syscall3)(__NR_readlink, (UWord)"/proc/self",
                              (UWord)pid, sizeof(pid));
+#endif
       if (!res.isError && res.val > 0) {
          pid[res.val] = '\0';
          res.val = VG_(atoll)(pid);
@@ -365,9 +371,9 @@ Int VG_(gettid)(void)
    }
 
    return res.val;
-#else
-   I_die_here;
-#endif
+/* #else */
+/*    I_die_here; */
+/* #endif */
 }
 
 /* You'd be amazed how many places need to know the current pid. */
@@ -389,10 +395,91 @@ Int VG_(getppid) ( void )
    return VG_(do_syscall0)(__NR_getppid) . val;
 }
 
-Int VG_(setpgid) ( Int pid, Int pgrp )
+Int VG_(geteuid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall2)(__NR_setpgid, pid, pgrp) . val;
+   return VG_(do_syscall0)(__NR_geteuid) . val;
+}
+
+Int VG_(getegid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getegid) . val;
+}
+Int VG_(getuid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getuid) . val;
+}
+
+Int VG_(getgid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getgid) . val;
+}
+
+/* Get supplementary groups into list[0 .. size-1].  Returns the
+   number of groups written, or -1 if error.  Note that in order to be
+   portable, the groups are 32-bit unsigned ints regardless of the
+   platform. */
+Int VG_(getgroups)( Int size, UInt* list )
+{
+#  if defined(VGP_x86_linux) || defined(VGP_ppc32_linux)
+   Int    i;
+   SysRes sres;
+   UShort list16[32];
+   if (size < 0) return -1;
+   if (size > 32) size = 32;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list16);
+   if (sres.isError)
+      return -1;
+   if (sres.val != size)
+      return -1;
+   for (i = 0; i < size; i++)
+      list[i] = (UInt)list16[i];
+   return size;
+
+#  elif defined(VGP_amd64_linux)
+   SysRes sres;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list);
+   if (sres.isError)
+      return -1;
+   return sres.val;
+#elif defined (VGP_x86_netbsdelf2)
+   SysRes sres;
+   sres = VG_(do_syscall2)(__NR_getgroups,size,(Addr)list);
+   if(sres.isError)
+	   return -1;
+   return sres.val;
+#  else
+#     error "VG_(getgroups): needs implementation on this platform"
+#  endif
+}
+
+/* ---------------------------------------------------------------------
+   Process tracing
+   ------------------------------------------------------------------ */
+
+Int VG_(ptrace) ( Int request, Int pid, void *addr, void *data )
+{
+   SysRes res;
+   res = VG_(do_syscall4)(__NR_ptrace, request, pid, (UWord)addr, (UWord)data);
+   if (res.isError)
+      return -1;
+   return res.val;
+}
+
+/* ---------------------------------------------------------------------
+   Fork
+   ------------------------------------------------------------------ */
+
+Int VG_(fork) ( void )
+{
+   SysRes res;
+   res = VG_(do_syscall0)(__NR_fork);
+   if (res.isError)
+      return -1;
+   return res.val;
 }
 
 /* ---------------------------------------------------------------------
@@ -423,67 +510,26 @@ void VG_(nanosleep)(struct vki_timespec *ts)
 }
 
 /* ---------------------------------------------------------------------
-   A simple atfork() facility for Valgrind's internal use
+   A trivial atfork() facility for Valgrind's internal use
    ------------------------------------------------------------------ */
 
-struct atfork {
-   vg_atfork_t	pre;
-   vg_atfork_t	parent;
-   vg_atfork_t	child;
-};
+// Trivial because it only supports a single post-fork child action, which
+// is all we need.
 
-#define VG_MAX_ATFORK	10
+static vg_atfork_t atfork_child = NULL;
 
-static struct atfork atforks[VG_MAX_ATFORK];
-static Int n_atfork;
-
-void VG_(atfork)(vg_atfork_t pre, vg_atfork_t parent, vg_atfork_t child)
+void VG_(atfork_child)(vg_atfork_t child)
 {
-   Int i;
+   if (NULL != atfork_child)
+      VG_(core_panic)("More than one atfork_child handler requested");
 
-   for(i = 0; i < n_atfork; i++) {
-      if (atforks[i].pre == pre &&
-          atforks[i].parent == parent &&
-          atforks[i].child == child)
-         return;
-   }
-
-   if (n_atfork >= VG_MAX_ATFORK)
-      VG_(core_panic)("Too many VG_(atfork) handlers requested: "
-                      "raise VG_MAX_ATFORK");
-
-   atforks[n_atfork].pre    = pre;
-   atforks[n_atfork].parent = parent;
-   atforks[n_atfork].child  = child;
-
-   n_atfork++;
-}
-
-void VG_(do_atfork_pre)(ThreadId tid)
-{
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].pre != NULL)
-	 (*atforks[i].pre)(tid);
-}
-
-void VG_(do_atfork_parent)(ThreadId tid)
-{
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].parent != NULL)
-	 (*atforks[i].parent)(tid);
+   atfork_child = child;
 }
 
 void VG_(do_atfork_child)(ThreadId tid)
 {
-   Int i;
-
-   for(i = 0; i < n_atfork; i++)
-      if (atforks[i].child != NULL)
-	 (*atforks[i].child)(tid);
+   if (NULL != atfork_child)
+      (*atfork_child)(tid);
 }
 
 /*--------------------------------------------------------------------*/

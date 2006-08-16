@@ -74,11 +74,15 @@
 
 #include <stdarg.h>
 
+/* Nb: this file might be included in a file compiled with -ansi.  So
+   we can't use C++ style "//" comments nor the "asm" keyword (instead
+   use "__asm__"). */
+
 /* If we're not compiling for our target architecture, don't generate
    any inline asms.  Note that in this file we're using the compiler's
    CPP symbols for identifying architectures, which are different to
    the ones we use within the rest of Valgrind. */
-#if !defined(__i386__) && !defined(__x86_64__)
+#if !defined(__i386__) && !defined(__x86_64__) && !defined(__powerpc__)
 #  ifndef NVALGRIND
 #    define NVALGRIND	1
 #  endif  /* NVALGRIND */
@@ -120,8 +124,6 @@
 */
 
 #ifdef __x86_64__
-extern int printf (__const char *__restrict __format, ...);
-extern void exit (int __status);
 #define VALGRIND_MAGIC_SEQUENCE(                                \
         _zzq_rlval, _zzq_default, _zzq_request,                 \
         _zzq_arg1, _zzq_arg2, _zzq_arg3, _zzq_arg4)             \
@@ -132,15 +134,15 @@ extern void exit (int __status);
     _zzq_args[2] = (volatile unsigned long long)(_zzq_arg2);    \
     _zzq_args[3] = (volatile unsigned long long)(_zzq_arg3);    \
     _zzq_args[4] = (volatile unsigned long long)(_zzq_arg4);    \
-    asm volatile("roll $29, %%eax ; roll $3, %%eax\n\t"		\
-                 "rorl $27, %%eax ; rorl $5, %%eax\n\t"		\
-                 "roll $13, %%eax ; roll $19, %%eax"		\
-                 : "=d" (_zzq_rlval)				\
-                 : "a" (&_zzq_args[0]), "0" (_zzq_default)	\
-                 : "cc", "memory"				\
-                );						\
+    __asm__ volatile("roll $29, %%eax ; roll $3, %%eax\n\t"	\
+                     "rorl $27, %%eax ; rorl $5, %%eax\n\t"	\
+                     "roll $13, %%eax ; roll $19, %%eax"		\
+                     : "=d" (_zzq_rlval)				\
+                     : "a" (&_zzq_args[0]), "0" (_zzq_default)	\
+                     : "cc", "memory"				\
+                    );						\
   }
-#endif  // __x86_64__
+#endif  /* __x86_64__ */
 
 #ifdef __i386__
 #define VALGRIND_MAGIC_SEQUENCE(				\
@@ -153,39 +155,44 @@ extern void exit (int __status);
     _zzq_args[2] = (unsigned int)(_zzq_arg2);			\
     _zzq_args[3] = (unsigned int)(_zzq_arg3);			\
     _zzq_args[4] = (unsigned int)(_zzq_arg4);			\
-    asm volatile("roll $29, %%eax ; roll $3, %%eax\n\t"		\
-                 "rorl $27, %%eax ; rorl $5, %%eax\n\t"		\
-                 "roll $13, %%eax ; roll $19, %%eax"		\
-                 : "=d" (_zzq_rlval)				\
-                 : "a" (&_zzq_args[0]), "0" (_zzq_default)	\
-                 : "cc", "memory"				\
-                );						\
+    __asm__ volatile("roll $29, %%eax ; roll $3, %%eax\n\t"	\
+                     "rorl $27, %%eax ; rorl $5, %%eax\n\t"	\
+                     "roll $13, %%eax ; roll $19, %%eax"	\
+                     : "=d" (_zzq_rlval)			\
+                     : "a" (&_zzq_args[0]), "0" (_zzq_default)	\
+                     : "cc", "memory"				\
+                    );						\
   }
-#endif  // __i386__
+#endif  /* __i386__ */
 
-#ifdef __arm__
-// XXX: temporary, until MAGIC_SEQUENCE is written properly
-extern int printf (__const char *__restrict __format, ...);
-extern void exit (int __status);
+#ifdef __powerpc__
 #define VALGRIND_MAGIC_SEQUENCE(                                        \
         _zzq_rlval, _zzq_default, _zzq_request,                         \
         _zzq_arg1, _zzq_arg2, _zzq_arg3, _zzq_arg4)                     \
                                                                         \
   { volatile unsigned int _zzq_args[5];                                 \
+    register unsigned int _zzq_tmp __asm__("r3");                       \
+    register volatile unsigned int *_zzq_ptr __asm__("r4");             \
     _zzq_args[0] = (volatile unsigned int)(_zzq_request);               \
     _zzq_args[1] = (volatile unsigned int)(_zzq_arg1);                  \
     _zzq_args[2] = (volatile unsigned int)(_zzq_arg2);                  \
     _zzq_args[3] = (volatile unsigned int)(_zzq_arg3);                  \
     _zzq_args[4] = (volatile unsigned int)(_zzq_arg4);                  \
-    (_zzq_rlval) = (_zzq_default);/* temporary only */  \
-    printf("argh: MAGIC_SEQUENCE"); exit(1); \
-    asm volatile("");                                                   \
+    _zzq_ptr = _zzq_args;                                               \
+    __asm__ volatile("tw 0,3,27\n\t"                                    \
+                     "rlwinm 0,0,29,0,0\n\t"                            \
+                     "rlwinm 0,0,3,0,0\n\t"                             \
+                     "rlwinm 0,0,13,0,0\n\t"                            \
+                     "rlwinm 0,0,19,0,0\n\t"                            \
+                     "nop\n\t"                                          \
+                     : "=r" (_zzq_tmp)                                  \
+                     : "0" (_zzq_default), "r" (_zzq_ptr)               \
+                     : "memory");                                       \
+    _zzq_rlval = (__typeof__(_zzq_rlval)) _zzq_tmp;                     \
   }
-// XXX: make sure that the register holding the args and the register taking
-// the return value match what the scheduler is expecting.
-#endif  // __arm__
+#endif   /* __powerpc__ */
 
-// Insert assembly code for other architectures here...
+/* Insert assembly code for other architectures here... */
 
 #endif /* NVALGRIND */
 
@@ -202,8 +209,8 @@ extern void exit (int __status);
    start at 0x2000.
 */
 
-// These macros are used by tools -- they must be public, but don't embed them
-// into other programs.
+/* These macros are used by tools -- they must be public, but don't embed them
+ * into other programs. */
 #define VG_USERREQ_TOOL_BASE(a,b) \
    ((unsigned int)(((a)&0xff) << 24 | ((b)&0xff) << 16))
 #define VG_IS_TOOL_USERREQ(a, b, v) \

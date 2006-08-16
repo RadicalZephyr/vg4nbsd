@@ -35,7 +35,7 @@ misses.  In particular, it records:</para>
   </listitem>
 </itemizedlist>
 
-<para>On a modern x86 machine, an L1 miss will typically cost
+<para>On a modern machine, an L1 miss will typically cost
 around 10 cycles, and an L2 miss can cost as much as 200
 cycles. Detailed cache profiling can be very useful for improving
 the performance of your program.</para>
@@ -100,7 +100,7 @@ sections.</para>
 </sect2>
 
 
-<sect2>
+<sect2 id="cache-sim" xreflabel="Cache simulation specifics">
 <title>Cache simulation specifics</title>
 
 <para>Cachegrind uses a simulation for a machine with a split L1
@@ -288,12 +288,10 @@ file:</para>
   </listitem>
 </itemizedlist>
 
-<para>Note that older versions of Cachegrind used a log file
-named <computeroutput>cachegrind.out</computeroutput> (i.e. no
-<computeroutput>.pid</computeroutput> suffix).  The suffix serves
-two purposes.  Firstly, it means you don't have to rename old log
-files that you don't want to overwrite.  Secondly, and more
-importantly, it allows correct profiling with the
+<para>The <computeroutput>.pid</computeroutput> suffix
+on the output file name serves two purposes.  Firstly, it means you 
+don't have to rename old log files that you don't want to overwrite.  
+Secondly, and more importantly, it allows correct profiling with the
 <computeroutput>--trace-children=yes</computeroutput> option of
 programs that spawn child processes.</para>
 
@@ -605,7 +603,7 @@ for distinguishing between an event which cannot happen, and one
 which can but did not.</para>
 
 <para>Sometimes only a small section of a source file is
-executed.  To minimise uninteresting output, Valgrind only shows
+executed.  To minimise uninteresting output, Cachegrind only shows
 annotated lines and lines within a small distance of annotated
 lines.  Gaps are marked with the line numbers so you know which
 part of a file the shown code comes from, eg:</para>
@@ -689,7 +687,7 @@ way as for C/C++ programs.</para>
 
 <itemizedlist>
 
-  <listitem>
+  <listitem id="pid">
     <para><computeroutput>--pid</computeroutput></para>
     <para>Indicates which
     <computeroutput>cachegrind.out.pid</computeroutput> file to
@@ -702,7 +700,7 @@ way as for C/C++ programs.</para>
     <para>Help and version, as usual.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="sort">
     <para><computeroutput>--sort=A,B,C</computeroutput> [default:
     order in
     <computeroutput>cachegrind.out.pid</computeroutput>]</para>
@@ -716,7 +714,7 @@ way as for C/C++ programs.</para>
     (<computeroutput>--sort=D2mr,I2mr</computeroutput>).</para>
   </listitem>
 
-  <listitem>
+  <listitem id="show">
     <para><computeroutput>--show=A,B,C</computeroutput> [default:
     all, using order in
     <computeroutput>cachegrind.out.pid</computeroutput>]</para>
@@ -726,7 +724,7 @@ way as for C/C++ programs.</para>
     use the order in the file).</para>
   </listitem>
 
-  <listitem>
+  <listitem id="threshold">
     <para><computeroutput>--threshold=X</computeroutput>
     [default: 99%]</para>
     <para>Sets the threshold for the function-by-function
@@ -743,7 +741,7 @@ way as for C/C++ programs.</para>
     <para><computeroutput>--sort=D2mr:99,D2mw:99</computeroutput></para>
   </listitem>
 
-  <listitem>
+  <listitem id="auto">
     <para><computeroutput>--auto=no</computeroutput> [default]</para>
     <para><computeroutput>--auto=yes</computeroutput></para>
     <para>When enabled, automatically annotates every file that
@@ -751,7 +749,7 @@ way as for C/C++ programs.</para>
     found.  Also gives a list of those that couldn't be found.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="context">
     <para><computeroutput>--context=N</computeroutput> [default:
     8]</para>
     <para>Print N lines of context before and after each
@@ -760,8 +758,8 @@ way as for C/C++ programs.</para>
     (eg. 10,000) to show all source lines.</para>
   </listitem>
 
-  <listitem>
-    <para><computeroutput>-I=&lt;dir&gt;,
+  <listitem id="include">
+    <para><computeroutput>-I&lt;dir&gt;,
       --include=&lt;dir&gt;</computeroutput> [default: empty
       string]</para>
     <para>Adds a directory to the list in which to search for
@@ -955,13 +953,13 @@ shortcomings:</para>
   </listitem>
 
   <listitem>
-    <para>Valgrind's custom threads implementation will schedule
-    threads differently to the standard one.  This could warp the
-    results for threaded programs.</para>
+    <para>Valgrind will schedule
+    threads differently from how they would be when running natively.
+    This could warp the results for threaded programs.</para>
   </listitem>
 
   <listitem>
-    <para>The instructions <computeroutput>bts</computeroutput>,
+    <para>The x86/amd64 instructions <computeroutput>bts</computeroutput>,
     <computeroutput>btr</computeroutput> and
     <computeroutput>btc</computeroutput> will incorrectly be
     counted as doing a data read if both the arguments are
@@ -973,7 +971,7 @@ shortcomings:</para>
   </listitem>
 
   <listitem>
-    <para>FPU instructions with data sizes of 28 and 108 bytes
+    <para>x86/amd64 FPU instructions with data sizes of 28 and 108 bytes
     (e.g.  <computeroutput>fsave</computeroutput>) are treated as
     though they only access 16 bytes.  These instructions seem to
     be rare so hopefully this won't affect accuracy much.</para>

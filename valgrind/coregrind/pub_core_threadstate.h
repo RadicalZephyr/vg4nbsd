@@ -79,8 +79,8 @@ typedef
    typedef VexGuestX86State   VexGuestArchState;
 #elif defined(VGA_amd64)
    typedef VexGuestAMD64State VexGuestArchState;
-#elif defined(VGA_arm)
-   typedef VexGuestARMState   VexGuestArchState;
+#elif defined(VGA_ppc32)
+   typedef VexGuestPPC32State VexGuestArchState;
 #else
 #  error Unknown architecture
 #endif
@@ -112,8 +112,8 @@ typedef struct {
    ThreadId parent;		// parent tid (if any)
 
    /* runtime details */
-   Addr  valgrind_stack_base;	// Valgrind's stack base
-   SizeT valgrind_stack_szB;	// stack size in bytes
+   Addr valgrind_stack_base;    // Valgrind's stack (VgStack*)
+   Addr valgrind_stack_init_SP; // starting value for SP
 
    /* exit details */
    Int  exitcode;		// in the case of exitgroup, set by someone else

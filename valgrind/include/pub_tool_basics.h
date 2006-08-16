@@ -52,14 +52,11 @@
 // For varargs types
 #include <stdarg.h>
 
-// Autoconf-generated settings
-#include "config.h"
-
 // Kernel types.  Might as well have them here, they're used so broadly
 // (eg. in pub_core_threadstate.h).
 #if defined(VGO_linux)
 #  include "vki-linux.h"
-#elif defined(VGO_netbsdelf2)
+#elif defined (VGO_netbsdelf2)
 #include "vki-netbsd.h"
 #else  
 #  error Unknown OS
@@ -86,6 +83,8 @@ typedef  Word                 SSizeT;     // 32             64
 
 typedef  Word                   OffT;     // 32             64
 
+typedef ULong                 Off64T;     // 64             64
+
 #if !defined(NULL)
 #  define NULL ((void*)0)
 #endif
@@ -111,20 +110,35 @@ typedef struct {
 SysRes;
 
 /* ---------------------------------------------------------------------
-   Miscellaneous
+   Miscellaneous (word size, endianness, regparmness, stringification)
    ------------------------------------------------------------------ */
 
-/* This is going to be either 4 or 8. */
+/* Word size: this is going to be either 4 or 8. */
 // It should probably be in m_machine.
 #define VG_WORDSIZE VEX_HOST_WORDSIZE
 
+/* Endianness */
+#undef VG_BIGENDIAN
+#undef VG_LITTLEENDIAN
+
+#if defined(VGA_x86) || defined(VGA_amd64)
+#  define VG_LITTLEENDIAN 1
+#elif defined(VGA_ppc32)
+#  define VG_BIGENDIAN 1
+#endif
+
+/* Regparmness */
 #if defined(VGA_x86)
-#  define VGA_REGPARM(n)            __attribute__((regparm(n)))
-#elif defined(VGA_amd64) || defined(VGA_arm)
-#  define VGA_REGPARM(n)            /* */
+#  define VG_REGPARM(n)            __attribute__((regparm(n)))
+#elif defined(VGA_amd64) || defined(VGA_ppc32)
+#  define VG_REGPARM(n)            /* */
 #else
 #  error Unknown arch
 #endif
+
+/* Macro games */
+#define VG_STRINGIFZ(__str)  #__str
+#define VG_STRINGIFY(__str)  VG_STRINGIFZ(__str)
 
 #endif /* __PUB_TOOL_BASICS_H */
 

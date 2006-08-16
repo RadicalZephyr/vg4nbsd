@@ -1,7 +1,7 @@
 
-##--------------------------------------------------------------------##
-##--- Trampoline code page stuff.                   m_trampoline.S ---##
-##--------------------------------------------------------------------##
+/*--------------------------------------------------------------------*/
+/*--- Trampoline code page stuff.                   m_trampoline.S ---*/
+/*--------------------------------------------------------------------*/
 
 /*
   This file is part of Valgrind, a dynamic binary instrumentation
@@ -28,26 +28,32 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_tool_basics_asm.h"
+#include "pub_core_basics_asm.h"
 #include "vki_unistd.h"
 
 /* ------------------ SIMULATED CPU HELPERS ------------------ */
-/* Stubs for returns which we want to catch.
-   This code isn't used in-place.  It is copied into the client address
-   space at an arbitary address.  Therefore, this code must be completely
-   position-independent.
+/* 
+   Replacements for some functions to do with vsyscalls and signals.
+   This code runs on the simulated CPU.
 */
-.global VG_(trampoline_code_start)
-.global VG_(trampoline_code_length)
-.global VG_(tramp_sigreturn_offset)
-.global VG_(tramp_rt_sigreturn_offset)
-.global VG_(tramp_syscall_offset)
-.global VG_(tramp_gettimeofday_offset)
-.global VG_(tramp_time_offset)
 	
-VG_(trampoline_code_start):
+/*---------------------- x86-linux ----------------------*/
 #if defined(VGP_x86_linux)
-    sigreturn_start:
+
+#	define UD2_16     ud2 ; ud2 ; ud2 ; ud2 ;ud2 ; ud2 ; ud2 ; ud2
+#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
+#	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
+#	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
+#	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
+
+	/* a leading page of unexecutable code */
+	UD2_PAGE
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(x86_linux_SUBST_FOR_sigreturn)
+VG_(x86_linux_SUBST_FOR_sigreturn):
         /* This is a very specific sequence which GDB uses to
            recognize signal handler frames. */
         popl    %eax
@@ -55,79 +61,256 @@ VG_(trampoline_code_start):
         int     $0x80
         ud2
 
-    rt_sigreturn_start:
+.global VG_(x86_linux_SUBST_FOR_rt_sigreturn)
+VG_(x86_linux_SUBST_FOR_rt_sigreturn):
         /* Likewise for rt signal frames */
         movl    $__NR_rt_sigreturn, %eax
         int     $0x80
         ud2
 
-	# We can point our sysinfo stuff here
-	.align 16
-    syscall_start:	
+.global VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80)
+VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80):
+	/* We can point our sysinfo stuff here */
 	int	$0x80
 	ret
 
-    gettimeofday_start:
-    time_start:
-	/* unused on x86 */
+/* There's no particular reason that this needs to be handwritten
+   assembly, but since that's what this file contains, here's a
+   simple index implementation (written in C and compiled by gcc.)
 
-#elif defined(VGP_amd64_linux)
-    rt_sigreturn_start:
-        /* Likewise for rt signal frames */
+   unsigned char* REDIR_FOR_index ( const char* s, int c ) 
+   { 
+      unsigned char  ch   = (unsigned char)((unsigned int)c); 
+      unsigned char* p    = (unsigned char*)s; 
+      unsigned char* last = 0; 
+      while (1) { 
+         if (*p == ch) last = p; 
+         if (*p == 0) return last; 
+         p++; 
+      } 
+   }
+*/
+.global VG_(x86_linux_REDIR_FOR_index)
+.type   VG_(x86_linux_REDIR_FOR_index), @function
+VG_(x86_linux_REDIR_FOR_index):
+        pushl   %ebp
+        movl    %esp, %ebp
+        pushl   %ebx
+        movb    12(%ebp), %al
+        movl    8(%ebp), %ecx
+        movl    $0, %ebx
+.L2:
+        movb    (%ecx), %dl
+        cmpb    %dl, %al
+        jne     .L3
+        movl    %ecx, %ebx
+.L3:
+        testb   %dl, %dl
+        je      .L8
+        addl    $1, %ecx
+        jmp     .L2
+.L8:
+        movl    %ebx, %eax
+        popl    %ebx
+        popl    %ebp
+        ret
+.size VG_(x86_linux_REDIR_FOR_index), .-VG_(x86_linux_REDIR_FOR_index)
+
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+	/* and a trailing page of unexecutable code */
+	UD2_PAGE
+
+#	undef UD2_16
+#	undef UD2_64
+#	undef UD2_256
+#	undef UD2_1024
+#	undef UD2_PAGE
+	
+/*---------------------- amd64-linux ----------------------*/
+#else
+#if defined(VGP_amd64_linux)
+
+#	define UD2_16     ud2 ; ud2 ; ud2 ; ud2 ;ud2 ; ud2 ; ud2 ; ud2
+#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
+#	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
+#	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
+#	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
+
+	/* a leading page of unexecutable code */
+	UD2_PAGE
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global VG_(amd64_linux_SUBST_FOR_rt_sigreturn)
+VG_(amd64_linux_SUBST_FOR_rt_sigreturn):
+        /* This is a very specific sequence which GDB uses to
+           recognize signal handler frames. */
         movq    $__NR_rt_sigreturn, %rax
         syscall
         ud2
 
-        .align 16
-    gettimeofday_start:
+.global VG_(amd64_linux_REDIR_FOR_vgettimeofday)
+VG_(amd64_linux_REDIR_FOR_vgettimeofday):
         movq    $__NR_gettimeofday, %rax
         syscall
         ret
 
-        .align 16
-    time_start:
+.global VG_(amd64_linux_REDIR_FOR_vtime)
+VG_(amd64_linux_REDIR_FOR_vtime):
         movq    $__NR_time, %rax
         syscall
         ret
 
-	.align 16
-    sigreturn_start:
-    syscall_start:
-	/* unused on amd64 */
-#elif defined(VGP_x86_netbsdelf2)
-    syscall_start:	
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+	/* and a trailing page of unexecutable code */
+	UD2_PAGE
+
+#	undef UD2_16
+#	undef UD2_64
+#	undef UD2_256
+#	undef UD2_1024
+#	undef UD2_PAGE
+
+/*---------------- ppc32-linux ----------------*/
+#else
+#if defined(VGP_ppc32_linux)
+
+#	define UD2_16     trap ; trap ; trap; trap
+#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
+#	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
+#	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
+#	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
+
+	/* a leading page of unexecutable code */
+	UD2_PAGE
+
+	/* There's no particular reason that this needs to be handwritten
+   assembly, but since that's what this file contains, here's a
+   simple strlen implementation (written in C and compiled by gcc.)
+*/
+.global VG_(ppc32_linux_REDIR_FOR_strlen)
+.type   VG_(ppc32_linux_REDIR_FOR_strlen), @function
+VG_(ppc32_linux_REDIR_FOR_strlen):
+        lbz 4,0(3)
+        li 9,0
+        cmpwi 0,4,0
+        beq- 0,.L18
+.L19:
+        lbzu 5,1(3)
+        addi 9,9,1
+        cmpwi 0,5,0
+        bne+ 0,.L19
+.L18:
+        mr 3,9
+        blr
+.size VG_(ppc32_linux_REDIR_FOR_strlen), .-VG_(ppc32_linux_REDIR_FOR_strlen)
+
+/* Ditto strcmp */
+.global VG_(ppc32_linux_REDIR_FOR_strcmp)
+.type   VG_(ppc32_linux_REDIR_FOR_strcmp), @function
+VG_(ppc32_linux_REDIR_FOR_strcmp):
+.L20:
+        lbz 0,0(3)
+        cmpwi 7,0,0
+        bne- 7,.L21
+        lbz 0,0(4)
+        li 11,0
+        cmpwi 7,0,0
+        beq- 7,.L22
+.L21:
+        lbz 0,0(3)
+        li 11,-1
+        cmpwi 7,0,0
+        beq- 7,.L22
+        lbz 0,0(4)
+        li 11,1
+        cmpwi 7,0,0
+        beq- 7,.L22
+        lbz 9,0(3)
+        lbz 0,0(4)
+        li 11,-1
+        cmplw 7,9,0
+        blt- 7,.L22
+        lbz 9,0(3)
+        lbz 0,0(4)
+        li 11,1
+        addi 3,3,1
+        addi 4,4,1
+        cmplw 7,9,0
+        ble+ 7,.L20
+.L22:
+        mr 3,11
+        blr
+.size VG_(ppc32_linux_REDIR_FOR_strcmp), .-VG_(ppc32_linux_REDIR_FOR_strcmp)
+
+/* Ditto index/strchr */
+.global VG_(ppc32_linux_REDIR_FOR_strchr)
+.type   VG_(ppc32_linux_REDIR_FOR_strchr), @function
+VG_(ppc32_linux_REDIR_FOR_strchr):
+        lbz 0,0(3)
+        cmpw 7,4,0
+        beqlr 7
+        cmpwi 7,0,0
+        beq 7,.L307
+        .p2align 4,,15
+.L310:
+        lbzu 0,1(3)
+        cmpw 7,0,4
+        cmpwi 6,0,0
+        beq 7,.L313
+        bne 6,.L310
+.L307:
+        li 3,0
+        blr
+.L313:
+        blr
+.size   VG_(ppc32_linux_REDIR_FOR_strchr),.-VG_(ppc32_linux_REDIR_FOR_strchr)
+	
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
+
+#	undef UD2_16
+#	undef UD2_64
+#	undef UD2_256
+#	undef UD2_1024
+#	undef UD2_PAGE
+
+/*---------------- x86-netbsdelf2 ----------------*/
+#else
+#if defined(VGP_x86_netbsdelf2)
+
+// XXX We need to take a good look at this
+
+.global VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
+
+.global 
+.global VG_(x86_netbsdelf2_SUBST_FOR_sigreturn)
+VG_(x86_netbsdelf2_SUBST_FOR_sigreturn):
 	int	$0x80
 	ret
-    sigreturn_start:
-    rt_sigreturn_start:
-    gettimeofday_start:
-    time_start:
-	/* unused on x86 */
+.global VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
 
+/*---------------- unknown ----------------*/
 #else
-#	error Unknown platform
+#  error Unknown platform
+
 #endif
-tramp_code_end:
-			
-.data
-VG_(trampoline_code_length):
-	.long tramp_code_end - VG_(trampoline_code_start)
-VG_(tramp_sigreturn_offset):
-	.long sigreturn_start - VG_(trampoline_code_start)
-VG_(tramp_rt_sigreturn_offset):
-        .long rt_sigreturn_start - VG_(trampoline_code_start)
-VG_(tramp_syscall_offset):
-	.long syscall_start - VG_(trampoline_code_start)
-VG_(tramp_gettimeofday_offset):
-	.long gettimeofday_start - VG_(trampoline_code_start)
-VG_(tramp_time_offset):
-	.long time_start - VG_(trampoline_code_start)
-.text
+#endif
+#endif
+#endif
+
 
 
 /* Let the linker know we don't need an executable stack */
 .section .note.GNU-stack,"",@progbits
 		
-##--------------------------------------------------------------------##
-##--- end                                                          ---##
-##--------------------------------------------------------------------##
+/*--------------------------------------------------------------------*/
+/*--- end                                                          ---*/
+/*--------------------------------------------------------------------*/

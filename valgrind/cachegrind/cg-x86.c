@@ -43,10 +43,10 @@
 static void micro_ops_warn(Int actual_size, Int used_size, Int line_size)
 {
     VG_(message)(Vg_DebugMsg, 
-       "warning: Pentium with %d K micro-op instruction trace cache", 
+       "warning: Pentium 4 with %d KB micro-op instruction trace cache", 
        actual_size);
     VG_(message)(Vg_DebugMsg, 
-       "         Simulating a %d KB cache with %d B lines", 
+       "         Simulating a %d KB I-cache with %d B lines", 
        used_size, line_size);
 }
 
@@ -108,8 +108,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
          VG_(tool_panic)("IA-64 cache detected?!");
 
       case 0x22: case 0x23: case 0x25: case 0x29: 
-          VG_(message)(Vg_DebugMsg, 
-             "warning: L3 cache detected but ignored\n");
+          VG_(message)(Vg_DebugMsg, "warning: L3 cache detected but ignored");
           break;
 
       /* These are sectored, whatever that means */
@@ -158,6 +157,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
       case 0x7a: *L2c = (cache_t) {  256, 8,  64 }; L2_found = True;  break;
       case 0x7b: *L2c = (cache_t) {  512, 8,  64 }; L2_found = True;  break;
       case 0x7c: *L2c = (cache_t) { 1024, 8,  64 }; L2_found = True;  break;
+      case 0x7d: *L2c = (cache_t) { 2048, 8,  64 }; L2_found = True;  break;
       case 0x7e: *L2c = (cache_t) {  256, 8, 128 }; L2_found = True;  break;
 
       case 0x81: *L2c = (cache_t) {  128, 8, 32 };  L2_found = True;  break;
@@ -167,6 +167,10 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
       case 0x85: *L2c = (cache_t) { 2048, 8, 32 };  L2_found = True;  break;
       case 0x86: *L2c = (cache_t) {  512, 4, 64 };  L2_found = True;  break;
       case 0x87: *L2c = (cache_t) { 1024, 8, 64 };  L2_found = True;  break;
+
+      /* Ignore prefetch information */
+      case 0xf0: case 0xf1:
+          break;
 
       default:
           VG_(message)(Vg_DebugMsg, 
@@ -305,8 +309,8 @@ Int get_caches_from_CPUID(cache_t* I1c, cache_t* D1c, cache_t* L2c)
 }
 
 
-void VGA_(configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* L2c,
-                            Bool all_caches_clo_defined)
+void VG_(configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* L2c,
+                           Bool all_caches_clo_defined)
 {
    Int res;
    

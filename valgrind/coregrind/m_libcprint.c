@@ -32,14 +32,13 @@
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcfile.h"
+#include "pub_core_libcfile.h"   // VG_(write)(), VG_(write_socket)()
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
+#include "pub_core_libcproc.h"   // VG_(getpid)(), VG_(read_millisecond_timer()
 #include "pub_core_options.h"
-#include "valgrind.h"           // for RUNNING_ON_VALGRIND
+#include "valgrind.h"            // For RUNNING_ON_VALGRIND
 
-#include <time.h>
-#include <sys/time.h>
+
 
 /* ---------------------------------------------------------------------
    Writing to file or a socket
@@ -69,10 +68,12 @@ static void send_bytes_to_logging_sink ( Char* msg, Int nbytes )
    printf() and friends
    ------------------------------------------------------------------ */
 
-typedef struct {
-   char buf[100];
-   int n;
-} printf_buf;
+typedef 
+   struct {
+      HChar buf[100];
+      Int   n;
+   } 
+   printf_buf;
 
 // Adds a single char to the buffer.  When the buffer gets sufficiently
 // full, we write its contents to the logging sink.
@@ -150,16 +151,148 @@ UInt VG_(sprintf) ( Char* buf, const HChar *format, ... )
    return ret;
 }
 
+
+/* A replacement for snprintf. */
+typedef 
+   struct {
+      HChar* buf;
+      Int    buf_size;
+      Int    buf_used;
+   } 
+   snprintf_buf;
+
+static void add_to_vg_snprintf_buf ( HChar c, void* p )
+{
+   snprintf_buf* b = p;
+   if (b->buf_size > 0 && b->buf_used < b->buf_size) {
+      b->buf[b->buf_used++] = c;
+      if (b->buf_used < b->buf_size)
+         b->buf[b->buf_used] = 0;
+   } 
+}
+
+UInt VG_(vsnprintf) ( Char* buf, Int size, const HChar *format, va_list vargs )
+{
+   Int ret;
+   snprintf_buf b;
+   b.buf      = buf;
+   b.buf_size = size < 0 ? 0 : size;
+   b.buf_used = 0;
+
+   ret = VG_(debugLog_vprintf) 
+            ( add_to_vg_snprintf_buf, &b, format, vargs );
+
+   return b.buf_used;
+}
+
+UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
+{
+   UInt ret;
+   va_list vargs;
+
+   va_start(vargs,format);
+   ret = VG_(vsnprintf)(buf, size, format, vargs);
+   va_end(vargs);
+
+   return ret;
+}
+
+
+/* ---------------------------------------------------------------------
+   percentify()
+   ------------------------------------------------------------------ */
+
+// Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
+// Right justifies in 'buf'.
+void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]) 
+{
+   Int i, len, space;
+   ULong p1;
+   Char fmt[32];
+
+   if (m == 0) {
+      // Have to generate the format string in order to be flexible about
+      // the width of the field.
+      VG_(sprintf)(fmt, "%%-%lds", n_buf);
+      // fmt is now "%<n_buf>s" where <d> is 1,2,3...
+      VG_(sprintf)(buf, fmt, "--%");
+      return;
+   }
+   
+   p1 = (100*n) / m;
+    
+   if (d == 0) {
+      VG_(sprintf)(buf, "%lld%%", p1);
+   } else {
+      ULong p2;
+      UInt  ex;
+      switch (d) {
+      case 1: ex = 10;    break;
+      case 2: ex = 100;   break;
+      case 3: ex = 1000;  break;
+      default: VG_(tool_panic)("Currently can only handle 3 decimal places");
+      }
+      p2 = ((100*n*ex) / m) % ex;
+      // Have to generate the format string in order to be flexible about
+      // the width of the post-decimal-point part.
+      VG_(sprintf)(fmt, "%%lld.%%0%dlld%%%%", d);
+      // fmt is now "%lld.%0<d>lld%%" where <d> is 1,2,3...
+      VG_(sprintf)(buf, fmt, p1, p2);
+   }
+
+   len = VG_(strlen)(buf);
+   space = n_buf - len;
+   if (space < 0) space = 0;     /* Allow for v. small field_width */
+   i = len;
+
+   /* Right justify in field */
+   for (     ; i >= 0;    i--)  buf[i + space] = buf[i];
+   for (i = 0; i < space; i++)  buf[i] = ' ';
+}
+
+
+/* ---------------------------------------------------------------------
+   elapsed_wallclock_time()
+   ------------------------------------------------------------------ */
+
+/* Get the elapsed wallclock time since startup into buf, which must
+   16 chars long.  This is unchecked.  It also relies on the
+   millisecond timer having been set to zero by an initial read in
+   m_main during startup. */
+
+void VG_(elapsed_wallclock_time) ( /*OUT*/HChar* buf )
+{
+   UInt t, ms, s, mins, hours, days;
+
+   t  = VG_(read_millisecond_timer)(); /* milliseconds */
+
+   ms = t % 1000;
+   t /= 1000; /* now in seconds */
+
+   s = t % 60;
+   t /= 60; /* now in minutes */
+
+   mins = t % 60;
+   t /= 60; /* now in hours */
+
+   hours = t % 24;
+   t /= 24; /* now in days */
+
+   days = t;
+
+   VG_(sprintf)(buf, "%02u:%02u:%02u:%02u.%03u", days, hours, mins, s, ms);
+}
+
+
 /* ---------------------------------------------------------------------
    message()
    ------------------------------------------------------------------ */
 
 UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
 {
-   UInt  count = 0;
-   Char  c;
-   const Char* pfx_s;
-   static const Char pfx[] = ">>>>>>>>>>>>>>>>";
+   UInt count = 0;
+   Char c;
+   Int  i, depth;
 
    switch (kind) {
       case Vg_UserMsg:       c = '='; break;
@@ -169,29 +302,20 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
       default:               c = '?'; break;
    }
 
-   // The pfx trick prints one or more '>' characters in front of the
-   // messages when running Valgrind under Valgrind, one per level of
-   // self-hosting.
-   pfx_s = &pfx[sizeof(pfx)-1-RUNNING_ON_VALGRIND],
-
-   // Print the message
-   count = 0;
-
+   // Print one '>' in front of the messages for each level of self-hosting
+   // being performed.
+   depth = RUNNING_ON_VALGRIND;
+   for (i = 0; i < depth; i++) {
+      count += VG_(printf) (">");
+   }
+   
    if (!VG_(clo_xml))
-      count += VG_(printf) ("%s%c%c", pfx_s, c,c);
+      count += VG_(printf) ("%c%c", c,c);
 
    if (VG_(clo_time_stamp)) {
-      struct timeval tv;
-      struct tm tm;
-     
-      if ( gettimeofday( &tv, NULL ) == 0 &&
-           localtime_r( &tv.tv_sec, &tm ) == &tm )
-      {
-         count +=
-            VG_(printf)( "%04d-%02d-%02d %02d:%02d:%02d.%03d ",
-                         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                         tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec / 1000 );
-      }
+      HChar buf[50];
+      VG_(elapsed_wallclock_time)(buf);
+      count += VG_(printf)( "%s ", buf);
    }
 
    if (!VG_(clo_xml))

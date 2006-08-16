@@ -28,7 +28,7 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_tool_basics_asm.h"
+#include "pub_core_basics_asm.h"
 #include "vki_unistd.h"
 #include "libvex_guest_offsets.h"
 		
@@ -55,12 +55,13 @@
 	sigprocmasks failed (there's no way to determine which one
 	failed).
 
-	VGA_(interrupted_syscall)() does the thread state fixup in the
-	case where we were interrupted by a signal.
+	VG_(fixup_guest_state_after_syscall_interrupted) does the
+	thread state fixup in the case where we were interrupted by a
+	signal.
 	
 	Prototype:
 
-	Int VGA_(do_syscall_for_client_WRK)(
+	Int ML_(do_syscall_for_client_WRK)(
 	                          Int syscallno,		// 0
 				  void* guest_state,		// 4
 				  const vki_sigset_t *sysmask,	// 8
@@ -70,60 +71,73 @@
 */
 
 /* from vki_arch.h */	
-#define VKI_SIG_SETMASK	2
+#define VKI_SIG_SETMASK	3
 	
-.globl VGA_(do_syscall_for_client_WRK)
-VGA_(do_syscall_for_client_WRK):
+.globl ML_(do_syscall_for_client_WRK)
+ML_(do_syscall_for_client_WRK):
 	/* save callee-saved regs */
 	push	%esi
 	push	%edi
 	push	%ebx
 	push	%ebp
-#define FSZ	((4+1)*4)	/* 4 args + ret addr */
+	push    %edx
+#define FSZ	((5+1)*4)	/* 5 args + ret addr */
 
 1:	/* Even though we can't take a signal until the sigprocmask completes,
 	   start the range early.
 	   If eip is in the range [1,2), the syscall hasn't been started yet */
 
 	/* Set the signal mask which should be current during the syscall. */
+	movl	%esp, %ebx
+	pushl	12+FSZ(%ebx)
+	pushl   8+FSZ(%ebx)
+	pushl	$VKI_SIG_SETMASK
+	/* garbage return address blalab */
+	pushl	$0xdeadbeef
 	movl	$__NR___sigprocmask14, %eax
-	movl	$VKI_SIG_SETMASK, %ebx
-	movl	8+FSZ(%esp), %ecx
-	movl	12+FSZ(%esp), %edx
-	movl	16+FSZ(%esp), %esi
 	int	$0x80
-	testl	%eax, %eax
-	js	5f	/* sigprocmask failed */
-	
+	movl    %ebx, %esp
+	jc	5f	/* sigprocmask failed */
+
 	movl	 4+FSZ(%esp), %eax	/* eax == ThreadState * */
 
-	movl	 OFFSET_x86_EBX(%eax), %ebx
-	movl	 OFFSET_x86_ECX(%eax), %ecx
-	movl	 OFFSET_x86_EDX(%eax), %edx
-	movl	 OFFSET_x86_ESI(%eax), %esi
-	movl	 OFFSET_x86_EDI(%eax), %edi
-	movl	 OFFSET_x86_EBP(%eax), %ebp
-	movl	 0+FSZ(%esp), %eax	/* use syscallno argument rather than thread EAX */
+	/* movl	 %esp, %ebx */
+	movl	 OFFSET_x86_ESP(%eax), %esp 
+	movl	 0+FSZ(%ebx), %eax	/* use syscallno argument rather than thread EAX */
+	/* No need for garbage, client already has this */
 	
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */
 2:	int	$0x80
+	movl    %ebx, %esp /* Restore our stack */
+	movl    $0, %edx
+	jnc     cfdone
+	movl    $1, %edx
+cfdone:
 3:	/* In the range [3, 4), the syscall result is in %eax, but hasn't been
 	   committed to EAX. */
-	movl	4+FSZ(%esp), %ebx
-	movl	%eax, OFFSET_x86_EAX(%ebx)	/* save back to EAX */
+	movl	4+FSZ(%esp), %ecx
+	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save back to EAX */
 
 4:	/* Re-block signals.  If eip is in [4,5), then the syscall is complete and 
 	   we needn't worry about it. */
+	xorl    %eax, %eax   /* Just zero it out */
+	pushl   %eax
+	pushl	12+FSZ(%ebx)
+	pushl	$VKI_SIG_SETMASK
+	/* garbage return address blalab */
+	pushl	$0xdeadbeaf
 	movl	$__NR___sigprocmask14, %eax
-	movl	$VKI_SIG_SETMASK, %ebx
-	movl	12+FSZ(%esp), %ecx
-	xorl	%edx, %edx
-	movl	16+FSZ(%esp), %esi
 	int	$0x80
 
+	/* Arguments are still on the stack, restore it */
+	movl    %ebx, %esp
+
+	/* Restore carry flag */
+	cmp     $0, %edx
 5:	/* now safe from signals */
-		
+
+	popl    %edx		
 	popl	%ebp
 	popl	%ebx
 	popl	%edi
@@ -136,16 +150,16 @@ VGA_(do_syscall_for_client_WRK):
    VG_(fixup_guest_state_after_syscall_interrupted) can do the
    right thing */
 	
-.globl VGA_(blksys_setup)
-.globl VGA_(blksys_restart)
-.globl VGA_(blksys_complete)
-.globl VGA_(blksys_committed)
-.globl VGA_(blksys_finished)
-VGA_(blksys_setup):	.long 1b
-VGA_(blksys_restart):	.long 2b
-VGA_(blksys_complete):	.long 3b
-VGA_(blksys_committed):	.long 4b
-VGA_(blksys_finished):	.long 5b
+.globl ML_(blksys_setup)
+.globl ML_(blksys_restart)
+.globl ML_(blksys_complete)
+.globl ML_(blksys_committed)
+.globl ML_(blksys_finished)
+ML_(blksys_setup):	.long 1b
+ML_(blksys_restart):	.long 2b
+ML_(blksys_complete):	.long 3b
+ML_(blksys_committed):	.long 4b
+ML_(blksys_finished):	.long 5b
 .previous
 	
 /* Let the linker know we don't need an executable stack */

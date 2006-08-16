@@ -4,8 +4,8 @@
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Valgrind, an extensible x86 protected-mode
-   emulator for monitoring program execution on x86-Unixes.
+   This file is part of Valgrind, a dynamic binary instrumentation
+   framework.
 
    Copyright (C) 2000-2005 Julian Seward 
       jseward@acm.org
@@ -46,8 +46,8 @@
 #include "coregrind.h"
 
 #include "pub_core_basics.h"
-#include "pub_core_debuginfo.h"     // needed for pub_core_redir.h :(
-#include "pub_core_redir.h"
+#include "pub_core_debuginfo.h"  // Needed for pub_core_redir.h
+#include "pub_core_redir.h"      // For VG_NOTIFY_ON_LOAD
 
 /* ---------------------------------------------------------------------
    Hook for running __libc_freeres once the program exits.

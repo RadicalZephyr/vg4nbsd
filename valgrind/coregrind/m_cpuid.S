@@ -28,7 +28,7 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_tool_basics_asm.h"
+#include "pub_core_basics_asm.h"
 
 /*
     Bool VG_(has_cpuid)(void)
@@ -60,6 +60,8 @@
     VG_(has_cpuid):
         movq    $1, %rax
         ret
+#elif defined(VGA_appc32)
+//CAB: TODO
 #endif
 
 /*
@@ -141,6 +143,8 @@
         movq    %rbp, %rsp
         popq    %rbp
         ret
+#elif defined(VGA_appc32)
+//CAB: TODO
 #endif
         
 /* Let the linker know we don't need an executable stack */

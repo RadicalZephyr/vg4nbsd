@@ -1,0 +1,109 @@
+-----------------------------------------------------------------------------
+TODO list when doing a Valgrind release (with release number "X.Y.Z")
+-----------------------------------------------------------------------------
+
+First of all:
+
+- Tell valgrind-developers you want to do a release.  Give a timeframe for
+  everyone to check in any final features/bug-fixes they want in the
+  release.
+
+- Go over the docs, make sure they're up to date.
+
+- Update version number and date in docs/xml/vg-entities.xml.  (Exact
+  release date probably won't be known yet, updating it is in the list below
+  of tasks for the official release.)
+
+- Write release notes, add to NEWS.  Include a list of fixed bugs from
+  Bugzilla.  It's unclear how to do this consistently.  The approach
+  taken for 3.0.0 was to go to this page in KDE's bugzilla:
+     http://bugs.kde.org/query.cgi
+  and to create a search where
+     "Status and severity" / Status field is set to RESOLVED
+  and
+     "Involved People" / Email, bug-owner contains "jseward"
+  since I believe jseward@acm.org is the owner of all bugs.
+  This creates a long list of bugs which does not conveniently stop 
+  at the previous release.  Work backwards through this list until
+  either (1) you run out of patience, or (2) most of the bugs seem
+  to pertain to previous releases and are now irrelevant.  In short
+  this is not a very scientific or robust way to collect up all
+  bugs fixed since last time.
+
+- Other files that might need updating:  README, README_DEVELOPERS,
+  README_PACKAGERS.
+
+- Add X.Y.Z and X.Y.Z.SVN versions to Bugzilla (ask Dirk to do it)
+
+- If there are any binary incompatible tool API changes against the last
+  stable release, ensure that VG_CORE_INTERFACE_VERSION in
+  include/pub_tool_tooliface.h has been increased since the last release.
+
+
+For each release candidate (should do release candidates for big releases,
+bug-fix-only releases might not need one):
+
+- Do pre-release testing:
+  - Make sure regtests run ok on all platforms of interest.
+  - Make sure Mozilla and OpenOffice run ok on all platforms of interest.
+
+- Change release number in AC_INIT() in configure.in to "X.Y.Z-rcN", where
+  'N' is the release candidate number.
+
+- Make the tarball ("make dist") and put it on the web somewhere (it doesn't
+  have to be on valgrind.org if another site is easier).
+
+- Ensure the tarball builds, runs, regtests on the platforms of interest.
+  However redundant this seems, sometimes it can be that a from-the-repo
+  build works whereas a from-the-tarball one doesn't, usually due to some
+  trivial installation problem.
+
+- Announce the release:
+  - Email valgrind-users and valgrind-developers (but not valgrind-announce).  
+  - Make clear it's a release candidate.  
+  - Make sure you tell everyone where to download from.
+  - Include the release notes in the email (maybe not necessary for release
+    candidates 2+).
+
+- Wait 2--3 days for feedback.  If bugs appear:
+  - Fix them.
+  - Update the bug-fix list in NEWS if necessary.
+  - Do another release candidate.
+
+
+For the official release:
+
+- Again, update date in docs/xml/vg-entities.xml for the official release
+  date.
+
+- Do pre-release testing:
+  - Make sure regtests run ok on all platforms of interest.
+  - Make sure Mozilla and OpenOffice run ok on all platforms of interest.
+
+- Change release number in AC_INIT() in configure.in to "X.Y.Z".
+
+- Make the tarball ("make dist").
+
+- Check tarball builds, installs, regtests on platforms of interest.
+  If not, fix and repeat until success.
+
+- Tag the repository ("VALGRIND_X_Y_Z").
+  
+- Update website: 
+  - Put the tarball up.
+  - Update the docs -- both the tarball'd docs, and the online-readable docs.
+  - Update www.valgrind.org/downloads/source_code.html.  
+  - Update www.valgrind.org/downloads/archive.html.  
+  - Add a news item to the front page and also to valgrind.org/info/news.html.
+  - Update the "release-date" and "release-version" in php/.htconfx.
+  - Other pages that might need updating:  devel/cvs_svn.html.
+
+- Change release number in AC_INIT() in configure.in to "X.Y.Z.SVN", where
+  X.Y.Z is one more than the release just done.
+
+- Announce the release:
+  - Email valgrind-users, valgrind-developers, and valgrind-announce.
+  - Email Linux Weekly News.
+  - Include the release notes in the email.
+
+- Go on holiday.

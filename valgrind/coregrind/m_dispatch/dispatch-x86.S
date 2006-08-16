@@ -1,7 +1,7 @@
 
 ##--------------------------------------------------------------------##
 ##--- The core dispatch loop, for jumping to a code address.       ---##
-##---                                               x86/dispatch.S ---##
+##---                                               dispatch-x86.S ---##
 ##--------------------------------------------------------------------##
 
 /*
@@ -29,22 +29,20 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_tool_basics_asm.h"
+#include "pub_core_basics_asm.h"
 #include "pub_core_dispatch_asm.h"
 #include "pub_core_transtab_asm.h"
- #include "libvex_guest_offsets.h" 	/* for OFFSET_x86_EIP */ 
+#include "libvex_guest_offsets.h"	/* for OFFSET_x86_EIP */
 
 
 /*------------------------------------------------------------*/
 /*--- The dispatch loop.                                   ---*/
 /*------------------------------------------------------------*/
-
 /* signature: UWord VG_(run_innerloop) ( void* guest_state ) */
 
 .globl VG_(run_innerloop)
 VG_(run_innerloop):
 	/* 4(%esp) holds guest_state */
-	
 	/* ----- entry point to VG_(run_innerloop) ----- */
 	pushl	%ebx
 	pushl	%ecx
@@ -71,10 +69,12 @@ VG_(run_innerloop):
 	
 	/* set host SSE control word to the default mode expected 
 	   by VEX-generated code. */
+	cmpl	$0, VG_(machine_x86_have_mxcsr) /* netbsd jumps */
+	jz	L1
 	pushl	$0x1F80
 	ldmxcsr	(%esp)
 	addl	$4, %esp
-
+L1:
 	/* set dir flag to known value */
 	cld
 	
@@ -96,14 +96,16 @@ dispatch_boring:
 	andl $VG_TT_FAST_MASK, %ebx
 	movl VG_(tt_fast)(,%ebx,4), %ecx
 	cmpl %eax, (%ecx)
-	jnz  fast_lookup_failed
-	/* increment bb profile counter */
+	jnz  fast_lookup_failed /* netbsd jumps to line 181 here , but
+	not on the 2nd time */ 
+	/* Increment bb profile counter */
 	movl VG_(tt_fastN)(,%ebx,4), %edx
 	incl (%edx)
 
 	/* Found a match.  Call tce[1], which is 8 bytes along, since
            each tce element is a 64-bit int. */
 	addl 	$8, %ecx
+/* 	int3  */
 	call 	*%ecx
 	
 	/* 
@@ -131,19 +133,24 @@ run_innerloop_exit:
 	/* We're leaving.  Check that nobody messed with
            %mxcsr or %fpucw.  We can't mess with %eax here as it
 	   holds the tentative return value, but any other is OK. */
+#if !defined(ENABLE_INNER)
+        /* This check fails for self-hosting, so skip in that case */
 	pushl	$0
 	fstcw	(%esp)
 	cmpl	$0x027F, (%esp)
 	popl	%esi /* get rid of the word without trashing %eflags */
 	jnz	invariant_violation
+#endif
+	cmpl	$0, VG_(machine_x86_have_mxcsr)
+	jz	L2
 	pushl	$0
 	stmxcsr	(%esp)
 	andl	$0xFFFFFFC0, (%esp)  /* mask out status flags */
 	cmpl	$0x1F80, (%esp)
 	popl	%esi
 	jnz	invariant_violation
-	/* otherwise we're OK */
-	jmp	run_innerloop_exit_REALLY
+L2:	/* otherwise we're OK */
+	jmp	run_innerloop_exit_REALLY /* netbsd gets to here */
 
 invariant_violation:
 	movl	$VG_TRC_INVARIANT_FAILED, %eax

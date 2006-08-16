@@ -54,21 +54,33 @@
    syscall returns a value in -1 .. -4095 as a valid result so we can
    safely test with -4095.
 */
-SysRes VG_(mk_SysRes) ( UWord val ) {
+SysRes VG_(mk_SysRes_x86_linux) ( Word val ) {
    SysRes res;
-#if defined(VGP_x86_linux)
    res.isError = val >= -4095 && val <= -1;
    res.val     = res.isError ? -val : val;
-#elif defined(VGP_amd64_linux)
-   res.isError = val >= -4095 && val <= -1;
-   res.val     = res.isError ? -val : val;
-#elif defined(VGP_x86_netbsdelf2)
-   res.isError = val >= -4095 && val <= -1; /* XXX -NetBSD */
-   res.val     = res.isError ? -val : val;
+   return res;
+}
 
-#else
-#  error Unknown platform
-#endif
+/* Similarly .. */
+SysRes VG_(mk_SysRes_amd64_linux) ( Word val ) {
+   SysRes res;
+   res.isError = val >= -4095 && val <= -1;
+   res.val     = res.isError ? -val : val;
+   return res;
+}
+
+/* PPC uses the CR7.SO bit to flag an error (CR0 in IBM-speke) */
+SysRes VG_(mk_SysRes_ppc32_linux) ( UInt val, UInt errflag ) {
+   SysRes res;
+   res.isError = errflag != 0;
+   res.val     = val;
+   return res;
+}
+
+SysRes VG_(mk_SysRes_x86_netbsdelf2) ( UWord val, UWord errflag ) {
+   SysRes res;
+   res.isError = errflag; /* XXX -NetBSD */
+   res.val = val; 
    return res;
 }
 
@@ -87,31 +99,36 @@ SysRes VG_(mk_SysRes_Success) ( UWord val ) {
    A function for doing syscalls.
    ------------------------------------------------------------------ */
 
-static UWord do_syscall_WRK (
+#if defined(VGP_x86_netbsdelf2)
+extern UWord do_syscall_WRK (
+	UWord *carry_addr,
           UWord syscall_no, 
           UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6
+          UWord a4, UWord a5, UWord a6, ULong a7
        );
-#if defined(VGP_x86_netbsdelf2)
 asm(
     /* its easier for us, we need syscall number in eax, and its
        argument in stack, do_syscall pushes the arguments into the
           stack, then the syscall number, then ..something , pop that
           something into ecx , pop the syscall number into eax. push
           back that something onto the stack and we are good to go */
-      
+	".text\n"
     "do_syscall_WRK:\n"
     "popl %ecx\n"
+    "popl %edx\n" /* Carry flag address */
+    "movl $0,0+(%edx)\n" /* Store zero there */
     "popl %eax\n"
-    "push %ecx\n"
+    "push %ecx\n" /* C calling convention; "rubbish" before first arg */
     "int $0x80\n"
-    "push %ecx\n"
-    "jae 1f\n"
-    "movl $-1,%eax\n"
+    "push %edx\n" /* Even up stack level */
+    "push %ecx\n" /* see /usr/src/lib/libc/arch/i386/sys/__syscall.S */
+    "jnc 1f\n"
+    "movl $1,0+(%edx)\n"  /* Carry set? Then store 1 */
     "1:\n"
     "ret\n"
+    ".previous"
     );
-
+/* there was a push %ecx\n after int 80h, i dont know why its there so its removed */
 /*
  * All args on the stack, syscall number in %eax.
  */
@@ -150,7 +167,13 @@ asm(
    clobbers, so we preserve all the callee-save regs (%esi, %edi, %ebx,
    %ebp).
 */
+extern UWord do_syscall_WRK (
+          UWord syscall_no, 
+          UWord a1, UWord a2, UWord a3,
+          UWord a4, UWord a5, UWord a6
+       );
 asm(
+".text\n"
 "do_syscall_WRK:\n"
 "	push	%esi\n"
 "	push	%edi\n"
@@ -169,6 +192,7 @@ asm(
 "	popl	%edi\n"
 "	popl	%esi\n"
 "	ret\n"
+".previous\n"
 );
 #elif defined(VGP_amd64_linux)
 /* Incoming args (syscall number + up to 6 args) come in %rdi, %rsi,
@@ -183,7 +207,13 @@ asm(
    no matter, they are caller-save (the syscall clobbers no callee-save
    regs, so we don't have to do any register saving/restoring).
 */
+extern UWord do_syscall_WRK (
+          UWord syscall_no, 
+          UWord a1, UWord a2, UWord a3,
+          UWord a4, UWord a5, UWord a6
+       );
 asm(
+".text\n"
 "do_syscall_WRK:\n"
         /* Convert function calling convention --> syscall calling
            convention */
@@ -196,17 +226,106 @@ asm(
 "	movq    8(%rsp), %r9\n"	 /* last arg from stack */
 "	syscall\n"
 "	ret\n"
+".previous\n"
+);
+#elif defined(VGP_ppc32_linux)
+/* Incoming args (syscall number + up to 6 args) come in %r0, %r3:%r8
+
+   The syscall number goes in %r0.  The args are passed to the syscall in
+   the regs %r3:%r8, i.e. the kernel's syscall calling convention.
+
+   The %cr0.so bit flags an error.
+   We return the syscall return value in %r3, and the %cr in %r4.
+   We return a ULong, of which %r3 is the high word, and %r4 the low.
+   No callee-save regs are clobbered, so no saving/restoring is needed.
+*/
+extern ULong do_syscall_WRK (
+          UWord syscall_no, 
+          UWord a1, UWord a2, UWord a3,
+          UWord a4, UWord a5, UWord a6
+       );
+asm(
+".text\n"
+"do_syscall_WRK:\n"
+"        mr      0,3\n"
+"        mr      3,4\n"
+"        mr      4,5\n"
+"        mr      5,6\n"
+"        mr      6,7\n"
+"        mr      7,8\n"
+"        mr      8,9\n"
+"        sc\n"                  /* syscall: sets %cr0.so on error         */
+"        mfcr    4\n"           /* %cr -> low word of return var          */
+"        rlwinm  4,4,4,31,31\n" /* rotate flag bit so to lsb, and mask it */
+"        blr\n"                 /* and return                             */
+".previous\n"
 );
 #else
 #  error Unknown platform
 #endif
-
+#ifndef VGP_x86_netbsdelf2
 SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
                                       UWord a4, UWord a5, UWord a6 )
+#else
+ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3, 
+                                      UWord a4, UWord a5, UWord a6,ULong a7 )
+#endif
 {
-   UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
-   return VG_(mk_SysRes)( val );
+#if defined(VGP_x86_linux)
+  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
+  return VG_(mk_SysRes_x86_linux)( val );
+#elif defined(VGP_amd64_linux)
+  UWord val = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
+  return VG_(mk_SysRes_amd64_linux)( val );
+#elif defined(VGP_ppc32_linux)
+  ULong ret     = do_syscall_WRK(sysno,a1,a2,a3,a4,a5,a6);
+  UInt  val     = (UInt)(ret>>32);
+  UInt  errflag = (UInt)(ret);
+  return VG_(mk_SysRes_ppc32_linux)( val, errflag );
+#elif defined(VGP_x86_netbsdelf2)
+  UWord carry = 0;
+  UWord val = do_syscall_WRK(&carry,sysno,a1,a2,a3,a4,a5,a6,a7);
+  SysRes res;
+  res = VG_(mk_SysRes_x86_netbsdelf2)( val, carry );
+  if (sysno == 280)
+	  VG_(debugLog)(1, "do_syscall", "SYSRES AFTER %d: val = %d\nres.val = %d, res.isError = %d, carry = %d\n", sysno, val, res.val, res.isError, carry);
+  return res;
+#else
+#  error Unknown platform
+#endif
 }
+
+
+/* ---------------------------------------------------------------------
+   Names of errors.
+   ------------------------------------------------------------------ */
+
+/* Return a string which gives the name of an error value.  Note,
+   unlike the standard C syserror fn, the returned string is not
+   malloc-allocated or writable -- treat it as a constant. 
+   TODO: implement this properly. */
+
+const HChar* VG_(strerror) ( UWord errnum )
+{
+   switch (errnum) {
+      case VKI_EPERM:       return "Operation not permitted";
+      case VKI_ENOENT:      return "No such file or directory";
+      case VKI_ESRCH:       return "No such process";
+      case VKI_EINTR:       return "Interrupted system call";
+      case VKI_EBADF:       return "Bad file number";
+      case VKI_EAGAIN:      return "Try again";
+      case VKI_ENOMEM:      return "Out of memory";
+      case VKI_EACCES:      return "Permission denied";
+      case VKI_EFAULT:      return "Bad address";
+      case VKI_EEXIST:      return "File exists";
+      case VKI_EINVAL:      return "Invalid argument";
+      case VKI_EMFILE:      return "Too many open files";
+      case VKI_ENOSYS:      return "Function not implemented";
+      case VKI_ERESTARTSYS: return "ERESTARTSYS";
+      default:              return "VG_(strerror): unknown error";
+   }
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                        ---*/

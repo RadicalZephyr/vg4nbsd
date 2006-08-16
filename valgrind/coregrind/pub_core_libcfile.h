@@ -38,17 +38,27 @@
 
 #include "pub_tool_libcfile.h"
 
-/* Application-visible file descriptor limits */
-extern Int VG_(fd_soft_limit);
-extern Int VG_(fd_hard_limit);
-
 /* Move an fd into the Valgrind-safe range */
 extern Int VG_(safe_fd) ( Int oldfd );
 extern Int VG_(fcntl)   ( Int fd, Int cmd, Int arg );
 
+/* Convert an fd into a filename */
+extern Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf );
+
+/* Return the size of a file */
+extern Int VG_(fsize) ( Int fd );
+
+/* Is the file a directory? */
+extern Bool VG_(is_dir) ( HChar* f );
+
 /* Default destination port to be used in logging over a network, if
    none specified. */
 #define VG_CLO_DEFAULT_LOGPORT 1500
+
+extern UInt   VG_(htonl) ( UInt x );
+extern UInt   VG_(ntohl) ( UInt x );
+extern UShort VG_(htons) ( UShort x );
+extern UShort VG_(ntohs) ( UShort x );
 
 extern Int VG_(write_socket)( Int sd, void *msg, Int count );
 extern Int VG_(connect_via_socket)( UChar* str );
@@ -56,6 +66,19 @@ extern Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, void *optval,
                               Int *optlen );
+
+extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
+
+/* Is the file executable?  Returns: 0 = success, non-0 is failure */
+extern Int VG_(check_executable)(HChar* f);
+
+extern SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset );
+
+/* Create and open (-rw------) a tmp file name incorporating said arg.
+   Returns -1 on failure, else the fd of the file.  If fullname is
+   non-NULL, the file's name is written into it.  The number of bytes
+   written is guaranteed not to exceed 64+strlen(part_of_name). */
+extern Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname );
 
 #endif   // __PUB_CORE_LIBCFILE_H
 

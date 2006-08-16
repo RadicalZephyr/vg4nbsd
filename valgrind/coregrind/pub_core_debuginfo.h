@@ -36,18 +36,25 @@
 // to get file and function names, line numbers, variable types, and
 // to help stack unwinding.
 //
-// And it's internals are currently a mess.  It's interface is ugly, too.
+// And its internals are currently a mess.  Its interface is ugly, too.
 //--------------------------------------------------------------------
 
 #include "pub_tool_debuginfo.h"
 
-typedef struct _Segment Segment;
-typedef struct _CodeRedirect CodeRedirect;
+/* Notify the debuginfo system about a new mapping.  This is the way
+   new debug information gets loaded.  If allow_SkFileV is True, it
+   will try load debug info if the mapping at 'a' belongs to Valgrind;
+   whereas normally (False) it will not do that.  This allows us to
+   carefully control when the thing will read symbols from the
+   Valgrind executable itself. */
+extern void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV );
 
-extern Bool VG_(is_object_file)   ( const void *hdr );
-extern SegInfo * VG_(read_seg_symbols) ( Segment *seg );
-extern void VG_(seginfo_incref)   ( SegInfo * );
-extern void VG_(seginfo_decref)   ( SegInfo *, Addr a );
+extern void VG_(di_notify_munmap)( Addr a, SizeT len );
+
+extern void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot );
+
+extern SegInfo *VG_(read_seg_symbols) ( Addr addr, SizeT len,
+                                        OffT offset, const Char* filename);
 
 extern Bool VG_(get_fnname_nodemangle)( Addr a, Char* fnname, Int n_fnname );
 

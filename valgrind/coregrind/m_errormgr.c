@@ -29,7 +29,8 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_threadstate.h"      // needed for pub_core_main.h
+#include "pub_core_threadstate.h"      // For VG_N_THREADS
+#include "pub_core_debugger.h"
 #include "pub_core_debuginfo.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_execontext.h"
@@ -37,13 +38,12 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
-#include "pub_core_main.h"          // for VG_(start_debugger)()
+#include "pub_core_libcproc.h"         // For VG_(getpid)()
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_stacktrace.h"
 #include "pub_core_tooliface.h"
-#include "pub_core_translate.h"
+#include "pub_core_translate.h"        // for VG_(translate)()
 
 /*------------------------------------------------------------*/
 /*--- Globals                                              ---*/
@@ -51,16 +51,16 @@
 
 /* After this many different unsuppressed errors have been observed,
    be more conservative about collecting new ones. */
-#define M_COLLECT_ERRORS_SLOWLY_AFTER 50
+#define M_COLLECT_ERRORS_SLOWLY_AFTER 100
 
 /* After this many different unsuppressed errors have been observed,
    stop collecting errors at all, and tell the user their program is
    evidently a steaming pile of camel dung. */
-#define M_COLLECT_NO_ERRORS_AFTER_SHOWN 300
+#define M_COLLECT_NO_ERRORS_AFTER_SHOWN 1000
 
 /* After this many total errors have been observed, stop collecting
    errors at all.  Counterpart to M_COLLECT_NO_ERRORS_AFTER_SHOWN. */
-#define M_COLLECT_NO_ERRORS_AFTER_FOUND 30000
+#define M_COLLECT_NO_ERRORS_AFTER_FOUND 100000
 
 /* The list of error contexts found, both suppressed and unsuppressed.
    Initially empty, and grows as errors are detected. */
@@ -99,6 +99,10 @@ static ThreadId last_tid_printed = 1;
 */
 struct _Error {
    struct _Error* next;
+   // Unique tag.  This gives the error a unique identity (handle) by
+   // which it can be referred to afterwords.  Currently only used for
+   // XML printing.
+   UInt unique;
    // NULL if unsuppressed; or ptr to suppression record.
    Supp* supp;
    Int count;
@@ -231,6 +235,13 @@ void VG_(set_supp_extra)  ( Supp* su, void* extra )
 /*--- Helper fns                                           ---*/
 /*------------------------------------------------------------*/
 
+// Only show core errors if the tool wants to, we're not running with -q,
+// and were not outputting XML.
+Bool VG_(showing_core_errors)(void)
+{
+   return VG_(needs).core_errors && VG_(clo_verbosity) >= 1 && !VG_(clo_xml);
+}
+
 /* Compare error contexts, to detect duplicates.  Note that if they
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
@@ -258,18 +269,16 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
    }
 }
 
-static void pp_Error ( Error* err, Bool printCount )
+static void pp_Error ( Error* err )
 {
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "<error>");
-      VG_(message)(Vg_UserMsg, "  <unique>0x%llx</unique>",
-                                  Ptr_to_ULong(err));
+      VG_(message)(Vg_UserMsg, "  <unique>0x%x</unique>",
+                                  err->unique);
       VG_(message)(Vg_UserMsg, "  <tid>%d</tid>", err->tid);
    }
 
    if (!VG_(clo_xml)) {
-      if (printCount)
-         VG_(message)(Vg_UserMsg, "Observed %d times:", err->count );
       if (err->tid > 0 && err->tid != last_tid_printed) {
          VG_(message)(Vg_UserMsg, "Thread %d:", err->tid );
          last_tid_printed = err->tid;
@@ -345,9 +354,13 @@ static __inline__
 void construct_error ( Error* err, ThreadId tid, ErrorKind ekind, Addr a,
                        Char* s, void* extra, ExeContext* where )
 {
+   /* DO NOT MAKE unique_counter NON-STATIC */
+   static UInt unique_counter = 0;
+
    tl_assert(tid < VG_N_THREADS);
 
    /* Core-only parts */
+   err->unique   = unique_counter++;
    err->next     = NULL;
    err->supp     = NULL;
    err->count    = 1;
@@ -378,8 +391,7 @@ static void printSuppForIp(UInt n, Addr ip)
    } else if ( VG_(get_objname)(ip, buf, ERRTXT_LEN) ) {
       VG_(printf)("   obj:%s\n", buf);
    } else {
-      VG_(printf)("   ???:???       "
-                  "# unknown, suppression will not work, sorry\n");
+      VG_(printf)("   obj:*\n");
    }
 }
 
@@ -465,7 +477,8 @@ void VG_(maybe_record_error) ( ThreadId tid,
       pointless to continue the Valgrind run after this point. */
    if (VG_(clo_error_limit) 
        && (n_errs_shown >= M_COLLECT_NO_ERRORS_AFTER_SHOWN
-           || n_errs_found >= M_COLLECT_NO_ERRORS_AFTER_FOUND)) {
+           || n_errs_found >= M_COLLECT_NO_ERRORS_AFTER_FOUND)
+       && !VG_(clo_xml)) {
       if (!stopping_message) {
          VG_(message)(Vg_UserMsg, "");
 
@@ -498,7 +511,8 @@ void VG_(maybe_record_error) ( ThreadId tid,
    /* After M_COLLECT_ERRORS_SLOWLY_AFTER different errors have
       been found, be much more conservative about collecting new
       ones. */
-   if (n_errs_shown >= M_COLLECT_ERRORS_SLOWLY_AFTER) {
+   if (n_errs_shown >= M_COLLECT_ERRORS_SLOWLY_AFTER
+       && !VG_(clo_xml)) {
       exe_res = Vg_LowRes;
       if (!slowdown_message) {
          VG_(message)(Vg_UserMsg, "");
@@ -592,7 +606,7 @@ void VG_(maybe_record_error) ( ThreadId tid,
       n_errs_found++;
       if (!is_first_shown_context)
          VG_(message)(Vg_UserMsg, "");
-      pp_Error(p, False);
+      pp_Error(p);
       is_first_shown_context = False;
       n_errs_shown++;
       do_actions_on_error(p, /*allow_db_attach*/True);
@@ -634,7 +648,7 @@ Bool VG_(unique_error) ( ThreadId tid, ErrorKind ekind, Addr a, Char* s,
       if (print_error) {
          if (!is_first_shown_context)
             VG_(message)(Vg_UserMsg, "");
-         pp_Error(&err, False);
+         pp_Error(&err);
          is_first_shown_context = False;
       }
       do_actions_on_error(&err, allow_db_attach);
@@ -671,7 +685,7 @@ static Bool show_used_suppressions ( void )
          VG_(message)(Vg_DebugMsg, 
                       "  <pair>\n"
                       "    <count>%d</count>\n"
-                      "    <name>%s</name>\n"
+                      "    <name>%t</name>\n"
                       "  </pair>", 
                       su->count, su->sname);
       } else {
@@ -745,12 +759,13 @@ void VG_(show_all_errors) ( void )
       VG_(message)(Vg_UserMsg, "%d errors in context %d of %d:",
                    p_min->count,
                    i+1, n_err_contexts);
-      pp_Error( p_min, False );
+      pp_Error( p_min );
 
       if ((i+1 == VG_(clo_dump_error))) {
          StackTrace ips = VG_(extract_StackTrace)(p_min->where);
          VG_(translate) ( 0 /* dummy ThreadId; irrelevant due to debugging*/,
-                          ips[0], /*debugging*/True, 0xFE/*verbosity*/);
+                          ips[0], /*debugging*/True, 0xFE/*verbosity*/,
+                          /*bbs_done*/0);
       }
 
       p_min->count = 1 << 30;
@@ -784,9 +799,11 @@ void VG_(show_error_counts_as_XML) ( void )
       if (err->count <= 0)
          continue;
       VG_(message)(
-         Vg_UserMsg, "  <pair> <count>%d</count> "
-                     "<unique>0x%llx</unique> </pair>",
-         err->count, Ptr_to_ULong(err)
+         Vg_UserMsg, "  <pair>\n"
+                     "    <count>%d</count>\n"
+                     "    <unique>0x%x</unique>\n"
+                     "  </pair>",
+         err->count, err->unique
       );
    }
    VG_(message)(Vg_UserMsg, "</errorcounts>");
@@ -881,22 +898,27 @@ Bool tool_name_present(Char *name, Char *names)
 static void load_one_suppressions_file ( Char* filename )
 {
 #  define N_BUF 200
-   Int   fd, i;
-   Bool  eof;
-   Char  buf[N_BUF+1];
-   Char* tool_names;
-   Char* supp_name;
-   Char* err_str = NULL;
+   SysRes sres;
+   Int    fd, i;
+   Bool   eof;
+   Char   buf[N_BUF+1];
+   Char*  tool_names;
+   Char*  supp_name;
+   Char*  err_str = NULL;
    SuppLoc tmp_callers[VG_MAX_SUPP_CALLERS];
 
-   fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
-   if (fd < 0) {
+   fd   = -1;
+   sres = VG_(open)( filename, VKI_O_RDONLY, 0 );
+   if (sres.isError) {
+      if (VG_(clo_xml))
+         VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
       VG_(message)(Vg_UserMsg, "FATAL: can't open suppressions file '%s'", 
                    filename );
       VG_(exit)(1);
    }
+   fd = sres.val;
 
-#define BOMB(S)  { err_str = S;  goto syntax_error; }
+#  define BOMB(S)  { err_str = S;  goto syntax_error; }
 
    while (True) {
       /* Assign and initialise the two suppression halves (core and tool) */
@@ -1018,6 +1040,8 @@ static void load_one_suppressions_file ( Char* filename )
    return;
 
   syntax_error:
+   if (VG_(clo_xml))
+      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
    VG_(message)(Vg_UserMsg, 
                 "FATAL: in suppressions file '%s': %s", filename, err_str );
    
@@ -1072,16 +1096,20 @@ Bool supp_matches_callers(Error* err, Supp* su)
    for (i = 0; i < su->n_callers; i++) {
       Addr a = ips[i];
       vg_assert(su->callers[i].name != NULL);
+      // The string to be used in the unknown case ("???") can be anything
+      // that couldn't be a valid function or objname.  --gen-suppressions
+      // prints 'obj:*' for such an entry, which will match any string we
+      // use.
       switch (su->callers[i].ty) {
          case ObjName: 
             if (!VG_(get_objname)(a, caller_name, ERRTXT_LEN))
-               return False;
+               VG_(strcpy)(caller_name, "???");
             break; 
 
          case FunName: 
             // Nb: mangled names used in suppressions
             if (!VG_(get_fnname_nodemangle)(a, caller_name, ERRTXT_LEN))
-               return False;
+               VG_(strcpy)(caller_name, "???");
             break;
          default: VG_(tool_panic)("supp_matches_callers");
       }

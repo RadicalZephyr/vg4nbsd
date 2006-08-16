@@ -29,6 +29,16 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+// For anyone wanting to understand race conditions better, this paper might
+// be instructive:
+//
+//   S. Carr, J. Mayo and C.-K. Shene. Race Conditions: A Case Study, The
+//   Journal of Computing in Small Colleges 17(1), September 2001.
+//   http://www.cs.mtu.edu/~carr/papers/jcsc02.pdf
+//
+// It nicely describes several example race conditions, emphasising the
+// fundamentals in each case.
+
 #include "pub_tool_basics.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_aspacemgr.h"
@@ -501,7 +511,10 @@ ESecMap* alloc_secondary_map ( __attribute__ ((unused)) Char* caller )
    //PROF_EVENT(10); PPP
 
    // Mark all words as virgin.
-   map = (ESecMap *)VG_(shadow_alloc)(sizeof(ESecMap));
+   map = (ESecMap *)VG_(am_shadow_alloc)(sizeof(ESecMap));
+   if (map == NULL)
+      VG_(out_of_memory_NORETURN)( "helgrind:allocate new ESecMap", 
+                                   sizeof(ESecMap) );
    for (i = 0; i < ESEC_MAP_WORDS; i++)
       map->swords[i] = virgin_sword;
 
@@ -1332,7 +1345,7 @@ static const Char *pp_MutexState(MutexState st)
    return "???";
 }
 
-static void pp_all_mutexes()
+static void pp_all_mutexes(void)
 {
    Int i;
    Int locks, buckets;
@@ -1706,22 +1719,22 @@ static void hg_mem_read (Addr a, SizeT data_size, ThreadId tid);
 static void hg_mem_write(Addr a, SizeT data_size, ThreadId tid);
 
 __attribute__((unused))
-static void hg_mem_help_read_1(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_1(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_2(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_2(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_4(Addr a) VGA_REGPARM(1);
+static void hg_mem_help_read_4(Addr a) VG_REGPARM(1);
 __attribute__((unused))
-static void hg_mem_help_read_N(Addr a, SizeT size) VGA_REGPARM(2);
+static void hg_mem_help_read_N(Addr a, SizeT size) VG_REGPARM(2);
 
 __attribute__((unused))
-static void hg_mem_help_write_1(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_1(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_2(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_2(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_4(Addr a, UInt val) VGA_REGPARM(2);
+static void hg_mem_help_write_4(Addr a, UInt val) VG_REGPARM(2);
 __attribute__((unused))
-static void hg_mem_help_write_N(Addr a, SizeT size) VGA_REGPARM(2);
+static void hg_mem_help_write_N(Addr a, SizeT size) VG_REGPARM(2);
 
 __attribute__((unused))
 static void bus_lock(void);
@@ -1964,7 +1977,6 @@ static void* hg_realloc ( ThreadId tid, void* p, SizeT new_size )
 {
    HG_Chunk  *hc;
    HG_Chunk **prev_chunks_next_ptr;
-   Int        i;
 
    /* First try and find the block. */
    hc = (HG_Chunk*)VG_(HT_get_node) ( hg_malloc_list, (UWord)p,
@@ -1992,22 +2004,23 @@ static void* hg_realloc ( ThreadId tid, void* p, SizeT new_size )
       /* Get new memory */
       p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
 
-      /* First half kept and copied, second half new */
-      copy_address_range_state( (Addr)p, p_new, hc->size );
-      hg_new_mem_heap ( p_new+hc->size, new_size-hc->size,
-                        /*inited*/False );
+      if (p_new) {
+         /* First half kept and copied, second half new */
+         copy_address_range_state( (Addr)p, p_new, hc->size );
+         hg_new_mem_heap ( p_new+hc->size, new_size-hc->size,
+                           /*inited*/False );
 
-      /* Copy from old to new */
-      for (i = 0; i < hc->size; i++)
-         ((UChar*)p_new)[i] = ((UChar*)p)[i];
+         /* Copy from old to new */
+         VG_(memcpy)((void *)p_new, p, hc->size);
 
-      /* Free old memory */
-      die_and_free_mem ( tid, hc, prev_chunks_next_ptr );
+         /* Free old memory */
+         die_and_free_mem ( tid, hc, prev_chunks_next_ptr );
 
-      /* this has to be after die_and_free_mem, otherwise the
-         former succeeds in shorting out the new block, not the
-         old, in the case when both are on the same list.  */
-      add_HG_Chunk ( tid, p_new, new_size );
+         /* this has to be after die_and_free_mem, otherwise the
+            former succeeds in shorting out the new block, not the
+            old, in the case when both are on the same list.  */
+         add_HG_Chunk ( tid, p_new, new_size );
+      }
 
       return (void*)p_new;
    }  
@@ -2095,8 +2108,8 @@ UCodeBlock* TL_(instrument) ( UCodeBlock* cb_in, Addr not_used )
 	    tl_assert(u_in->val2 < ntemps);
 
 	    stackref[u_in->val2] = (u_in->size == 4 &&
-				    (u_in->val1 == VGA_R_STACK_PTR ||
-                                     u_in->val1 == VGA_R_FRAME_PTR));
+				    (u_in->val1 == VG_R_STACK_PTR ||
+                                     u_in->val1 == VG_R_FRAME_PTR));
 	    VG_(copy_UInstr)(cb, u_in);
 	    break;
 
@@ -2284,11 +2297,12 @@ UCodeBlock* TL_(instrument) ( UCodeBlock* cb_in, Addr not_used )
    return cb;
 }
 #endif
-static IRBB* hg_instrument ( IRBB* bb_in, VexGuestLayout* layout, 
-                             IRType gWordTy, IRType hWordTy )
+static
+IRBB* hg_instrument ( IRBB* bb_in, VexGuestLayout* layout, 
+                      Addr64 orig_addr_noredir, VexGuestExtents* vge,
+                      IRType gWordTy, IRType hWordTy )
 {
-   VG_(message)(Vg_DebugMsg, "Helgrind is not yet ready to handle Vex IR");
-   VG_(exit)(1);
+   tl_assert(0);  // Need to convert to Vex
 }
 
 /*--------------------------------------------------------------------*/
@@ -2425,9 +2439,9 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 	   si != NULL; 
 	   si = VG_(next_seginfo)(si)) 
       {
-	 Addr base = VG_(seg_start)(si);
-	 SizeT size = VG_(seg_size)(si);
-	 const UChar *filename = VG_(seg_filename)(si);
+	 Addr base = VG_(seginfo_start)(si);
+	 SizeT size = VG_(seginfo_size)(si);
+	 const UChar *filename = VG_(seginfo_filename)(si);
 
 	 if (a >= base && a < base+size) {
 	    ai->akind = Segment;
@@ -2435,7 +2449,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 	    ai->rwoffset = a - base;
 	    ai->filename = filename;
 
-	    switch(VG_(seg_sect_kind)(a)) {
+	    switch(VG_(seginfo_sect_kind)(a)) {
 	    case Vg_SectText:	ai->section = "text"; break;
 	    case Vg_SectData:	ai->section = "data"; break;
 	    case Vg_SectBSS:	ai->section = "BSS"; break;
@@ -3176,42 +3190,42 @@ static void hg_mem_write(Addr a, SizeT size, ThreadId tid)
 
 #undef DEBUG_STATE
 
-VGA_REGPARM(1) static void hg_mem_help_read_1(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_1(Addr a)
 {
    hg_mem_read(a, 1, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(1) static void hg_mem_help_read_2(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_2(Addr a)
 {
    hg_mem_read(a, 2, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(1) static void hg_mem_help_read_4(Addr a)
+VG_REGPARM(1) static void hg_mem_help_read_4(Addr a)
 {
    hg_mem_read(a, 4, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(2) static void hg_mem_help_read_N(Addr a, SizeT size)
+VG_REGPARM(2) static void hg_mem_help_read_N(Addr a, SizeT size)
 {
    hg_mem_read(a, size, VG_(get_running_tid)());
 }
 
-VGA_REGPARM(2) static void hg_mem_help_write_1(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_1(Addr a, UInt val)
 {
    if (*(UChar *)a != val)
       hg_mem_write(a, 1, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_2(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_2(Addr a, UInt val)
 {
    if (*(UShort *)a != val)
       hg_mem_write(a, 2, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_4(Addr a, UInt val)
+VG_REGPARM(2) static void hg_mem_help_write_4(Addr a, UInt val)
 {
    if (*(UInt *)a != val)
       hg_mem_write(a, 4, VG_(get_running_tid)());
 }
-VGA_REGPARM(2) static void hg_mem_help_write_N(Addr a, SizeT size)
+VG_REGPARM(2) static void hg_mem_help_write_N(Addr a, SizeT size)
 {
    hg_mem_write(a, size, VG_(get_running_tid)());
 }
@@ -3374,6 +3388,17 @@ static void hg_pre_clo_init(void)
                                    hg_instrument,
                                    hg_fini);
 
+   VG_(printf)(
+"\n"
+"Helgrind is currently not working, because:\n"
+" (a) it is not yet ready to handle the Vex IR and the use with 64-bit\n"
+"     platforms introduced in Valgrind 3.0.0\n"
+" (b) we need to get thread operation tracking working again after\n"
+"     the changes added in Valgrind 2.4.0\n"
+"\n"
+"Sorry for the inconvenience.  Let us know if this is a problem for you.\n");
+   VG_(exit)(1);
+
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (hg_eq_Error,
                                    hg_pp_Error,
@@ -3390,9 +3415,8 @@ static void hg_pre_clo_init(void)
    VG_(needs_command_line_options)(hg_process_cmd_line_option,
                                    hg_print_usage,
                                    hg_print_debug_usage);
-   VG_(needs_shadow_memory)       ();
 
-   VG_(malloc_funcs)              (hg_malloc,
+   VG_(needs_malloc_replacement)  (hg_malloc,
                                    hg___builtin_new,
                                    hg___builtin_vec_new,
                                    hg_memalign,
@@ -3446,11 +3470,10 @@ static void hg_pre_clo_init(void)
    }
 
    init_shadow_memory();
-   hg_malloc_list = VG_(HT_construct)();
+   hg_malloc_list = VG_(HT_construct)( 80021 );    // prime, big
 }
 
-/* Uses a 1:1 mapping */
-VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init, 1.0)
+VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                hg_main.c ---*/

@@ -35,19 +35,19 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuglog.h"
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_options.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
-#include "pub_core_main.h"
+/* #include "pub_core_main.h"          // For VG_(shutdown_actions_NORETURN)()el */
 #include "pub_core_mallocfree.h"
+#include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_sigframe.h"
+#include "pub_core_sigframe.h"      // For VG_(sigframe_destroy)()
 #include "pub_core_signals.h"
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
@@ -66,159 +66,22 @@
    Note.  Why is this stuff here?
    ------------------------------------------------------------------ */
 
-/* 
-   Allocate a stack for this thread.
-
-   They're allocated lazily, but never freed.
- */
-#define FILL	0xdeadbeef
-
-// Valgrind's stack size, in words.
-#define STACK_SIZE_W      16384
-
-static UWord* allocstack(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord *esp;
-
-   if (tst->os_state.valgrind_stack_base == 0) {
-      void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE,
-			    VKI_PROT_READ|VKI_PROT_WRITE,
-			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS,
-			    SF_VALGRIND,
-			    -1, 0);
-
-      if (stk != (void *)-1) {
-         VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /* guard page */
-         tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE;
-         tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord);
-      } else 
-      return (UWord*)-1;
-   }
-
-   for (esp = (UWord*) tst->os_state.valgrind_stack_base;
-        esp < (UWord*)(tst->os_state.valgrind_stack_base + 
-                       tst->os_state.valgrind_stack_szB); 
-        esp++)
-      *esp = FILL;
-   /* esp is left at top of stack */
-
-   if (0)
-      VG_(printf)("stack for tid %d at %p (%x); esp=%p\n",
-		  tid, tst->os_state.valgrind_stack_base, 
-                  *(UWord*)(tst->os_state.valgrind_stack_base), esp);
-
-   return esp;
-}
-
-/* NB: this is identical the the amd64 version. */
-/* Return how many bytes of this stack have not been used */
-SSizeT VGA_(stack_unused)(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord* p;
-
-   for (p = (UWord*)tst->os_state.valgrind_stack_base; 
-	p && (p < (UWord*)(tst->os_state.valgrind_stack_base +
-                           tst->os_state.valgrind_stack_szB)); 
-	p++)
-      if (*p != FILL)
-	 break;
-
-   if (0)
-      VG_(printf)("p=%p %x tst->os_state.valgrind_stack_base=%p\n",
-                  p, *p, tst->os_state.valgrind_stack_base);
-
-   return ((Addr)p) - tst->os_state.valgrind_stack_base;
-}
-
-
-/* Run a thread all the way to the end, then do appropriate exit actions
-   (this is the last-one-out-turn-off-the-lights bit). 
-*/
-static void run_a_thread_NORETURN ( Word tidW )
-{
-   ThreadId tid = (ThreadId)tidW;
-
-   VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) called\n",
-                       (ULong)tidW);
-
-   /* Run the thread all the way through. */
-   VgSchedReturnCode src = VG_(thread_wrapper)(tid);  
-
-   VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "VG_(thread_wrapper) done\n",
-                       (ULong)tidW);
-
-   Int c = VG_(count_living_threads)();
-   vg_assert(c >= 1); /* stay sane */
-
-   if (c == 1) {
-
-      VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "last one standing\n",
-                          (ULong)tidW);
-
-      /* We are the last one standing.  Keep hold of the lock and
-         carry on to show final tool results, then exit the entire system. */
-      VG_(shutdown_actions_NORETURN)(tid, src);
-
-   } else {
-
-      VG_(debugLog)(1, "syswrap-x86-netbsd", 
-                       "run_a_thread_NORETURN(tid=%lld): "
-                          "not last one standing\n",
-                          (ULong)tidW);
-
-      /* OK, thread is dead, but others still exist.  Just exit. */
-      ThreadState *tst = VG_(get_ThreadState)(tid);
-
-      /* This releases the run lock */
-      VG_(exit_thread)(tid);
-      vg_assert(tst->status == VgTs_Zombie);
-
-      /* We have to use this sequence to terminate the thread to
-         prevent a subtle race.  If VG_(exit_thread)() had left the
-         ThreadState as Empty, then it could have been reallocated,
-         reusing the stack while we're doing these last cleanups.
-         Instead, VG_(exit_thread) leaves it as Zombie to prevent
-         reallocation.  We need to make sure we don't touch the stack
-         between marking it Empty and exiting.  Hence the
-         assembler. */
-      asm volatile (
-         "movl	%1, %0\n"	/* set tst->status = VgTs_Empty */
-         "movl	%2, %%eax\n"    /* set %eax = __NR_exit */
-         "movl	%3, %%ebx\n"    /* set %ebx = tst->os_state.exitcode */
-         "int	$0x80\n"	/* exit(tst->os_state.exitcode) */
-         : "=m" (tst->status)
-         : "n" (VgTs_Empty), "n" (__NR_exit), "m" (tst->os_state.exitcode));
-
-      VG_(core_panic)("Thread exit failed?\n");
-   }
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
 /* Call f(arg1), but first switch stacks, using 'stack' as the new
    stack, and use 'retaddr' as f's return-to address.  Also, clear all
    the integer registers before entering f.*/
 __attribute__((noreturn))
-void call_on_new_stack_0_1 ( Addr stack,
-			     Addr retaddr,
-			     void (*f)(Word),
-                             Word arg1 );
+void ML_(call_on_new_stack_0_1) ( Addr stack,
+			          Addr retaddr,
+			          void (*f)(Word),
+                                  Word arg1 );
 //  4(%esp) == stack
 //  8(%esp) == retaddr
 // 12(%esp) == f
 // 16(%esp) == arg1
 asm(
-"call_on_new_stack_0_1:\n"
+".text\n"
+".globl vgModuleLocal_call_on_new_stack_0_1\n"
+"vgModuleLocal_call_on_new_stack_0_1:\n"
 "   movl %esp, %esi\n"     // remember old stack pointer
 "   movl 4(%esi), %esp\n"  // set stack
 "   pushl 16(%esi)\n"      // arg1 to stack
@@ -233,49 +96,9 @@ asm(
 "   movl $0, %ebp\n"
 "   ret\n"                 // jump to f
 "   ud2\n"                 // should never get here
+".previous\n"
 );
 
-
-/*
-   Allocate a stack for the main thread, and run it all the way to the
-   end.  
-*/
-void VGP_(main_thread_wrapper_NORETURN)(ThreadId tid)
-{
-	VG_(debugLog)(1, "syswrap-x86-netbsd", 
-		      "entering VGP_(main_thread_wrapper_NORETURN)\n"); 
-
-   UWord* esp = allocstack(tid);
-
-   /* shouldn't be any other threads around yet */
-   vg_assert( VG_(count_living_threads)() == 1 );
-
-   call_on_new_stack_0_1( 
-      (Addr)esp,              /* stack */
-      0,                      /*bogus return address*/
-      run_a_thread_NORETURN,  /* fn to call */
-      (Word)tid               /* arg to give it */
-   );
-
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-static Int start_thread_NORETURN ( void* arg )
-{
-   ThreadState* tst = (ThreadState*)arg;
-   ThreadId     tid = tst->tid;
-
-   run_a_thread_NORETURN ( (Word)tid );
-   /*NOTREACHED*/
-   vg_assert(0);
-}
-
-
-/* ---------------------------------------------------------------------
-   clone() handling
-   ------------------------------------------------------------------ */
 
 /*
         Perform a clone system call.  clone is strange because it has
@@ -301,27 +124,30 @@ static Int start_thread_NORETURN ( void* arg )
             pid_t* child_tid    in %edi
             void*  tls_ptr      in %esi
 
-	Returns an Int encoded in the netbsd-x86 way, not a SysRes.
+	Returns an Int encoded in the linux-x86 way, not a SysRes.
  */
+
 #define STRINGIFZ(__str) #__str
 #define STRINGIFY(__str)  STRINGIFZ(__str)
-#define FSZ               "4+4+4" /* frame size = retaddr+ebx+edi */
+#define FSZ               "4+4+4+4" /* frame size = retaddr+ebx+edi+esi */
 #define __NR_CLONE        STRINGIFY(__NR_clone)
 #define __NR_EXIT         STRINGIFY(__NR_exit)
 
 extern
-Int do_syscall_clone_x86_netbsd ( Int (*fn)(void *), 
+Int do_syscall_clone_x86_netbsd (Word (*fn)(void *), 
                                  void* stack, 
                                  Int   flags, 
                                  void* arg,
                                  Int*  child_tid, 
                                  Int*  parent_tid, 
-                                 vki_modify_ldt_t * );
+                                 vki_modify_ldt_t *,
+				 UWord *errflag);
 asm(
 "\n"
 "do_syscall_clone_x86_netbsd:\n"
 "        push    %ebx\n"
 "        push    %edi\n"
+"        push    %esi\n"
 
          /* set up child stack with function and arg */
 "        movl     4+"FSZ"(%esp), %ecx\n"    /* syscall arg2: child stack */
@@ -334,10 +160,12 @@ asm(
          /* get other args to clone */
 "        movl     8+"FSZ"(%esp), %ebx\n"    /* syscall arg1: flags */
 "        movl    20+"FSZ"(%esp), %edx\n"    /* syscall arg3: parent tid * */
-"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg4: child tid * */
-"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg5: tls_ptr * */
+"        movl    16+"FSZ"(%esp), %edi\n"    /* syscall arg5: child tid * */
+"        movl    24+"FSZ"(%esp), %esi\n"    /* syscall arg4: tls_ptr * */
 "        movl    $"__NR_CLONE", %eax\n"
+"        movl    $0,28+"FSZ"(%esp)\n"
 "        int     $0x80\n"                   /* clone() */
+"	 jc      err\n"
 "        testl   %eax, %eax\n"              /* child if retval == 0 */
 "        jnz     1f\n"
 
@@ -353,7 +181,10 @@ asm(
          /* Hm, exit returned */
 "        ud2\n"
 
+"err:\n"
+"        movl    $1,28+"FSZ"(%esp)\n"
 "1:\n"   /* PARENT or ERROR */
+"        pop     %esi\n"
 "        pop     %edi\n"
 "        pop     %ebx\n"
 "        ret\n"
@@ -362,7 +193,7 @@ asm(
 #undef FSZ
 #undef __NR_CLONE
 #undef __NR_EXIT
-#undef STRINGIFY
+
 #undef STRINGIFZ
 
 
@@ -392,9 +223,10 @@ static SysRes do_clone ( ThreadId ptid,
    ThreadState* ptst = VG_(get_ThreadState)(ptid);
    ThreadState* ctst = VG_(get_ThreadState)(ctid);
    UWord*       stack;
-   Segment*     seg;
+   NSegment*    seg;
    SysRes       res;
    Int          eax;
+   UWord        errflag;
    vki_sigset_t blockall, savedmask;
 
    VG_(sigfillset)(&blockall);
@@ -402,7 +234,11 @@ static SysRes do_clone ( ThreadId ptid,
    vg_assert(VG_(is_running_thread)(ptid));
    vg_assert(VG_(is_valid_tid)(ctid));
 
-   stack = allocstack(ctid);
+   stack = (UWord*)ML_(allocstack)(ctid);
+   if (stack == NULL) {
+      res = VG_(mk_SysRes_Error)( VKI_ENOMEM );
+      goto out;
+   }
 
    /* Copy register state
 
@@ -416,11 +252,11 @@ static SysRes do_clone ( ThreadId ptid,
       If the clone call specifies a NULL esp for the new thread, then
       it actually gets a copy of the parent's esp.
    */
-   /* HACK: The clone call done by the Quadrics Elan3 driver specifies
+   /* Note: the clone call done by the Quadrics Elan3 driver specifies
       clone flags of 0xF00, and it seems to rely on the assumption
-      that the child inherits a copy of the parent's GDT. Hence that
-      is passed as an arg to setup_child. */
-   setup_child( &ctst->arch, &ptst->arch, True /*VG_(clo_support_elan3)*/ );
+      that the child inherits a copy of the parent's GDT.  
+      setup_child takes care of setting that up. */
+   setup_child( &ctst->arch, &ptst->arch, True );
 
    /* Make sys_clone appear to have returned Success(0) in the
       child. */
@@ -440,14 +276,14 @@ static SysRes do_clone ( ThreadId ptid,
       memory mappings and try to derive some useful information.  We
       assume that esp starts near its highest possible value, and can
       only go down to the start of the mmaped segment. */
-   seg = VG_(find_segment)((Addr)esp);
-   if (seg) {
+   seg = VG_(am_find_nsegment)((Addr)esp);
+   if (seg && seg->kind != SkResvn) {
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(esp);
-      ctst->client_stack_szB  = ctst->client_stack_highest_word - seg->addr;
+      ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
 	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
-		     ctid, seg->addr, VG_PGROUNDUP(esp));
+		     ctid, seg->start, VG_PGROUNDUP(esp));
    } else {
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with ESP(%p) unmapped\n",
 		   ctid, esp);
@@ -474,73 +310,23 @@ static SysRes do_clone ( ThreadId ptid,
 
    /* Create the new thread */
    eax = do_syscall_clone_x86_netbsd(
-            start_thread_NORETURN, stack, flags, &VG_(threads)[ctid],
-            child_tidptr, parent_tidptr, NULL
+            ML_(start_thread_NORETURN), stack, flags, &VG_(threads)[ctid],
+            child_tidptr, parent_tidptr, NULL, &errflag
          );
-   res = VG_(mk_SysRes)( eax );
+   res = VG_(mk_SysRes_x86_netbsdelf2)( eax, errflag );
 
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
    if (res.isError) {
       /* clone failed */
-      VGP_(cleanup_thread)(&ctst->arch);
+      VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;
    }
 
    return res;
 }
 
-
-/* Do a clone which is really a fork() */
-static SysRes do_fork_clone ( ThreadId tid, 
-                              UInt flags, Addr esp, 
-                              Int* parent_tidptr, 
-                              Int* child_tidptr )
-{
-   vki_sigset_t fork_saved_mask;
-   vki_sigset_t mask;
-   SysRes       res;
-
-   if (flags & (VKI_CLONE_SETTLS | VKI_CLONE_FS | VKI_CLONE_VM 
-                | VKI_CLONE_FILES | VKI_CLONE_VFORK))
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-   /* Block all signals during fork, so that we can fix things up in
-      the child without being interrupted. */
-   VG_(sigfillset)(&mask);
-   VG_(sigprocmask)(VKI_SIG_SETMASK, &mask, &fork_saved_mask);
-
-   VG_(do_atfork_pre)(tid);
-
-   /* Since this is the fork() form of clone, we don't need all that
-      VG_(clone) stuff */
-   res = VG_(do_syscall5)( __NR_clone, flags, 
-                           (UWord)NULL, (UWord)parent_tidptr, 
-                           (UWord)NULL, (UWord)child_tidptr );
-
-   if (!res.isError && res.val == 0) {
-      /* child */
-      VG_(do_atfork_child)(tid);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   } 
-   else 
-   if (!res.isError && res.val > 0) {
-      /* parent */
-      if (VG_(clo_trace_syscalls))
-	  VG_(printf)("   clone(fork): process %d created child %d\n", 
-                      VG_(getpid)(), res.val);
-
-      VG_(do_atfork_parent)(tid);
-
-      /* restore signal mask */
-      VG_(sigprocmask)(VKI_SIG_SETMASK, &fork_saved_mask, NULL);
-   }
-
-   return res;
-}
 
 /* ---------------------------------------------------------------------
    LDT/GDT simulation
@@ -922,14 +708,14 @@ static SysRes sys_get_thread_area ( ThreadId tid, vki_modify_ldt_t* info )
    info->useable = gdt[idx].LdtEnt.Bits.Sys;
    info->reserved = 0;
 
-   return VG_(mk_SysRes_Error)( 0 );
+   return VG_(mk_SysRes_Success)( 0 );
 }
 
 /* ---------------------------------------------------------------------
    More thread stuff
    ------------------------------------------------------------------ */
 
-void VGP_(cleanup_thread) ( ThreadArchState* arch )
+void VG_(cleanup_thread) ( ThreadArchState* arch )
 {
    /* Release arch-specific resources held by this thread. */
    /* On x86, we have to dump the LDT and GDT. */
@@ -1087,21 +873,24 @@ PRE(sys_clone)
 
    if (ARG1 & VKI_CLONE_PARENT_SETTID) {
       PRE_MEM_WRITE("clone(parent_tidptr)", ARG3, sizeof(Int));
-      if (!VG_(is_addressable)(ARG3, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG3, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
       PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
-      if (!VG_(is_addressable)(ARG5, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & VKI_CLONE_SETTLS) {
       PRE_MEM_READ("clone(tls_user_desc)", ARG4, sizeof(vki_modify_ldt_t));
-      if (!VG_(is_addressable)(ARG4, sizeof(vki_modify_ldt_t), VKI_PROT_READ)) {
+      if (!VG_(am_is_valid_for_client)(ARG4, sizeof(vki_modify_ldt_t), 
+                                             VKI_PROT_READ)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
@@ -1109,7 +898,7 @@ PRE(sys_clone)
 
    cloneflags = ARG1;
 
-   if (!VG_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
+   if (!ML_(client_signal_OK)(ARG1 & VKI_CSIGNAL)) {
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
@@ -1122,6 +911,9 @@ PRE(sys_clone)
       Everything else is rejected. 
    */
    if (
+        1 ||
+        /* 11 Nov 05: for the time being, disable this ultra-paranoia.
+           The switch below probably does a good enough job. */
           (cloneflags == 0x100011 || cloneflags == 0x1200011
                                   || cloneflags == 0x7D0F00
                                   || cloneflags == 0x790F00
@@ -1155,9 +947,8 @@ PRE(sys_clone)
 
    case 0: /* plain fork */
       SET_STATUS_from_SysRes(
-         do_fork_clone(tid,
+         ML_(do_fork_clone)(tid,
                        cloneflags,      /* flags */
-                       (Addr)ARG2,      /* child ESP */
                        (Int *)ARG3,     /* parent_tidptr */
                        (Int *)ARG5));   /* child_tidptr */
       break;
@@ -1167,12 +958,6 @@ PRE(sys_clone)
       /* should we just ENOSYS? */
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "Unsupported clone() flags: 0x%x", ARG1);
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "NOTE: if this happened when attempting "
-                               "to run code using");
-      VG_(message)(Vg_UserMsg, "      Quadrics Elan3 user-space drivers,"
-                               " you should re-run ");
-      VG_(message)(Vg_UserMsg, "      with --support-elan3=yes.");
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "The only supported clone() uses are:");
       VG_(message)(Vg_UserMsg, " - via a threads library (LinuxThreads or NPTL)");
@@ -1210,7 +995,7 @@ PRE(sys_sigreturn)
 
    /* This is only so that the EIP is (might be) useful to report if
       something goes wrong in the sigreturn */
-   VG_(fixup_guest_state_to_restart_syscall)(&tst->arch);
+   ML_(fixup_guest_state_to_restart_syscall)(&tst->arch);
 
    VG_(sigframe_destroy)(tid, False);
 
@@ -1219,7 +1004,7 @@ PRE(sys_sigreturn)
       denote either success or failure, we must set up so that the
       driver logic copies it back unchanged.  Also, note %EAX is of
       the guest registers written by VG_(sigframe_destroy). */
-   SET_STATUS_from_SysRes( VG_(mk_SysRes)( tst->arch.vex.guest_EAX ) );
+   SET_STATUS_from_SysRes( VG_(mk_SysRes_x86_netbsdelf2)( tst->arch.vex.guest_EAX, LibVEX_GuestX86_get_eflags(&tst->arch.vex) & 1) );
 
    /* Check to see if some any signals arose as a result of this. */
    *flags |= SfPollAfter;
@@ -1343,7 +1128,6 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
    return *a_p;
 }
  
-// XXX: should use the constants here (eg. SHMAT), not the numbers directly!
 PRE(sys_ipc)
 {
    PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
@@ -1354,7 +1138,7 @@ PRE(sys_ipc)
 
    switch (ARG1 /* call */) {
    case VKI_SEMOP:
-      VG_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
+      ML_(generic_PRE_sys_semop)( tid, ARG2, ARG5, ARG3 );
       *flags |= SfMayBlock;
       break;
    case VKI_SEMGET:
@@ -1362,15 +1146,15 @@ PRE(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
-      VG_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
+      ML_(generic_PRE_sys_semtimedop)( tid, ARG2, ARG5, ARG3, ARG6 );
       *flags |= SfMayBlock;
       break;
    case VKI_MSGSND:
-      VG_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
+      ML_(generic_PRE_sys_msgsnd)( tid, ARG2, ARG5, ARG3, ARG4 );
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
       break;
@@ -1386,7 +1170,7 @@ PRE(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_PRE_sys_msgrcv)( tid, ARG2, msgp, ARG3, msgtyp, ARG4 );
 
       if ((ARG4 & VKI_IPC_NOWAIT) == 0)
          *flags |= SfMayBlock;
@@ -1395,13 +1179,13 @@ PRE(sys_ipc)
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_msgctl)( tid, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
       UWord w;
       PRE_MEM_WRITE( "shmat(raddr)", ARG4, sizeof(Addr) );
-      w = VG_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
+      w = ML_(generic_PRE_sys_shmat)( tid, ARG2, ARG5, ARG3 );
       if (w == 0)
          SET_STATUS_Failure( VKI_EINVAL );
       else
@@ -1409,13 +1193,13 @@ PRE(sys_ipc)
       break;
    }
    case VKI_SHMDT:
-      if (!VG_(generic_PRE_sys_shmdt)(tid, ARG5))
+      if (!ML_(generic_PRE_sys_shmdt)(tid, ARG5))
 	 SET_STATUS_Failure( VKI_EINVAL );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL: /* IPCOP_shmctl */
-      VG_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
+      ML_(generic_PRE_sys_shmctl)( tid, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg, "FATAL: unhandled syscall(ipc) %d", ARG1 );
@@ -1434,7 +1218,7 @@ POST(sys_ipc)
    case VKI_SEMCTL:
    {
       UWord arg = deref_Addr( tid, ARG5, "semctl(arg)" );
-      VG_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
+      ML_(generic_PRE_sys_semctl)( tid, ARG2, ARG3, ARG4, arg );
       break;
    }
    case VKI_SEMTIMEDOP:
@@ -1452,13 +1236,13 @@ POST(sys_ipc)
 			   (Addr) (&((struct vki_ipc_kludge *)ARG5)->msgtyp),
 			   "msgrcv(msgp)" );
 
-      VG_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
+      ML_(generic_POST_sys_msgrcv)( tid, RES, ARG2, msgp, ARG3, msgtyp, ARG4 );
       break;
    }
    case VKI_MSGGET:
       break;
    case VKI_MSGCTL:
-      VG_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_msgctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    case VKI_SHMAT:
    {
@@ -1471,17 +1255,17 @@ POST(sys_ipc)
 
       addr = deref_Addr ( tid, ARG4, "shmat(addr)" );
       if ( addr > 0 ) { 
-         VG_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
+         ML_(generic_POST_sys_shmat)( tid, addr, ARG2, ARG5, ARG3 );
       }
       break;
    }
    case VKI_SHMDT:
-      VG_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
+      ML_(generic_POST_sys_shmdt)( tid, RES, ARG5 );
       break;
    case VKI_SHMGET:
       break;
    case VKI_SHMCTL:
-      VG_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
+      ML_(generic_POST_sys_shmctl)( tid, RES, ARG2, ARG3, ARG5 );
       break;
    default:
       VG_(message)(Vg_DebugMsg,
@@ -1494,81 +1278,33 @@ POST(sys_ipc)
 
 PRE(old_mmap)
 {
-   /* struct mmap_arg_struct {           
-         unsigned long addr;
-         unsigned long len;
-         unsigned long prot;
-         unsigned long flags;
-         unsigned long fd;
-         unsigned long offset;
-   }; */
-   UWord a1, a2, a3, a4, a5, a6;
+	SysRes r;
+   PRINT("old_mmap ( %p, %llu, %d, %d, %d, %llu )",
+         ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, (ULong)ARG7 );
 
-   UWord* args = (UWord*)ARG1;
-   PRE_REG_READ1(long, "old_mmap", struct mmap_arg_struct *, args);
-   PRE_MEM_READ( "old_mmap(args)", (Addr)args, 6*sizeof(UWord) );
-
-   a1 = args[0];
-   a2 = args[1];
-   a3 = args[2];
-   a4 = args[3];
-   a5 = args[4];
-   a6 = args[5];
-
-   PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
-         a1, (ULong)a2, a3, a4, a5, a6 );
-
-   if (a2 == 0) {
-      /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
-         shall be established. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-
-   if (/*(a4 & VKI_MAP_FIXED) &&*/ (0 != (a1 & (VKI_PAGE_SIZE-1)))) {
-      /* zap any misaligned addresses. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
-   }
-
-   if (a4 & VKI_MAP_FIXED) {
-      if (!VG_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
-         PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
-         SET_STATUS_Failure( VKI_ENOMEM );
-      }
-   } else {
-      Addr a = VG_(find_map_space)(a1, a2, True);
-      if (0) VG_(printf)("find_map_space(%p, %d) -> %p\n",a1,a2,a);
-      if (a == 0 && a1 != 0) {
-         a1 = VG_(find_map_space)(0, a2, True);
-      }
-      else
-         a1 = a;
-      if (a1 == 0)
-         SET_STATUS_Failure( VKI_ENOMEM );
-      else
-         a4 |= VKI_MAP_FIXED;
-   }
-
-   if (! FAILURE) {
-      SysRes res = VG_(mmap_native)((void*)a1, a2, a3, a4, a5, a6);
-      SET_STATUS_from_SysRes(res);
-      if (!res.isError) {
-         vg_assert(VG_(valid_client_addr)(res.val, a2, tid, "old_mmap"));
-         VG_(mmap_segment)( (Addr)res.val, a2, a3, a4, a5, a6 );
-      }
-   }
-
-   if (0)
-   VG_(printf)("old_mmap( %p, fixed %d ) -> %s(%p)\n", 
-               args[0], 
-               args[3]&VKI_MAP_FIXED, 
-               FAILURE ? "Fail" : "Success", RES_unchecked);
-
-   /* Stay sane */
-   if (SUCCESS && (args[3] & VKI_MAP_FIXED))
-      vg_assert(RES == args[0]);
+   r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, ARG7);
+   SET_STATUS_from_SysRes(r);
 }
+
+/* PRE(sys_mmap2) */
+/* { */
+/*    SysRes r; */
+
+/*    // Exactly like old_mmap() except: */
+/*    //  - all 6 args are passed in regs, rather than in a memory-block. */
+/*    //  - the file offset is specified in pagesize units rather than bytes, */
+/*    //    so that it can be used for files bigger than 2^32 bytes. */
+/*    PRINT("sys_mmap2 ( %p, %llu, %d, %d, %d, %d )", */
+/*          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 ); */
+/*    PRE_REG_READ6(long, "mmap2", */
+/*                  unsigned long, start, unsigned long, length, */
+/*                  unsigned long, prot,  unsigned long, flags, */
+/*                  unsigned long, fd,    unsigned long, offset); */
+
+/*    r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5,  */
+/*                                        VKI_PAGE_SIZE * (Off64T)ARG6 ); */
+/*    SET_STATUS_from_SysRes(r); */
+/* } */
 
 // XXX: lstat64/fstat64/stat64 are generic, but not necessarily
 // applicable to every architecture -- I think only to 32-bit archs.
@@ -1646,8 +1382,14 @@ PRE(sys_sigaction)
 
    newp = oldp = NULL;
 
-   if (ARG2 != 0)
-      PRE_MEM_READ( "sigaction(act)", ARG2, sizeof(struct vki_old_sigaction));
+   if (ARG2 != 0) {
+      struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
+      PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+      PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+      PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
+      if (sa->sa_flags & VKI_SA_RESTORER)
+         PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
+   }
 
    if (ARG3 != 0) {
       PRE_MEM_WRITE( "sigaction(oldact)", ARG3, sizeof(struct vki_old_sigaction));
@@ -2070,7 +1812,6 @@ POST(sys_rasctl)
 {
    I_die_here;
 }
-
 #undef PRE
 #undef POST
 
@@ -2083,7 +1824,8 @@ POST(sys_rasctl)
 #define PLAX_(sysno, name)    WRAPPER_ENTRY_X_(x86_netbsdelf2, sysno, name) 
 #define PLAXY(sysno, name)    WRAPPER_ENTRY_XY(x86_netbsdelf2, sysno, name)
 
-
+// for system calls required in netbsd, die stubs are implemented
+// under PLAX_. So these a in the same file and can be moved about later.
 // This table maps from __NR_xxx syscall numbers (from
 // linux/include/asm-i386/unistd.h) to the appropriate PRE/POST sys_foo()
 // wrappers on x86 (as per sys_call_table in linux/arch/i386/kernel/entry.S).
@@ -2095,7 +1837,7 @@ POST(sys_rasctl)
 // Importing NetBSD's syscall numbers : change what is necessary ,
 // remove the pre and post wrappers or put in stubs that fail, again
 // we will write it later when a program actually fails over it. 
-const SyscallTableEntry VGP_(syscall_table)[] = {
+const SyscallTableEntry ML_(syscall_table)[] = {
 //zz    //   (restart_syscall)                             // 0
    GENX_(__NR_exit,              sys_exit),           // 1
    GENX_(__NR_fork,              sys_fork),           // 2
@@ -2116,17 +1858,18 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    GENX_(__NR_chmod,             sys_chmod),          // 15
    GENX_(__NR_chown,             sys_chown),          // 16 ## P
-   GENX_(__NR_break,             sys_ni_syscall),     // 17
+   GENX_(__NR_break,             sys_brk),     // 17
    NBSDXY(__NR_getfsstat,        sys_getfsstat),      // 18 
    PLAX_(__NR_compat_43_olseek,  sys_compat_lseek),   // 19
 
    GENX_(__NR_getpid,            sys_getpid),         // 20
    NBSDX_(__NR_mount,            sys_mount),          // 21
    NBSDX_(__NR_unmount,          sys_unmount),        // 22
-   GENX_(__NR_setuid,            sys_setuid16),       // 23 ## P
-   GENX_(__NR_getuid,            sys_getuid16),       // 24 ## P
-
-   GENX_(__NR_geteuid,           sys_geteuid16),      // 25
+/*    GENX_(__NR_setuid,            sys_setuid),       // 23 ## P */
+   GENX_(__NR_setuid,            sys_ni_syscall),       // 23 ## P
+   GENX_(__NR_getuid,            sys_getuid),       // 24 ## P
+/*    GENX_(__NR_geteuid,           sys_geteuid),      // 25 */
+   GENX_(__NR_geteuid,           sys_ni_syscall),      // 25
    PLAXY(__NR_ptrace,            sys_ptrace),         // 26
    NBSDXY(__NR_recvmsg,          sys_recvmsg),        // 27
    NBSDX_(__NR_sendmsg,          sys_sendmsg),        // 28
@@ -2146,13 +1889,14 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 
    NBSDXY(__NR_compat_43_lstat43,sys_compat_lstat),   // 40
    GENXY(__NR_dup,               sys_dup),            // 41
-   GENXY(__NR_pipe,              sys_pipe),           // 42
-   GENX_(__NR_getegid,           sys_getegid16),      // 43
+   GENX_(__NR_pipe,              sys_ni_syscall),           // 42
+/*    GENX_(__NR_pipe,              sys_pipe),           // 42 */
+   GENX_(__NR_getegid,           sys_getegid),      // 43
    GENX_(__NR_profil,            sys_ni_syscall),     // 44
 
    GENX_(__NR_ktrace,            sys_ni_syscall),     // 45
    NBSDXY(__NR_compat_13_sigaction13, sys_compat_sigaction),     // 46
-   GENX_(__NR_getgid,            sys_getgid16),       // 47
+   GENX_(__NR_getgid,            sys_getgid),       // 47
    NBSDXY(__NR_compat_13_sigprocmask13, sys_compat_sigprocmask), // 48
    NBSDX_(__NR___getlogin,       sys_getlogin),       // 49
 
@@ -2184,16 +1928,16 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    NBSDX_(__NR_sstk,             sys_ni_syscall),     // 70
    NBSDX_(__NR_compat_43_ommap,  sys_ni_syscall),     // 71 XXX
    NBSDX_(__NR_vadvise,          sys_ni_syscall),     // 72 Whats this? investigate
-   NBSDX_(__NR_munmap,           sys_munmap),         // 73
+   GENX_(__NR_munmap,           sys_munmap),         // 73
    NBSDX_(__NR_mprotect,         sys_mprotect),       // 74
 
    NBSDX_(__NR_madvise,          sys_madvise),        // 75
 // (__NR_vhangup,   sys_vhangup),                     // 76 obsolete
 // (__NR_vlimit,    sys_vlimit),                      // 77 obsolete
    GENXY(__NR_mincore,           sys_mincore),        // 78
-   GENXY(__NR_getgroups,         sys_getgroups16),    // 79
+   GENXY(__NR_getgroups,         sys_getgroups),    // 79
 
-   GENX_(__NR_setgroups,         sys_setgroups16),    // 80
+   GENX_(__NR_setgroups,         sys_setgroups),    // 80
    GENX_(__NR_getpgrp,           sys_getpgrp),        // 81
    GENX_(__NR_setpgid,           sys_setpgid),        // 82
    GENXY(__NR_setitimer,         sys_setitimer),      // 83
@@ -2248,12 +1992,12 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENXY(__NR_readv,             sys_readv),          // 120
    GENX_(__NR_writev,            sys_writev),         // 121
    GENX_(__NR_settimeofday,      sys_settimeofday),   // 122
-   GENX_(__NR_fchown,            sys_fchown16),       // 123
+   GENX_(__NR_fchown,            sys_fchown),       // 123
    GENX_(__NR_fchmod,            sys_fchmod),         // 124
 
    NBSDXY(__NR_compat_43_orecvfrom, sys_compat_orecvfrom), // 125
-   GENX_(__NR_setreuid,          sys_setreuid16),     // 126
-   GENX_(__NR_setregid,          sys_setregid16),     // 127
+   GENX_(__NR_setreuid,          sys_setreuid),     // 126
+   GENX_(__NR_setregid,          sys_setregid),     // 127
    GENX_(__NR_rename,            sys_rename),         // 128
    NBSDX_(__NR_compat_43_otruncate, sys_compat_otruncate),  // 129
 
@@ -2280,7 +2024,8 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR_compat_43_osetrlimit, sys_ni_syscall),   // 145
    NBSDX_(__NR_compat_43_okillpg,sys_compat_okillpg), // 146
    GENX_(__NR_setsid,            sys_setsid),         // 147
-   GENX_(__NR_quotactl,          sys_quotactl),       // 148
+/*    GENX_(__NR_quotactl,          sys_quotactl),       // 148 */
+   GENX_(__NR_quotactl,          sys_ni_syscall),       // 148
    NBSDX_(__NR_compat_43_oquota, sys_compat_oquota),  // 149 XXX What's this?
 
    NBSDXY(__NR_compat_43_ogetsockname,sys_compat_ogetsockname),// 150
@@ -2321,7 +2066,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(179,                    sys_ni_syscall),     // 179
 
    GENX_(180,                    sys_ni_syscall),     // 180
-   GENX_(__NR_setgid,            sys_setgid16),       // 181
+   GENX_(__NR_setgid,            sys_setgid),       // 181
    NBSDX_(__NR_setegid,          sys_setegid),        // 182
    NBSDX_(__NR_seteuid,          sys_seteuid),        // 183
    NBSDXY(__NR_lfs_bmapv,        sys_lfs_bmapv),      // 184
@@ -2342,7 +2087,8 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    NBSDXY(__NR_compat_12_getdirentries, sys_compat_getdirentries), // 196
    PLAX_(__NR_mmap,              old_mmap),           // 197
    PLAXY(__NR___syscall,         sys_syscall),        // 198
-   GENX_(__NR_lseek,             sys_lseek),          // 199
+   GENX_(__NR_lseek,             sys_ni_syscall),          // 199
+/*    GENX_(__NR_lseek,             sys_lseek),          // 199 */
 
    GENX_(__NR_truncate,          sys_truncate),       // 200
    GENX_(__NR_ftruncate,         sys_ftruncate),      // 201
@@ -2386,22 +2132,34 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
 // XXX: Note: There may be trouble here.  stuff like (timer_create+7) in the
 //       linux versions may indicate a stupid reliance on position of
 //       timer_create in the syscall table.
-   GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232
-   GENX_(__NR_clock_settime,     sys_clock_settime),  // 233
-   GENXY(__NR_clock_getres,      sys_clock_getres),   // 234
+/*    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232 */
+   GENXY(__NR_clock_gettime,     sys_ni_syscall),  // 232
+/*    GENX_(__NR_clock_settime,     sys_clock_settime),  // 233 */
+   GENX_(__NR_clock_settime,     sys_ni_syscall),  // 233
+/*    GENXY(__NR_clock_getres,      sys_clock_getres),   // 234 */
+   GENXY(__NR_clock_getres,      sys_ni_syscall),   // 234
 
-   GENXY(__NR_timer_create,      sys_timer_create),   // 235
-   GENX_(__NR_timer_delete,      sys_timer_delete),   // 236
-   GENXY(__NR_timer_settime,     sys_timer_settime),  // 237
-   GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238
-   GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239
+/*    GENXY(__NR_timer_create,      sys_timer_create),   // 235 */
+/*    GENX_(__NR_timer_delete,      sys_timer_delete),   // 236 */
+/*    GENXY(__NR_timer_settime,     sys_timer_settime),  // 237 */
+/*    GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238 */
+/*    GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239 */
+
+   GENXY(__NR_timer_create,      sys_ni_syscall),   // 235
+   GENX_(__NR_timer_delete,      sys_ni_syscall),   // 236
+   GENXY(__NR_timer_settime,     sys_ni_syscall),  // 237
+   GENXY(__NR_timer_gettime,     sys_ni_syscall),  // 238
+   GENX_(__NR_timer_getoverrun,  sys_ni_syscall),// 239
 
    GENXY(__NR_nanosleep,         sys_nanosleep),      // 240
    GENX_(__NR_fdatasync,         sys_fdatasync),      // 241
-   GENX_(__NR_mlockall,          sys_mlockall),       // 242
-   GENX_(__NR_munlockall,        sys_munlockall),     // 243
+/*    GENX_(__NR_mlockall,          sys_mlockall),       // 242 */
+/*    GENX_(__NR_munlockall,        sys_munlockall),     // 243 */
+   GENX_(__NR_mlockall,          sys_ni_syscall),       // 242
+   GENX_(__NR_munlockall,        sys_ni_syscall),     // 243
 // XXX: Is this really the same as rt_sigtimedwait??
-   GENX_(__NR___sigtimedwait,    sys_rt_sigtimedwait),// 244
+/*    GENX_(__NR___sigtimedwait,    sys_rt_sigtimedwait),// 244 */
+   GENX_(__NR___sigtimedwait,    sys_ni_syscall),// 244
 
    GENX_(__NR__ksem_init,        sys_ni_syscall),     // 247  XXX: What's this?
    GENX_(__NR__ksem_open,        sys_ni_syscall),     // 248  XXX: What's this?
@@ -2455,7 +2213,7 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(__NR___vfork14,         sys_fork),           // 282
 // Only slightly different semantics from normal chown/fchown/lchown call
    GENX_(__NR___posix_chown,     sys_chown),          // 283
-   GENX_(__NR___posix_fchown,    sys_fchown16),       // 284
+   GENX_(__NR___posix_fchown,    sys_fchown),       // 284
 
    GENX_(__NR___posix_lchown,    sys_lchown),         // 285
    GENX_(__NR_getsid,            sys_getsid),         // 286
@@ -2466,9 +2224,12 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    NBSDX_(__NR_pwritev,          sys_pwritev),        // 290
 // XXX: Are the following funcs the same thing?
    PLAXY(__NR_compat_16___sigaction14, sys_sigaction),// 291
-   GENXY(__NR___sigpending14,    sys_sigpending),     // 292
-   GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293
-   GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294
+/*    GENXY(__NR___sigpending14,    sys_sigpending),     // 292 */
+/*    GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293 */
+/*    GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294 */
+   GENXY(__NR___sigpending14,    sys_ni_syscall),     // 292
+   GENXY(__NR___sigprocmask14,   sys_ni_syscall),    // 293
+   GENX_(__NR___sigsuspend14,    sys_ni_syscall),     // 294
 
    PLAX_(__NR_compat_16___sigreturn14, sys_sigreturn),// 295
    GENXY(__NR___getcwd,          sys_getcwd),         // 296
@@ -2549,11 +2310,48 @@ const SyscallTableEntry VGP_(syscall_table)[] = {
    GENX_(353,                    sys_ni_syscall),     // 353
    NBSDX_(__NR_fsync_range,      sys_fsync_range),    // 354
 
-   NBSDXY(__NR_uuidgen,          sys_uuidgen)         // 355
+   NBSDXY(__NR_uuidgen,          sys_uuidgen),         // 355
+   GENX_(356,                    sys_ni_syscall),     // 356
+   GENX_(357,                    sys_ni_syscall),     // 357
+   NBSDXY(__NR_fstatvfs1,         sys_fstatvfs1),     // 358
+   GENX_(359,                    sys_ni_syscall),     // 359
+   GENX_(360,                    sys_ni_syscall),     // 360
+   GENX_(361,                    sys_ni_syscall),     // 361
+   GENX_(362,                    sys_ni_syscall),     // 362
+   GENX_(363,                    sys_ni_syscall),     // 363
+   GENX_(364,                    sys_ni_syscall),     // 364
+   GENX_(365,                    sys_ni_syscall),     // 365
+   GENX_(366,                    sys_ni_syscall),     // 366
+   GENX_(367,                    sys_ni_syscall),     // 367
+   GENX_(368,                    sys_ni_syscall),     // 368
+   GENX_(369,                    sys_ni_syscall),     // 369
+   GENX_(370,                    sys_ni_syscall),     // 370
+   GENX_(371,                    sys_ni_syscall),     // 371
+   GENX_(372,                    sys_ni_syscall),     // 372
+   GENX_(373,                    sys_ni_syscall),     // 373
+   GENX_(374,                    sys_ni_syscall),     // 374
+   GENX_(375,                    sys_ni_syscall),     // 375
+   GENX_(376,                    sys_ni_syscall),     // 376
+   GENX_(377,                    sys_ni_syscall),     // 377
+   GENX_(378,                    sys_ni_syscall),     // 378
+   GENX_(379,                    sys_ni_syscall),     // 379
+   GENX_(380,                    sys_ni_syscall),     // 380
+   GENX_(381,                    sys_ni_syscall),     // 38
+   GENX_(382,                    sys_ni_syscall),     // 382
+   GENX_(383,                    sys_ni_syscall),     // 3
+   GENX_(384,                    sys_ni_syscall),     // 381
+   GENX_(385,                    sys_ni_syscall),     // 382
+   GENX_(386,                    sys_ni_syscall),     // 383
+   GENX_(387,                    sys_ni_syscall),     // 384
+   GENXY(__NR___fstat30,         sys_newfstat),       // 388
+   GENXY(__NR___lstat30,         sys_newlstat)       // 279
+
+   /* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
+#define SYS___lstat30   389  
 };
 
-const UInt VGP_(syscall_table_size) = 
-            sizeof(VGP_(syscall_table)) / sizeof(VGP_(syscall_table)[0]);
+const UInt ML_(syscall_table_size) = 
+            sizeof(ML_(syscall_table)) / sizeof(ML_(syscall_table)[0]);
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

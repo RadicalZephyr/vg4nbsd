@@ -12,7 +12,7 @@ static char *mkmap(unsigned sz)
 	if (map != NULL)
 		munmap(map, mapsz);
 
-	p = (char *)mmap(0, sz, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	p = (char *)mmap(0, sz, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
 	
 	if (p == (char *)-1) {
 		perror("mmap");

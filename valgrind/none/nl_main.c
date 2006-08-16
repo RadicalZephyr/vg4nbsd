@@ -31,13 +31,17 @@
 #include "pub_tool_basics.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_tooliface.h"
+#include "pub_tool_libcprint.h"
 
 static void nl_post_clo_init(void)
 {
+  
 }
 
-static IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout, 
-                           IRType gWordTy, IRType hWordTy)
+static
+IRBB* nl_instrument(IRBB* bb, VexGuestLayout* layout, 
+                    Addr64 orig_addr_noredir, VexGuestExtents* vge,
+                    IRType gWordTy, IRType hWordTy)
 {
     return bb;
 }
@@ -46,7 +50,7 @@ static void nl_fini(Int exitcode)
 {
 }
 
-static void nl_pre_clo_init(void)
+ static void nl_pre_clo_init(void)
 {
    VG_(details_name)            ("Nulgrind");
    VG_(details_version)         (NULL);
@@ -54,15 +58,16 @@ static void nl_pre_clo_init(void)
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2005, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
-
+   VG_(printf)("\nHello world!\n");
    VG_(basic_tool_funcs)        (nl_post_clo_init,
                                  nl_instrument,
                                  nl_fini);
+   VG_(printf)("\nGoodbye world!\n");
 
    /* No needs, no core events to track */
 }
 
-VG_DETERMINE_INTERFACE_VERSION(nl_pre_clo_init, 0)
+VG_DETERMINE_INTERFACE_VERSION(nl_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

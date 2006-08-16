@@ -144,6 +144,24 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 /* The functions sigaction, sigprocmask, sigpending and sigsuspend
    return 0 on success and -1 on error.  
 */
+/* #if defined (VGP_x86_netbsdelf2) */
+/* asm(  */
+/* 	"do_sigprocmask_inner:\n" */
+/* 	"movl    8(%esp),%ecx\n"            /\*  fetch new sigset pointer *\/ */
+/* 	"testl   %ecx,%ecx\n"               /\*  check new sigset pointer *\/ */
+/* 	"jnz     1f\n"                      /\*  if not null, indirect *\/ */
+/* 	"movl    $1,4(%esp)\n "             /\*  SIG_BLOCK *\/ */
+/* 	"jmp     2f\n" */
+/* 	"1:movl    (%ecx),%ecx\n"             /\*  fetch indirect  ... *\/ */
+/* 	"movl    %ecx,8(%esp)\n"             /\* to new mask arg *\/ */
+/* 	"2:movl $48,%eax\n" /\*  move syscall no to eax  *\/ */
+/* 	"int $0x80\n" */
+/* 	"jae 3f\n" */
+/* 	"movl $-1,%eax\n" */
+/* 	"3:\n" */
+/* 	"ret\n" */
+/* 	); */
+/* #endif  */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
 #  if !defined(VGP_x86_netbsdelf2)
@@ -152,10 +170,32 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-   I_die_here;
+   SysRes res = VG_(do_syscall3)(__NR___sigprocmask14, how,(UWord)set,(UWord)oldset);
+/*    return do_sigprocmask_inner(how,set,oldset); */
+   return res.isError ? -1 : 0;
 #endif
 }
 
+/* Not sure if this is the right place for this (aka BIG HACK SIR) */
+#if defined(VGP_x86_netbsdelf2)
+extern int __sigtramp_sigcontext_1[];
+#define __STRING(x) #x
+#define STR(x) __STRING(x)
+asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
+    ".align 4\n"   /* This is ALIGN_TEXT, defined 4 if __ELF, else 2 */
+    ".globl\n"
+    ".type ___sigtramp_sigcontext_1,@function\n"
+    "__sigtramp_sigcontext_1:\n"
+    "leal	12(%esp),%eax\n"	/* get pointer to sigcontext */
+    "movl	%eax,4(%esp)\n" 	/* put it in the argument slot */
+    /* fake return address already there */
+    "movl $(" STR(__NR_compat_16___sigreturn14) "), %eax\n" /* do sigreturn */
+    "int $0x80\n"
+    "movl	%eax,4(%esp)\n"   	/* error code */
+    "movl $(" STR(__NR_exit) "), %eax\n"       		/* exit */
+    "int $0x80\n"
+    );
+#endif
 
 Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
@@ -166,7 +206,18 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-   I_die_here;
+   /* From /usr/src/lib/libc/arch/i386/sys/__sigaction14_sigtramp */
+   SysRes res;
+   if (act == NULL) {
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  (UWord)NULL, 0);
+   } else {
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  (UWord)__sigtramp_sigcontext_1, 1);
+   }
+   return res.isError ? -1 : 0;
 #endif
 }
 
@@ -188,8 +239,10 @@ Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info,
    SysRes res = VG_(do_syscall4)(__NR_rt_sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)timeout, sizeof(*set));
    return res.isError ? -1 : res.val;
-#else
-   I_die_here;
+#elif defined (VGP_x86_netbsdelf2)
+   SysRes res = VG_(do_syscall3)(__NR___sigtimedwait, (UWord)set, (UWord)info, 
+                                 (UWord)timeout/* , sizeof(*set) */);
+   return res.isError ? -1 : res.val;
 #endif
 }
  

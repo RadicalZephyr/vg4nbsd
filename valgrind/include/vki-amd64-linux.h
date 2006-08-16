@@ -44,6 +44,7 @@ typedef unsigned char __vki_u8;
 typedef __signed__ short __vki_s16;
 typedef unsigned short __vki_u16;
 
+typedef __signed__ int __vki_s32;
 typedef unsigned int __vki_u32;
 
 typedef __signed__ long long __vki_s64;
@@ -215,11 +216,14 @@ struct vki_sigcontext {
 #define VKI_PROT_WRITE	0x2		/* page can be written */
 #define VKI_PROT_EXEC	0x4		/* page can be executed */
 #define VKI_PROT_NONE	0x0		/* page can not be accessed */
+#define VKI_PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
+#define VKI_PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
 
 #define VKI_MAP_SHARED	0x01		/* Share changes */
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
 #define VKI_MAP_FIXED	0x10		/* Interpret addr exactly */
 #define VKI_MAP_ANONYMOUS	0x20	/* don't use a file */
+#define VKI_MAP_NORESERVE       0x4000  /* don't check for reservations */
 
 //----------------------------------------------------------------------
 // From linux-2.6.9/include/asm-x86_64/fcntl.h
@@ -227,6 +231,7 @@ struct vki_sigcontext {
 
 #define VKI_O_RDONLY	     00
 #define VKI_O_WRONLY	     01
+#define VKI_O_RDWR	     02
 #define VKI_O_CREAT	   0100	/* not fcntl */
 #define VKI_O_EXCL	   0200	/* not fcntl */
 #define VKI_O_TRUNC	  01000	/* not fcntl */
@@ -416,6 +421,7 @@ struct vki_termios {
 #define VKI_TIOCOUTQ	0x5411
 #define VKI_TIOCGWINSZ	0x5413
 #define VKI_TIOCSWINSZ	0x5414
+#define VKI_TIOCMGET	0x5415
 #define VKI_TIOCMBIS	0x5416
 #define VKI_TIOCMBIC	0x5417
 #define VKI_TIOCMSET	0x5418
@@ -444,6 +450,20 @@ struct vki_pollfd {
 // From linux-2.6.9/include/asm-x86_64/user.h
 //----------------------------------------------------------------------
 
+struct vki_user_i387_struct {
+	unsigned short	cwd;
+	unsigned short	swd;
+	unsigned short	twd; /* Note this is not the same as the 32bit/x87/FSAVE twd */
+	unsigned short	fop;
+	__vki_u64	rip;
+	__vki_u64	rdp;
+	__vki_u32	mxcsr;
+	__vki_u32	mxcsr_mask;
+	__vki_u32	st_space[32];	/* 8*16 bytes for each FP-reg = 128 bytes */
+	__vki_u32	xmm_space[64];	/* 16*16 bytes for each XMM-reg = 256 bytes */
+	__vki_u32	padding[24];
+};
+
 struct vki_user_regs_struct {
 	unsigned long r15,r14,r13,r12,rbp,rbx,r11,r10;
 	unsigned long r9,r8,rax,rcx,rdx,rsi,rdi,orig_rax;
@@ -461,6 +481,8 @@ typedef unsigned long vki_elf_greg_t;
 
 #define VKI_ELF_NGREG (sizeof (struct vki_user_regs_struct) / sizeof(vki_elf_greg_t))
 typedef vki_elf_greg_t vki_elf_gregset_t[VKI_ELF_NGREG];
+
+typedef struct vki_user_i387_struct vki_elf_fpregset_t;
 
 //----------------------------------------------------------------------
 // From linux-2.6.9/include/asm-x86_64/ucontext.h
@@ -608,6 +630,15 @@ struct vki_shminfo64 {
 	unsigned long	__unused3;
 	unsigned long	__unused4;
 };
+
+//----------------------------------------------------------------------
+// From linux-2.6.12.2/include/asm-x86_64/ptrace.h
+//----------------------------------------------------------------------
+
+#define VKI_PTRACE_GETREGS            12
+#define VKI_PTRACE_SETREGS            13
+#define VKI_PTRACE_GETFPREGS          14
+#define VKI_PTRACE_SETFPREGS          15
 
 //----------------------------------------------------------------------
 // And that's it!

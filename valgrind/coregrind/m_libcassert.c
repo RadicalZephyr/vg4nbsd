@@ -33,33 +33,53 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"
-#include "pub_core_main.h"          // for VG_(bbs_done) -- stupid!
-#include "pub_core_options.h"       // for VG_(bbs_done) -- stupid!
+#include "pub_core_libcproc.h"      // For VG_(gettid)()
 #include "pub_core_stacktrace.h"
 #include "pub_core_syscall.h"
-#include "pub_core_tooliface.h"
+#include "pub_core_tooliface.h"     // For VG_(details).{name,bug_reports_to}
+#include "pub_core_options.h"       // For VG_(clo_xml)
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
    Assertery.
    ------------------------------------------------------------------ */
-/* XXX - netbsd */
-#if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
-#  define GET_REAL_SP_AND_FP(sp, fp) \
-      asm("movl %%esp, %0;" \
-          "movl %%ebp, %1;" \
-          : "=r" (sp),\
+
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
+#  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
+      asm("call m_libcassert_get_ip;" \
+          "m_libcassert_get_ip: popl %0;" \
+          "movl %%esp, %1;" \
+          "movl %%ebp, %2;" \
+          : "=r" (pc),\
+            "=r" (sp),\
             "=r" (fp));
 #elif defined(VGP_amd64_linux)
-#  define GET_REAL_SP_AND_FP(sp, fp) \
-      asm("movq %%rsp, %0;" \
-          "movq %%rbp, %1;" \
-          : "=r" (sp),\
+#  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
+      asm("leaq 0(%%rip), %0;" \
+          "movq %%rsp, %1;" \
+          "movq %%rbp, %2;" \
+          : "=r" (pc),\
+            "=r" (sp),\
             "=r" (fp));
+#elif defined(VGP_ppc32_linux)
+#  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)                   \
+      asm("mflr 0;"                   /* r0 = lr */           \
+          "bl m_libcassert_get_ip;"   /* lr = pc */           \
+          "m_libcassert_get_ip:\n"                            \
+          "mflr %0;"                \
+          "mtlr 0;"                   /* restore lr */        \
+          "mr %1,1;"                \
+          "mr %2,1;"                \
+          : "=r" (pc),              \
+            "=r" (sp),              \
+            "=r" (fp)               \
+          : /* reads none */        \
+          : "r0" /* trashed */ );
 #else
 #  error Unknown platform
 #endif
+
+#define BACKTRACE_DEPTH    100         // nice and deep!
 
 /* Pull down the entire world */
 void VG_(exit)( Int status )
@@ -84,36 +104,35 @@ static void pp_sched_status ( void )
       if (VG_(threads)[i].status == VgTs_Empty) continue;
       VG_(printf)( "\nThread %d: status = %s\n", i, 
                    VG_(name_of_ThreadStatus)(VG_(threads)[i].status) );
-      VG_(get_and_pp_StackTrace)( i, VG_(clo_backtrace_size) );
+      VG_(get_and_pp_StackTrace)( i, BACKTRACE_DEPTH );
    }
    VG_(printf)("\n");
 }
 
 __attribute__ ((noreturn))
-static void report_and_quit ( const Char* report, Addr ip, Addr sp, Addr fp )
+static void report_and_quit ( const Char* report, 
+                              Addr ip, Addr sp, Addr fp, Addr lr )
 {
-   #define BACKTRACE_DEPTH    100         // nice and deep!
-   Addr stacktop, ips[BACKTRACE_DEPTH];
-   ThreadState *tst;
-
-   tst = VG_(get_ThreadState)( VG_(get_lwp_tid)(VG_(gettid)()) );
-
+   Addr stacktop;
+   Addr ips[BACKTRACE_DEPTH];
+   ThreadState *tst = VG_(get_ThreadState)( VG_(get_lwp_tid)(VG_(gettid)()) );
+ 
    // If necessary, fake up an ExeContext which is of our actual real CPU
    // state.  Could cause problems if we got the panic/exception within the
    // execontext/stack dump/symtab code.  But it's better than nothing.
    if (0 == ip && 0 == sp && 0 == fp) {
-       ip = (Addr)__builtin_return_address(0);
-       GET_REAL_SP_AND_FP(sp, fp);
+       GET_REAL_PC_SP_AND_FP(ip, sp, fp);
    }
-
-   stacktop = tst->os_state.valgrind_stack_base + 
-              tst->os_state.valgrind_stack_szB;
-
-   VG_(get_StackTrace2)(ips, BACKTRACE_DEPTH, ip, sp, fp, sp, stacktop);
+ 
+   stacktop = tst->os_state.valgrind_stack_init_SP;
+ 
+   VG_(get_StackTrace2)(ips, BACKTRACE_DEPTH, ip, sp, fp, lr, sp, stacktop);
    VG_(pp_StackTrace)  (ips, BACKTRACE_DEPTH);
-
-   VG_(printf)("\nBasic block ctr is approximately %llu\n", VG_(bbs_done) );
-
+ 
+   // Don't print this, as it's not terribly interesting and avoids a
+   // dependence on m_scheduler/, which would be crazy.
+   //VG_(printf)("\nBasic block ctr is approximately %llu\n", VG_(bbs_done) );
+ 
    pp_sched_status();
    VG_(printf)("\n");
    VG_(printf)("Note: see also the FAQ.txt in the source distribution.\n");
@@ -124,8 +143,6 @@ static void report_and_quit ( const Char* report, Addr ip, Addr sp, Addr fp )
    VG_(printf)("In the bug report, send all the above text, the valgrind\n");
    VG_(printf)("version, and what Linux distro you are using.  Thanks.\n\n");
    VG_(exit)(1);
-
-   #undef BACKTRACE_DEPTH
 }
 
 void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file, 
@@ -133,7 +150,6 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
 {
    va_list vargs;
    Char buf[256];
-   Char* bufptr = buf;
    Char* component;
    Char* bugs_to;
 
@@ -143,7 +159,7 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
    entered = True;
 
    va_start(vargs, format);
-   VG_(vsprintf) ( bufptr, format, vargs );
+   VG_(vsprintf) ( buf, format, vargs );
    va_end(vargs);
 
    if (isCore) {
@@ -153,6 +169,9 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
       component = VG_(details).name;
       bugs_to   = VG_(details).bug_reports_to;
    }
+
+   if (VG_(clo_xml))
+      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
 
    // Treat vg_assert2(0, "foo") specially, as a panicky abort
    if (VG_STREQ(expr, "0")) {
@@ -165,36 +184,39 @@ void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file,
    if (!VG_STREQ(buf, ""))
       VG_(printf)("%s: %s\n", component, buf );
 
-   report_and_quit(bugs_to, 0,0,0);
+   report_and_quit(bugs_to, 0,0,0,0);
 }
 
 __attribute__ ((noreturn))
 static void panic ( Char* name, Char* report, Char* str,
-                    Addr ip, Addr sp, Addr fp )
+                    Addr ip, Addr sp, Addr fp, Addr lr )
 {
+   if (VG_(clo_xml))
+      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
    VG_(printf)("\n%s: the 'impossible' happened:\n   %s\n", name, str);
-   report_and_quit(report, ip, sp, fp);
+   report_and_quit(report, ip, sp, fp, lr);
 }
 
-void VG_(core_panic_at) ( Char* str, Addr ip, Addr sp, Addr fp )
+void VG_(core_panic_at) ( Char* str, Addr ip, Addr sp, Addr fp, Addr lr )
 {
-   panic("valgrind", VG_BUGS_TO, str, ip, sp, fp);
+   panic("valgrind", VG_BUGS_TO, str, ip, sp, fp, lr);
 }
 
 void VG_(core_panic) ( Char* str )
 {
-   VG_(core_panic_at)(str, 0,0,0);
+   VG_(core_panic_at)(str, 0,0,0,0);
 }
 
 void VG_(tool_panic) ( Char* str )
 {
-   panic(VG_(details).name, VG_(details).bug_reports_to, str, 0,0,0);
+   panic(VG_(details).name, VG_(details).bug_reports_to, str, 0,0,0,0);
 }
 
-/* Print some helpful-ish text about unimplemented things, and give
-   up. */
+/* Print some helpful-ish text about unimplemented things, and give up. */
 void VG_(unimplemented) ( Char* msg )
 {
+   if (VG_(clo_xml))
+      VG_(message)(Vg_UserMsg, "</valgrindoutput>\n");
    VG_(message)(Vg_UserMsg, "");
    VG_(message)(Vg_UserMsg, 
       "Valgrind detected that your program requires");
@@ -218,8 +240,6 @@ void VG_(unimplemented) ( Char* msg )
    pp_sched_status();
    VG_(exit)(1);
 }
-
-
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

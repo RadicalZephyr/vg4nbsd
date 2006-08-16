@@ -48,6 +48,15 @@
    ------------------------------------------------------------------ */
 
 /* Arguments for a syscall. */
+#ifdef VGO_netbsdelf2
+typedef
+struct {
+	UWord sysno;
+	UWord *argp;
+	UWord size;
+}
+SyscallArgs;
+#else
 typedef
    struct {
       UWord sysno;
@@ -59,7 +68,7 @@ typedef
       UWord arg6;
    }
    SyscallArgs;
-
+#endif
 /* Current status of a syscall being done on behalf of the client. */
 typedef
    struct {
@@ -69,6 +78,15 @@ typedef
    SyscallStatus;
 
 /* Guest state layout info for syscall args. */
+/* #ifdef VGO_netbsdelf2 */
+/* typedef */
+/*    struct { */
+/*       Int o_sysno; */
+/*       Int *o_argp; */
+/*       Int o_retval; */
+/*    } */
+/* SyscallArgLayout; */
+/* #else */
 typedef
    struct {
       Int o_sysno;
@@ -81,6 +99,7 @@ typedef
       Int o_retval;
    }
    SyscallArgLayout;
+/* #endif */
 
 /* Flags describing syscall wrappers */
 #define SfMayBlock   (1 << 1)    /* may block                       */
@@ -124,9 +143,9 @@ typedef
 /* These are defined in the relevant platform-specific files --
    syswrap-arch-os.c */
 
-extern const SyscallTableEntry VGP_(syscall_table)[];
+extern const SyscallTableEntry ML_(syscall_table)[];
 
-extern const UInt VGP_(syscall_table_size);
+extern const UInt ML_(syscall_table_size);
    
 
 /* ---------------------------------------------------------------------
@@ -208,7 +227,7 @@ extern const UInt VGP_(syscall_table_size);
 
 /* Add a NetBSD-specific, arch-independent wrapper to a syscall
    table. */
-#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsdelf2, sysno, name) 
+#define NBSDX_(sysno, name)    WRAPPER_ENTRY_X_(netbsdelf2, sysno, name)
 #define NBSDXY(sysno, name)    WRAPPER_ENTRY_XY(netbsdelf2, sysno, name)
 
 
@@ -221,6 +240,16 @@ extern const UInt VGP_(syscall_table_size);
 
 /* Reference to the syscall's arguments -- the ones which the
    pre-wrapper may have modified, not the original copy. */
+#ifdef VGO_netbsdelf2
+#define SYSNO  (arrghs->sysno)
+#define ARG1   (arrghs->argp[0])
+#define ARG2   (arrghs->argp[1])
+#define ARG3   (arrghs->argp[2])
+#define ARG4   (arrghs->argp[3])
+#define ARG5   (arrghs->argp[4])
+#define ARG6   (arrghs->argp[5])
+#define ARG7   (arrghs->argp[6])
+#else
 #define SYSNO  (arrghs->sysno)
 #define ARG1   (arrghs->arg1)
 #define ARG2   (arrghs->arg2)
@@ -228,6 +257,7 @@ extern const UInt VGP_(syscall_table_size);
 #define ARG4   (arrghs->arg4)
 #define ARG5   (arrghs->arg5)
 #define ARG6   (arrghs->arg6)
+#endif
 
 /* Reference to the syscall's current result status/value.  Note that
    
@@ -256,6 +286,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
 }
 
 
+
 /* Set the current result status/value in various ways. */
 #define SET_STATUS_Success(zzz)                      \
    do { status->what = SsSuccess;                    \
@@ -280,9 +311,29 @@ static inline UWord getRES ( SyscallStatus* st ) {
       }                                              \
    } while (0)
 
+/* A lamentable kludge */
+#define SET_STATUS_Failure_NO_SANITY_CHECK(zzz)      \
+   do { Word wzz = (Word)(zzz);                      \
+        status->what = SsFailure;                    \
+        status->val  = wzz;                          \
+   } while (0)
+
+#define SET_STATUS_from_SysRes_NO_SANITY_CHECK(zzz)  \
+   do {                                              \
+      SysRes zres = (zzz);                           \
+      if (zres.isError) {                            \
+         SET_STATUS_Failure_NO_SANITY_CHECK(zres.val); \
+      } else {                                       \
+         SET_STATUS_Success(zres.val);               \
+      }                                              \
+   } while (0)
+
+
+
 #define PRINT(format, args...)                       \
    if (VG_(clo_trace_syscalls))                      \
       VG_(printf)(format, ## args)
+
 
 
 /* Macros used to tell tools about uses of scalar arguments.  Note,
@@ -292,12 +343,85 @@ static inline UWord getRES ( SyscallStatus* st ) {
    PRRSN == "pre-register-read-syscall"
 */
 
+/* Tell the tool that the syscall number is being read. */
 #define PRRSN \
       VG_(tdict).track_pre_reg_read(Vg_CoreSysCall, tid, "(syscallno)", \
                                     layout->o_sysno, sizeof(UWord));
-#define PRRAn(n,s,t,a) \
-      VG_(tdict).track_pre_reg_read(Vg_CoreSysCall, tid, s"("#a")", \
-                                    layout->o_arg##n, sizeof(t));
+
+
+/* PRRAn: Tell the tool that the register holding the n-th syscall
+   argument is being read, at type 't' which must be at most the size
+   of a register but can be smaller.  In the latter case we need to be
+   careful about endianness. */
+
+/* little-endian: the part of the guest state being read is
+      let here = offset_of_reg
+      in  [here .. here + sizeof(t) - 1]
+   since the least significant parts of the guest register are stored
+   in memory at the lowest address.
+*/
+/* #ifdef VGO_netbsdelf2  */
+/* #define PRRAn_LE(n,s,t,a)                            \ */
+/*     do {                                             \ */
+/*        Int here = layout->o_argp[n - 1];                    \ */
+/*        vg_assert(sizeof(t) <= sizeof(UWord));        \ */
+/*        VG_(tdict).track_pre_reg_read(                \ */
+/*           Vg_CoreSysCall, tid, s"("#a")",            \ */
+/*           here, sizeof(t)                            \ */
+/*        );                                            \ */
+/*     } while (0) */
+
+/* #else */
+#define PRRAn_LE(n,s,t,a)                            \
+    do {                                             \
+       Int here = layout->o_arg##n;                  \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          here, sizeof(t)                            \
+       );                                            \
+    } while (0)
+/* #endif				     */
+
+
+/* big-endian: the part of the guest state being read is
+      let next = offset_of_reg + sizeof(reg) 
+      in  [next - sizeof(t) .. next - 1]
+   since the least significant parts of the guest register are stored
+   in memory at the highest address.
+*/
+/* #ifdef VGO_netbsdelf2 */
+/* #define PRRAn_BE(n,s,t,a)                            \ */
+/*     do {                                             \ */
+/*        Int next = layout->o_argp[n - 1] + sizeof(UWord);  \ */
+/*        vg_assert(sizeof(t) <= sizeof(UWord));        \ */
+/*        VG_(tdict).track_pre_reg_read(                \ */
+/*           Vg_CoreSysCall, tid, s"("#a")",            \ */
+/*           next-sizeof(t), sizeof(t)                  \ */
+/*        );                                            \ */
+/*     } while (0) */
+
+/* #else */
+#define PRRAn_BE(n,s,t,a)                            \
+    do {                                             \
+       Int next = layout->o_arg##n + sizeof(UWord);  \
+       vg_assert(sizeof(t) <= sizeof(UWord));        \
+       VG_(tdict).track_pre_reg_read(                \
+          Vg_CoreSysCall, tid, s"("#a")",            \
+          next-sizeof(t), sizeof(t)                  \
+       );                                            \
+    } while (0)
+/* #endif				     */
+
+#if defined(VG_BIGENDIAN)
+#  define PRRAn(n,s,t,a) PRRAn_BE(n,s,t,a)
+#elif defined(VG_LITTLEENDIAN)
+#  define PRRAn(n,s,t,a) PRRAn_LE(n,s,t,a)
+#else
+#  error "Unknown endianness"
+#endif
+
+
 #define PRE_REG_READ0(tr, s) \
    if (VG_(tdict).track_pre_reg_read) { \
       PRRSN; \
@@ -312,7 +436,7 @@ static inline UWord getRES ( SyscallStatus* st ) {
       PRRSN; \
       PRRAn(1,s,t1,a1); PRRAn(2,s,t2,a2); \
    }
-#define PRE_REG_READ3(tr, s, t1, a1, t2, a2, t3, a3) \
+ #define PRE_REG_READ3(tr, s, t1, a1, t2, a2, t3, a3) \
    if (VG_(tdict).track_pre_reg_read) { \
       PRRSN; \
       PRRAn(1,s,t1,a1); PRRAn(2,s,t2,a2); PRRAn(3,s,t3,a3); \

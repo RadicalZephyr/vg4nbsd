@@ -28,8 +28,8 @@ memory, this provides the following benefits:</para>
 
 <itemizedlist>
   <listitem><para>It can speed up your program -- a smaller
-    program will interact better with your machine's caches,
-    avoid paging, and so on.</para></listitem>
+    program will interact better with your machine's caches and
+    avoid paging.</para></listitem>
 
   <listitem><para>If your program uses lots of memory, it will
     reduce the chance that it exhausts your machine's swap
@@ -188,7 +188,7 @@ a PostScript viewer.</para>
 <computeroutput>hp2ps</computeroutput> to convert the raw data
 into the PostScript graph.  It's distributed with Massif, but
 came originally from the 
-<ulink url="http://haskell.cs.yale.edu/ghc/">Glasgow Haskell
+<ulink url="http://www.haskell.org/ghc/">Glasgow Haskell
 Compiler</ulink>.  You shouldn't need to worry about this at all.
 However, if the graph creation fails for any reason, Massif will
 tell you, and will leave behind a file named
@@ -400,7 +400,7 @@ please let us know.</para>
 
 <itemizedlist>
 
-  <listitem>
+  <listitem id="heap">
     <para><computeroutput>--heap=no</computeroutput></para>
     <para><computeroutput>--heap=yes</computeroutput> [default]</para>
     <para>When enabled, profile heap usage in detail.  Without
@@ -409,7 +409,7 @@ please let us know.</para>
     short.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="heap-admin">
     <para><computeroutput>--heap-admin=n</computeroutput>
     [default: 8]</para>
     <para>The number of admin bytes per block to use.  This can
@@ -420,14 +420,14 @@ please let us know.</para>
     blocks, although Massif does not count this.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="stacks">
     <para><computeroutput>--stacks=no</computeroutput></para>
     <para><computeroutput>--stacks=yes</computeroutput> [default]</para>
     <para>When enabled, include stack(s) in the profile.
     Threaded programs can have multiple stacks.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="depth">
     <para><computeroutput>--depth=n</computeroutput>
     [default: 3]</para>
     <para>Depth of call chains to present in the detailed heap
@@ -437,7 +437,7 @@ please let us know.</para>
     <computeroutput>.hp</computeroutput> file.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="alloc-fn">
     <para><computeroutput>--alloc-fn=name</computeroutput></para>
     <para>Specify a function that allocates memory.  This is
     useful for functions that are wrappers to
@@ -450,7 +450,7 @@ please let us know.</para>
     multiple functions.</para>
   </listitem>
 
-  <listitem>
+  <listitem id="format">
     <para><computeroutput>--format=text</computeroutput> [default]</para>
     <para><computeroutput>--format=html</computeroutput></para>
     <para>Produce the detailed heap information in text or HTML

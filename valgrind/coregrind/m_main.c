@@ -28,48 +28,187 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#define _FILE_OFFSET_BITS 64
-
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_clientstate.h"
 #include "pub_core_aspacemgr.h"
+#include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_execontext.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#include "pub_core_syscall.h"       // VG_(strerror)
 #include "pub_core_machine.h"
-#include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
-#include "pub_core_profile.h"
+#include "pub_core_debuginfo.h"
 #include "pub_core_redir.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
+#include "pub_core_stacks.h"        // For VG_(register_stack)
 #include "pub_core_syswrap.h"
+#include "pub_core_translate.h"     // For VG_(translate)
 #include "pub_core_tooliface.h"
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
-#include "ume.h"
+#include "pub_core_ume.h"
 
-#include <dirent.h>
-#include <dlfcn.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/ptrace.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <unistd.h>
-#include "memcheck/memcheck.h"
+
+/*====================================================================*/
+/*=== Counters, for profiling purposes only                        ===*/
+/*====================================================================*/
+
+static void print_all_stats ( void )
+{
+/*    VG_(print_translation_stats)(); */
+   VG_(print_tt_tc_stats)();
+   VG_(print_scheduler_stats)();
+   VG_(print_ExeContext_stats)();
+
+   // Memory stats
+   if (VG_(clo_verbosity) > 2) {
+      VG_(message)(Vg_DebugMsg, "");
+      VG_(message)(Vg_DebugMsg, 
+         "------ Valgrind's internal memory use stats follow ------" );
+      VG_(sanity_check_malloc_all)();
+      VG_(message)(Vg_DebugMsg, "------" );
+      VG_(print_all_arena_stats)();
+      VG_(message)(Vg_DebugMsg, "");
+   }
+}
+
+
+/*====================================================================*/
+/*=== Setting up the client's environment                          ===*/
+/*====================================================================*/
+
+/* Prepare the client's environment.  This is basically a copy of our
+   environment, except:
+
+     LD_PRELOAD=$VALGRIND_LIB/vgpreload_core.so:
+                ($VALGRIND_LIB/vgpreload_TOOL.so:)?
+                $LD_PRELOAD
+
+   If this is missing, then it is added.
+
+   Also, remove any binding for VALGRIND_LAUNCHER=.  The client should
+   not be able to see this.
+
+   If this needs to handle any more variables it should be hacked
+   into something table driven.  The copy is VG_(malloc)'d space.
+*/
+static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
+{
+   HChar* preload_core    = "vgpreload_core";
+   HChar* ld_preload      = "LD_PRELOAD=";
+   HChar* v_launcher      = VALGRIND_LAUNCHER "=";
+   Int    ld_preload_len  = VG_(strlen)( ld_preload );
+   Int    v_launcher_len  = VG_(strlen)( v_launcher );
+   Bool   ld_preload_done = False;
+   Int    vglib_len       = VG_(strlen)(VG_(libdir));
+
+   HChar** cpp;
+   HChar** ret;
+   HChar*  preload_tool_path;
+   Int     envc, i;
+
+   /* Alloc space for the vgpreload_core.so path and vgpreload_<tool>.so
+      paths.  We might not need the space for vgpreload_<tool>.so, but it
+      doesn't hurt to over-allocate briefly.  The 16s are just cautious
+      slop. */
+   Int preload_core_path_len = vglib_len + sizeof(preload_core) + sizeof(VG_PLATFORM) + 16;
+   Int preload_tool_path_len = vglib_len + VG_(strlen)(toolname) + sizeof(VG_PLATFORM) + 16;
+   Int preload_string_len    = preload_core_path_len + preload_tool_path_len;
+   HChar* preload_string     = VG_(malloc)(preload_string_len);
+   vg_assert(preload_string);
+
+   /* Determine if there's a vgpreload_<tool>.so file, and setup
+      preload_string. */
+   preload_tool_path = VG_(malloc)(preload_tool_path_len);
+   vg_assert(preload_tool_path);
+   VG_(snprintf)(preload_tool_path, preload_tool_path_len,
+                 "%s/%s/vgpreload_%s.so", VG_(libdir), VG_PLATFORM, toolname);
+   if (VG_(access)(preload_tool_path, True/*r*/, False/*w*/, False/*x*/) == 0) {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so:%s", 
+                    VG_(libdir), VG_PLATFORM, preload_core, preload_tool_path);
+   } else {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so", 
+                    VG_(libdir), VG_PLATFORM, preload_core);
+   }
+   VG_(free)(preload_tool_path);
+
+   VG_(debugLog)(2, "main", "preload_string:\n");
+   VG_(debugLog)(2, "main", "  \"%s\"\n", preload_string);
+
+   /* Count the original size of the env */
+   envc = 0;
+   for (cpp = origenv; cpp && *cpp; cpp++)
+      envc++;
+
+   /* Allocate a new space */
+   ret = VG_(malloc) (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
+   vg_assert(ret);
+
+   /* copy it over */
+   for (cpp = ret; *origenv; )
+      *cpp++ = *origenv++;
+   *cpp = NULL;
+   
+   vg_assert(envc == (cpp - ret));
+
+   /* Walk over the new environment, mashing as we go */
+   for (cpp = ret; cpp && *cpp; cpp++) {
+      if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
+	Int len = VG_(strlen)(*cpp) + preload_string_len+1 ; /* +16 for slop! */
+         HChar *cp = VG_(malloc)(len);
+         vg_assert(cp);
+
+         VG_(snprintf)(cp, len, "%s%s:%s",
+                       ld_preload, preload_string, (*cpp)+ld_preload_len);
+
+         *cpp = cp;
+
+         ld_preload_done = True;
+      }
+   }
+
+   /* Add the missing bits */
+   if (!ld_preload_done) {
+      Int len = ld_preload_len + preload_string_len;
+      HChar *cp = VG_(malloc) (len);
+      vg_assert(cp);
+
+      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_string);
+
+      ret[envc++] = cp;
+   }
+
+   /* ret[0 .. envc-1] is live now. */
+   /* Find and remove a binding for VALGRIND_LAUNCHER. */
+   for (i = 0; i < envc; i++)
+      if (0 == VG_(memcmp(ret[i], v_launcher, v_launcher_len)))
+         break;
+
+   if (i < envc) {
+      for (; i < envc-1; i++)
+         ret[i] = ret[i+1];
+      envc--;
+   }
+
+   VG_(free)(preload_string);
+   ret[envc] = NULL;
+   return ret;
+}
+
+
+/*====================================================================*/
+/*=== Setting up the client's stack                                ===*/
+/*====================================================================*/
 
 #ifndef AT_DCACHEBSIZE
 #define AT_DCACHEBSIZE		19
@@ -95,598 +234,544 @@
 #define AT_SECURE 23   /* secure mode boolean */
 #endif	/* AT_SECURE */
 
-/* redzone gap between client address space and shadow */
-#define REDZONE_SIZE		(1 * 1024*1024)
-
-/* size multiple for client address space */
-#define CLIENT_SIZE_MULTIPLE	(1 * 1024*1024)
-
-/* Proportion of client space for its heap (rest is for mmaps + stack) */
-#define CLIENT_HEAP_PROPORTION   0.333
-
-/* Number of file descriptors that Valgrind tries to reserve for
-   it's own use - just a small constant. */
-#define N_RESERVED_FDS (10)
-
-#ifdef VGO_netbsdelf2
-#define PTRACE_SETREGS PT_SETREGS
-#define PTRACE_TRACEME PT_TRACE_ME
-#define PTRACE_DETACH PT_DETACH
-#endif
-/*====================================================================*/
-/*=== Global entities not referenced from generated code           ===*/
-/*====================================================================*/
-
-/* ---------------------------------------------------------------------
-   Startup stuff                            
-   ------------------------------------------------------------------ */
-
-/* stage1 (main) executable */
-static Int vgexecfd = -1;
-
-/* client executable */
-Int  VG_(clexecfd) = -1;
-
-/* our argc/argv */
-static Int  vg_argc;
-static Char **vg_argv;
-
-
-/* ---------------------------------------------------------------------
-   Running stuff                            
-   ------------------------------------------------------------------ */
-
-/* 64-bit counter for the number of basic blocks done. */
-ULong VG_(bbs_done) = 0;
-
-
-/*====================================================================*/
-/*=== Counters, for profiling purposes only                        ===*/
-/*====================================================================*/
-
-/* Counts pertaining to internal sanity checking. */
-static UInt sanity_fast_count = 0;
-static UInt sanity_slow_count = 0;
-#if defined (VGO_netbsdelf2)  
-extern char _end[];
-const char* curbrk = _end;
-
-int
-brk( void* newbrk)
+/* Add a string onto the string table, and return its address */
+static char *copy_str(char **tab, const char *str)
 {
-   char* oldpg = (char*) VG_PGROUNDUP(curbrk);
-   char* newpg = (char*) VG_PGROUNDUP(newbrk);
+   char *cp = *tab;
+   char *orig = cp;
 
-   if (newpg < oldpg) {
-      munmap(newpg, oldpg - newpg);
-   } else if (newpg > oldpg) {
-      mmap(oldpg, newpg - oldpg, PROT_READ|PROT_WRITE|PROT_EXEC,
-	   MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0);
-   }
-   curbrk = newbrk;
-   return 0;
-}
-
-void*
-sbrk(intptr_t incr)
-{
-   int res;
-   printf("in sbk\n");
-   res = brk(curbrk + incr);
-   if (res < 0)
-      return (void*) -1;
-   else
-      return (void*) curbrk;
-}
-
-#endif
-
-static void print_all_stats ( void )
-{
-   // Translation stats
-   VG_(print_tt_tc_stats)();
-   VG_(message)(Vg_DebugMsg,
-      " dispatch: %llu jumps (bb entries).", VG_(bbs_done) );
-
-   // Scheduler stats
-   VG_(print_scheduler_stats)();
-
-   VG_(message)(Vg_DebugMsg, 
-                "   sanity: %d cheap, %d expensive checks.",
-                sanity_fast_count, sanity_slow_count );
-
-   VG_(print_ExeContext_stats)();
-
-   // Memory stats
-   if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_DebugMsg, "");
-      VG_(message)(Vg_DebugMsg, 
-         "------ Valgrind's internal memory use stats follow ------" );
-      VG_(sanity_check_malloc_all)();
-      VG_(print_all_arena_stats)();
-      VG_(message)(Vg_DebugMsg, "");
-      //VG_(print_shadow_stats)();
-   }
-}
-
-
-/*====================================================================*/
-/*=== Miscellaneous global functions                               ===*/
-/*====================================================================*/
-
-static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
-{
-   struct vki_user_regs_struct regs;
-#if defined(VGP_x86_linux) 
-   regs.cs     = vex->guest_CS;
-   regs.ss     = vex->guest_SS;
-   regs.ds     = vex->guest_DS;
-   regs.es     = vex->guest_ES;
-   regs.fs     = vex->guest_FS;
-   regs.gs     = vex->guest_GS;
-   regs.eax    = vex->guest_EAX;
-   regs.ebx    = vex->guest_EBX;
-   regs.ecx    = vex->guest_ECX;
-   regs.edx    = vex->guest_EDX;
-   regs.esi    = vex->guest_ESI;
-   regs.edi    = vex->guest_EDI;
-   regs.ebp    = vex->guest_EBP;
-   regs.esp    = vex->guest_ESP;
-   regs.eflags = LibVEX_GuestX86_get_eflags(vex);
-   regs.eip    = vex->guest_EIP;
-
-
-   return ptrace(PTRACE_SETREGS, pid, NULL, (int)&regs);
-#elif defined (VGP_x86_netbsdelf2)
-   regs.r_cs     = vex->guest_CS;
-   regs.r_ss     = vex->guest_SS;
-   regs.r_ds     = vex->guest_DS;
-   regs.r_es     = vex->guest_ES;
-   regs.r_fs     = vex->guest_FS;
-   regs.r_gs     = vex->guest_GS;
-   regs.r_eax    = vex->guest_EAX;
-   regs.r_ebx    = vex->guest_EBX;
-   regs.r_ecx    = vex->guest_ECX;
-   regs.r_edx    = vex->guest_EDX;
-   regs.r_esi    = vex->guest_ESI;
-   regs.r_edi    = vex->guest_EDI;
-   regs.r_ebp    = vex->guest_EBP;
-   regs.r_esp    = vex->guest_ESP;
-   regs.r_eflags = LibVEX_GuestX86_get_eflags(vex);
-   regs.r_eip    = vex->guest_EIP;
-
-#elif defined(VGA_amd64)
-   I_die_here;
-#else
-#  error Unknown arch
-#endif
-}
-
-/* Start debugger and get it to attach to this process.  Called if the
-   user requests this service after an error has been shown, so she can
-   poke around and look at parameters, memory, etc.  You can't
-   meaningfully get the debugger to continue the program, though; to
-   continue, quit the debugger.  */
-void VG_(start_debugger) ( ThreadId tid )
-{
-   Int pid;
-
-   if ((pid = fork()) == 0) {
-
-      ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-      VG_(kill)(VG_(getpid)(), VKI_SIGSTOP);
-
-   } else if (pid > 0) {
-      Int status;
-      Int res;
-
-      if ((res = VG_(waitpid)(pid, &status, 0)) == pid &&
-          WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP &&
-          ptrace_setregs(pid, &(VG_(threads)[tid].arch.vex)) == 0 &&
-          kill(pid, SIGSTOP) == 0 &&
-          ptrace(PTRACE_DETACH, pid, NULL, 0) == 0)
-      {
-         Char pidbuf[15];
-         Char file[30];
-         Char buf[100];
-         Char *bufptr;
-         Char *cmdptr;
-         
-         VG_(sprintf)(pidbuf, "%d", pid);
-         VG_(sprintf)(file, "/proc/%d/fd/%d", pid, VG_(clexecfd));
- 
-         bufptr = buf;
-         cmdptr = VG_(clo_db_command);
-         
-         while (*cmdptr) {
-            switch (*cmdptr) {
-               case '%':
-                  switch (*++cmdptr) {
-                     case 'f':
-                        VG_(memcpy)(bufptr, file, VG_(strlen)(file));
-                        bufptr += VG_(strlen)(file);
-                        cmdptr++;
-                        break;
-                  case 'p':
-                     VG_(memcpy)(bufptr, pidbuf, VG_(strlen)(pidbuf));
-                     bufptr += VG_(strlen)(pidbuf);
-                     cmdptr++;
-                     break;
-                  default:
-                     *bufptr++ = *cmdptr++;
-                     break;
-                  }
-                  break;
-               default:
-                  *bufptr++ = *cmdptr++;
-                  break;
-            }
-         }
-         
-         *bufptr++ = '\0';
-  
-         VG_(message)(Vg_UserMsg, "starting debugger with cmd: %s", buf);
-         res = VG_(system)(buf);
-         if (res == 0) {      
-            VG_(message)(Vg_UserMsg, "");
-            VG_(message)(Vg_UserMsg, 
-                         "Debugger has detached.  Valgrind regains control.  We continue.");
-         } else {
-            VG_(message)(Vg_UserMsg, "Apparently failed!");
-            VG_(message)(Vg_UserMsg, "");
-         }
-      }
-
-      VG_(kill)(pid, VKI_SIGKILL);
-      VG_(waitpid)(pid, &status, 0);
-   }
-}
-
-
-/*====================================================================*/
-/*=== Check we were launched by stage 1                            ===*/
-/*====================================================================*/
-
-/* Look for our AUXV table */
-static int scan_auxv(void* init_sp)
-{
-   const struct ume_auxv *auxv = find_auxv((UWord*)init_sp);
-   int padfile = -1, found = 0;
-
-   for (; auxv->a_type != AT_NULL; auxv++)
-      switch(auxv->a_type) {
-      case AT_UME_PADFD:
-	 padfile = auxv->u.a_val;
-	 found |= 1;
-	 break;
-
-      case AT_UME_EXECFD:
-	 vgexecfd = auxv->u.a_val;
-	 found |= 2;
-	 break;
-
-      case AT_PHDR:
-         VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
-         break;
-      }
-
-   if ( found != (1|2) ) {
-      fprintf(stderr, "valgrind: stage2 must be launched by stage1\n");
-      exit(127);
-   }
-   vg_assert(padfile >= 0);
-   return padfile;
-}
-
-
-/*====================================================================*/
-/*=== Address space determination                                  ===*/
-/*====================================================================*/
-
-extern char _start[];
-
-static void layout_remaining_space(Addr argc_addr, float ratio)
-{
-   Int   ires;
-   void* vres;
-   Addr  client_size, shadow_size;
-
-   // VG_(valgrind_base) should have been set by scan_auxv, but if not,
-   // this is a workable approximation
-   if (VG_(valgrind_base) == 0) {
-      VG_(valgrind_base) = VG_PGROUNDDN(&_start);
-   }
-
-   VG_(valgrind_last)  = VG_ROUNDUP(argc_addr, 0x10000) - 1; // stack
-
-   // This gives the client the largest possible address space while
-   // taking into account the tool's shadow needs.
-   client_size         = VG_ROUNDDN((VG_(valgrind_base)-REDZONE_SIZE) / (1.+ratio),
-                         CLIENT_SIZE_MULTIPLE);
-   VG_(client_base)    = 0;
-   VG_(client_end)     = VG_(client_base) + client_size;
-   /* where !FIXED mmap goes */
-   VG_(client_mapbase) = VG_(client_base) +
-         VG_PGROUNDDN((Addr)(client_size * CLIENT_HEAP_PROPORTION));
-
-   VG_(shadow_base)    = VG_(client_end) + REDZONE_SIZE;
-   VG_(shadow_end)     = VG_(valgrind_base);
-   shadow_size         = VG_(shadow_end) - VG_(shadow_base);
-
-#define SEGSIZE(a,b) ((VG_(b) - VG_(a))/(1024*1024))
+   while(*str)
+      *cp++ = *str++;
+   *cp++ = '\0';
 
    if (0)
-      VG_(printf)(
-         "client_base        %p (%dMB)\n"
-         "client_mapbase     %p (%dMB)\n"
-         "client_end         %p (%dMB)\n"
-         "shadow_base        %p (%dMB)\n"
-         "shadow_end         %p\n"
-         "valgrind_base      %p (%dMB)\n"
-         "valgrind_last      %p\n",
-         VG_(client_base),       SEGSIZE(client_base,       client_mapbase),
-         VG_(client_mapbase),    SEGSIZE(client_mapbase,    client_end),
-         VG_(client_end),        SEGSIZE(client_end,        shadow_base),
-         VG_(shadow_base),       SEGSIZE(shadow_base,       shadow_end),
-         VG_(shadow_end),
-         VG_(valgrind_base),     SEGSIZE(valgrind_base,     valgrind_last),
-         VG_(valgrind_last)
-      );
+      VG_(printf)("copied %p \"%s\" len %lld\n", orig, orig, (Long)(cp-orig));
 
-#undef SEGSIZE
+   *tab = cp;
 
-   // Ban redzone
-   vres = mmap((void *)VG_(client_end), REDZONE_SIZE, PROT_NONE,
-               MAP_FIXED|MAP_ANON|MAP_PRIVATE|MAP_NORESERVE, -1, 0);
-   vg_assert((void*)-1 != vres);
+   return orig;
+}
 
-   // Make client hole
-   ires = munmap((void*)VG_(client_base), client_size);
-   vg_assert(0 == ires);
 
-   // Map shadow memory.
-   // Initially all inaccessible, incrementally initialized as it is used
-   if (shadow_size != 0) {
-      vres = mmap((char *)VG_(shadow_base), shadow_size, PROT_NONE,
-                  MAP_PRIVATE|MAP_ANON|MAP_FIXED|MAP_NORESERVE, -1, 0);
-      if ((void*)-1 == vres) {
-         fprintf(stderr, 
-          "valgrind: Could not allocate address space (%p bytes)\n"
-          "valgrind:   for shadow memory\n"
-          "valgrind: Possible causes:\n"
-          "valgrind: - For some systems (especially under RedHat 8), Valgrind\n"
-          "valgrind:   needs at least 1.5GB swap space.\n"
-          "valgrind: - Or, your virtual memory size may be limited (check\n"
-          "valgrind:   with 'ulimit -v').\n"
-          "valgrind: - Or, your system may use a kernel that provides only a\n" 
-          "valgrind:   too-small (eg. 2GB) user address space.\n"
-          , (void*)shadow_size
-         ); 
-         exit(1);
+/* ----------------------------------------------------------------
+ 
+   This sets up the client's initial stack, containing the args,
+   environment and aux vector.
+
+   The format of the stack is:
+
+   higher address +-----------------+ <- clstack_end
+                  |                 |
+		  : string table    :
+		  |                 |
+		  +-----------------+
+		  | AT_NULL         |
+		  -                 -
+		  | auxv            |
+		  +-----------------+
+		  | NULL            |
+		  -                 -
+		  | envp            |
+		  +-----------------+
+		  | NULL            |
+		  -                 -
+		  | argv            |
+		  +-----------------+
+		  | argc            |
+   lower address  +-----------------+ <- sp
+                  | undefined       |
+		  :                 :
+
+   Allocate and create the initial client stack.  It is allocated down
+   from clstack_end, which was previously determined by the address
+   space manager.  The returned value is the SP value for the client.
+
+   The client's auxv is created by copying and modifying our own one.
+   As a side effect of scanning our own auxv, some important bits of
+   info are collected:
+
+      VG_(cache_line_size_ppc32) // ppc32 only -- cache line size
+      VG_(have_altivec_ppc32)    // ppc32 only -- is Altivec supported?
+
+   ---------------------------------------------------------------- */
+
+/* XXX- this function requires syncing, but too hacked up for netbsd
+   already. Simple diff wont work
+   XXX - Is this still true?? */
+static
+Addr setup_client_stack( void*  init_sp,
+                         char** orig_envp, 
+                         const struct exeinfo* info,
+                         UInt** client_auxv,
+                         Addr   clstack_end,
+                         SizeT  clstack_max_size )
+{
+   SysRes res;
+   char **cpp;
+   char *strtab;		/* string table */
+   char *stringbase;
+   Addr *ptr;
+   struct ume_auxv *auxv;
+   const struct ume_auxv *orig_auxv;
+#if !defined(VGO_netbsdelf2)
+   const struct ume_auxv *cauxv;
+#endif
+   unsigned stringsize;		/* total size of strings in bytes */
+   unsigned auxsize;		/* total size of auxv in bytes */
+   Int argc;			/* total argc */
+   Int envc;			/* total number of env vars */
+   unsigned stacksize;		/* total client stack size */
+   Addr client_SP;	        /* client stack base (initial SP) */
+   Addr clstack_start;
+   Int i;
+   Bool have_exename;
+
+   vg_assert(VG_IS_PAGE_ALIGNED(clstack_end+1));
+
+   /* use our own auxv as a prototype */
+   orig_auxv = VG_(find_auxv)(init_sp);
+
+   /* ==================== compute sizes ==================== */
+
+   /* first of all, work out how big the client stack will be */
+   stringsize   = 0;
+   have_exename = VG_(args_the_exename) != NULL;
+
+   /* paste on the extra args if the loader needs them (ie, the #! 
+      interpreter and its argument) */
+   argc = 0;
+   if (info->interp_name != NULL) {
+      argc++;
+      stringsize += VG_(strlen)(info->interp_name) + 1;
+   }
+   if (info->interp_args != NULL) {
+      argc++;
+      stringsize += VG_(strlen)(info->interp_args) + 1;
+   }
+
+   /* now scan the args we're given... */
+   if (have_exename)
+      stringsize += VG_(strlen)( VG_(args_the_exename) ) + 1;
+
+   for (i = 0; i < VG_(args_for_client).used; i++) {
+      argc++;
+      stringsize += VG_(strlen)( VG_(args_for_client).strs[i] ) + 1;
+   }
+
+   /* ...and the environment */
+   envc = 0;
+   for (cpp = orig_envp; cpp && *cpp; cpp++) {
+      envc++;
+      stringsize += VG_(strlen)(*cpp) + 1;
+   }
+
+   /* now, how big is the auxv? */
+   auxsize = sizeof(*auxv);	/* there's always at least one entry: AT_NULL */
+#ifdef VGO_netbsdelf2 
+   auxsize += sizeof (*auxv) * 10;
+#else
+   for (cauxv = orig_auxv; cauxv->a_type != AT_NULL; cauxv++) {
+#ifdef AT_PLATFORM /* XXX -netbsd maybe we have other string types that need to be added */
+      if (cauxv->a_type == AT_PLATFORM)
+	 stringsize += VG_(strlen)(cauxv->u.a_ptr) + 1;
+#endif 
+      auxsize += sizeof(*cauxv);
+   }
+#endif /* VGO_netbsdelf2 */
+
+#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+   auxsize += 2 * sizeof(*cauxv);
+#  endif
+
+   /* OK, now we know how big the client stack is */
+   stacksize =
+      sizeof(Word) +                          /* argc */
+      (have_exename ? sizeof(char **) : 0) +  /* argc[0] == exename */
+      sizeof(char **)*argc +                  /* argv */
+      sizeof(char **) +	                      /* terminal NULL */
+      sizeof(char **)*envc +                  /* envp */
+      sizeof(char **) +	                      /* terminal NULL */
+      auxsize +                               /* auxv */
+      VG_ROUNDUP(stringsize, sizeof(Word));   /* strings (aligned) */
+
+   if (1) VG_(printf)("stacksize = %d\n", stacksize);
+
+   /* client_SP is the client's stack pointer */
+   client_SP = clstack_end - stacksize;
+   client_SP = VG_ROUNDDN(client_SP, 16); /* make stack 16 byte aligned */
+
+   /* base of the string table (aligned) */
+   stringbase = strtab = (char *)clstack_end 
+                         - VG_ROUNDUP(stringsize, sizeof(int));
+
+   clstack_start = VG_PGROUNDDN(client_SP);
+
+   /* The max stack size */
+   clstack_max_size = VG_PGROUNDUP(clstack_max_size);
+
+   /* Record stack extent -- needed for stack-change code. */
+   VG_(clstk_base) = clstack_start;
+   VG_(clstk_end)  = clstack_end;
+
+   if (1)
+      VG_(printf)("stringsize=%d auxsize=%d stacksize=%d maxsize=0x%x\n"
+                  "clstack_start %p\n"
+                  "clstack_end   %p\n",
+	          stringsize, auxsize, stacksize, (Int)clstack_max_size,
+                  (void*)clstack_start, (void*)clstack_end);
+
+   /* ==================== allocate space ==================== */
+
+   { SizeT anon_size   = clstack_end - clstack_start + 1;
+     SizeT resvn_size  = clstack_max_size - anon_size;
+     Addr  anon_start  = clstack_start;
+     Addr  resvn_start = anon_start - resvn_size;
+     SizeT inner_HACK  = 0;
+     Bool  ok;
+
+     /* So far we've only accounted for space requirements down to the
+        stack pointer.  If this target's ABI requires a redzone below
+        the stack pointer, we need to allocate an extra page, to
+        handle the worst case in which the stack pointer is almost at
+        the bottom of a page, and so there is insufficient room left
+        over to put the redzone in.  In this case the simple thing to
+        do is allocate an extra page, by shrinking the reservation by
+        one page and growing the anonymous area by a corresponding
+        page. */
+     vg_assert(VG_STACK_REDZONE_SZB >= 0);
+     /*
+      * Since NetBSD uses a redzone of 2 * pagesize, this is a wrong
+      * assertion. (/usr/src/sys/arch/i386/compile/STABLE/machine/proc.h)
+      */
+     /* vg_assert(VG_STACK_REDZONE_SZB < VKI_PAGE_SIZE); */
+     if (VG_STACK_REDZONE_SZB > 0) {
+        vg_assert(resvn_size > VKI_PAGE_SIZE);
+        resvn_size -= VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
+        anon_start -= VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
+        anon_size += VG_PGROUNDUP(VG_STACK_REDZONE_SZB);
+     }
+
+     VG_(debugLog)(2, "main", "REDZONE size = 0x%lx\n", VG_STACK_REDZONE_SZB);
+
+     vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
+     vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
+     vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
+     vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
+     vg_assert(resvn_start == clstack_end + 1 - clstack_max_size);
+
+#    ifdef ENABLE_INNER
+     inner_HACK = 1024*1024; // create 1M non-fault-extending stack
+#    endif
+     if (1)
+       VG_(printf)("%p 0x%x  %p 0x%x\n", 
+		   resvn_start, resvn_size, anon_start, anon_size);
+     
+     /* Create a shrinkable reservation followed by an anonymous
+        segment.  Together these constitute a growdown stack. */
+     ok = VG_(am_create_reservation)(
+				     resvn_start /* start */,
+				     resvn_size -inner_HACK /* length */,
+				     SmUpper /* shrink mode */, 
+				     anon_size +inner_HACK /*extra */
+				     ); 
+     /* we reserve the space for the stack, but make sure that 1 meg
+     is available AFTER the end of the reservation, this seems to fix
+        the netbsd issue temporarily, Now that can only meen that our
+        stack size calculation is wrong */
+     vg_assert(ok);
+     /* allocate a stack - mmap enough space for the stack */
+     res = VG_(am_mmap_anon_fixed_client)(
+              anon_start -inner_HACK,
+              anon_size +inner_HACK,
+	      VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
+	   );
+     vg_assert(!res.isError); 
+   }
+
+   /* ==================== create client stack ==================== */
+
+   ptr = (Addr*)client_SP;
+
+   /* --- client argc --- */
+   *ptr++ = argc + (have_exename ? 1 : 0);
+
+   /* --- client argv --- */
+   if (info->interp_name) {
+      *ptr++ = (Addr)copy_str(&strtab, info->interp_name);
+      VG_(free)(info->interp_name);
+   }
+   if (info->interp_args) {
+      *ptr++ = (Addr)copy_str(&strtab, info->interp_args);
+      VG_(free)(info->interp_args);
+   }
+
+   if (have_exename)
+      *ptr++ = (Addr)copy_str(&strtab, VG_(args_the_exename));
+
+   for (i = 0; i < VG_(args_for_client).used; i++) {
+      *ptr++ = (Addr)copy_str(&strtab, VG_(args_for_client).strs[i]);
+   }
+   *ptr++ = 0;
+
+   /* --- envp --- */
+   VG_(client_envp) = (Char **)ptr;
+   for (cpp = orig_envp; cpp && *cpp; ptr++, cpp++)
+      *ptr = (Addr)copy_str(&strtab, *cpp);
+   *ptr++ = 0; /* null */
+
+   /* --- auxv --- */
+   auxv = (struct ume_auxv *)ptr; 
+   /* now we need to have enough space here , let us just assume that we ahve */
+   *client_auxv = (UInt *)auxv;
+#ifdef VGO_netbsdelf2 
+   auxv[0].a_type = AT_PHDR; /* value will be overwritten later */
+   auxv[1].a_type = AT_PHENT;
+   auxv[1].u.a_val = 32;
+   auxv[2].a_type = AT_PHNUM;
+   auxv[2].u.a_val = 6; 
+   auxv[3].a_type  = AT_PAGESZ;
+   auxv[3].u.a_val = 4096;
+   auxv[4].a_type = AT_BASE; /* overwritten later */
+   auxv[5].a_type = AT_FLAGS;
+   auxv[6].a_type = AT_ENTRY; /* overwritten later */
+   auxv[7].a_type = AT_EUID;
+   auxv[7].u.a_val = VG_(geteuid)();
+   auxv[8].a_type = AT_RUID;
+   auxv[8].u.a_val =   VG_(getuid)();
+   auxv[9].a_type = AT_EGID;
+   auxv[9].u.a_val =   VG_(getegid)();
+   auxv[9].a_type = AT_RGID;
+   auxv[9].u.a_val =   VG_(getgid)();
+   auxv[10].a_type = AT_NULL;
+#endif
+#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+   auxv[0].a_type  = AT_IGNOREPPC;
+   auxv[0].u.a_val = AT_IGNOREPPC;
+   auxv[1].a_type  = AT_IGNOREPPC;
+   auxv[1].u.a_val = AT_IGNOREPPC;
+   auxv += 2;
+#  endif
+/*    auxv[0].a_type = AT_IGNORE; */
+/*      auxv[1].a_type = AT_PHENT; */
+/*      auxv[2].a_type = AT_PAGESZ; */
+/*      auxv[3].a_type = AT_FLAGS; */
+/*      auxv[4].a_type = AT_PHDR; */
+/*      auxv[5].a_type = AT_PHNUM; */
+/*      auxv[6].a_type = AT_BASE; */
+/*      auxv[7].a_type = AT_NULL; */
+       VG_(printf)("switching auxv %d\n", auxv->a_type);
+#ifdef VGO_netbsdelf2
+     for (; auxv->a_type != AT_NULL; auxv++) {
+#else
+     for (; orig_auxv->a_type != AT_NULL; auxv++, orig_auxv++) {
+             *auxv = *orig_auxv;
+#endif
+       /* copy the entry... */
+
+       /* fill up auxvs ourselves */
+       
+       /* ...and fix up / examine the copy */
+       VG_(printf)("switching auxv %d\n", auxv->a_type);
+	 switch(auxv->a_type) {
+
+         case AT_IGNORE:
+         case AT_PHENT:
+         case AT_PAGESZ:
+         case AT_FLAGS:
+#if defined(VGO_linux)
+         case AT_NOTELF:
+         case AT_UID:
+         case AT_EUID:
+         case AT_GID:
+         case AT_EGID:
+         case AT_CLKTCK:
+         case AT_FPUCW:
+#elif defined (VGO_netbsdelf2)
+	 case AT_EUID:
+	 case AT_EGID:
+	 case AT_RUID:
+	 case AT_RGID:
+#endif
+            /* All these are pointerless, so we don't need to do
+               anything about them. */
+            break;
+
+         case AT_PHDR:
+
+            if (info->phdr == 0)
+               auxv->a_type = AT_IGNORE;
+            else
+               auxv->u.a_val = info->phdr;
+	    /* XXX  dump phdr here   especially dynamic section */
+	    break;
+
+         case AT_PHNUM:
+            if (info->phdr == 0)
+               auxv->a_type = AT_IGNORE;
+            else
+               auxv->u.a_val = info->phnum;
+            break;
+
+         case AT_BASE:
+	   VG_(printf)("At base auxv->u.a_val = %p\n",auxv->u.a_val);
+            auxv->u.a_val = info->interp_base;
+	    VG_(printf)("At base auxv->u.a_val = %p after assign\n",auxv->u.a_val);
+            break;
+
+#if defined(VGO_linux)
+         case AT_PLATFORM:
+            /* points to a platform description string */
+            auxv->u.a_ptr = copy_str(&strtab, orig_auxv->u.a_ptr);
+            break;
+#endif
+
+         case AT_ENTRY:
+	   VG_(printf) ("info -entry in m_main = %p\n", info->entry);
+            auxv->u.a_val = info->entry;
+            break;
+
+#if defined(VGO_linux)
+         case AT_HWCAP:
+            break;
+#endif
+
+         case AT_DCACHEBSIZE:
+         case AT_ICACHEBSIZE:
+         case AT_UCACHEBSIZE:
+#           if defined(VGP_ppc32_linux)
+            /* acquire cache info */
+            if (auxv->u.a_val > 0) {
+               VG_(machine_ppc32_set_clszB)( auxv->u.a_val );
+               VG_(debugLog)(2, "main", 
+                                "PPC32 cache line size %u (type %u)\n", 
+                                (UInt)auxv->u.a_val, (UInt)auxv->a_type );
+            }
+#           elif defined(VGP_ppc64_linux)
+            /* acquire cache info */
+            if (auxv->u.a_val > 0) {
+               VG_(machine_ppc64_set_clszB)( auxv->u.a_val );
+               VG_(debugLog)(2, "main", 
+                                "PPC64 cache line size %u (type %u)\n", 
+                                (UInt)auxv->u.a_val, (UInt)auxv->a_type );
+            }
+#           endif
+            break;
+
+#        if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+         case AT_IGNOREPPC:
+            break;
+#        endif
+
+         case AT_SECURE:
+            /* If this is 1, then it means that this program is
+               running suid, and therefore the dynamic linker should
+               be careful about LD_PRELOAD, etc.  However, since
+               stage1 (the thing the kernel actually execve's) should
+               never be SUID, and we need LD_PRELOAD to work for the
+               client, we set AT_SECURE to 0. */
+            auxv->u.a_val = 0;
+            break;
+
+         case AT_SYSINFO:
+#        if !defined(VGP_ppc32_linux) && !defined(VGP_ppc64_linux)
+         case AT_SYSINFO_EHDR:
+#        endif
+            /* Trash this, because we don't reproduce it */
+            auxv->a_type = AT_IGNORE;
+            break;
+
+         default:
+            /* stomp out anything we don't know about */
+            VG_(debugLog)(0, "main",
+                             "stomping auxv entry %lld\n", 
+                             (ULong)auxv->a_type);
+	    //     auxv->a_type = AT_IGNORE;
+            break;
       }
    }
+#ifndef VGO_netbsdelf2
+   *auxv = *orig_auxv;
+#endif
+   vg_assert(auxv->a_type == AT_NULL);
+
+   vg_assert((strtab-stringbase) == stringsize);
+
+   /* client_SP is pointing at client's argc/argv */
+
+   if (1) VG_(printf)("startup SP = %p\n", client_SP);
+   return client_SP;
 }
+
+
+/* Allocate the client data segment.  It is an expandable anonymous
+   mapping abutting a shrinkable reservation of size max_dseg_size.
+   The data segment starts at VG_(brk_base), which is page-aligned,
+   and runs up to VG_(brk_limit), which isn't. */
+
+static void setup_client_dataseg ( SizeT max_size )
+{
+   Bool   ok;
+   SysRes sres;
+   Addr   anon_start  = VG_(brk_base);
+   SizeT  anon_size   = VKI_PAGE_SIZE;
+   Addr   resvn_start = anon_start + anon_size;
+   SizeT  resvn_size  = max_size - anon_size;
+
+   vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
+   vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
+   vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
+   vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
+
+   /* Because there's been no brk activity yet: */
+   vg_assert(VG_(brk_base) == VG_(brk_limit));
+
+   /* Try to create the data seg and associated reservation where
+      VG_(brk_base) says. */
+   ok = VG_(am_create_reservation)( 
+           resvn_start, 
+           resvn_size, 
+           SmLower, 
+           anon_size
+        );
+
+   if (!ok) {
+      /* Hmm, that didn't work.  Well, let aspacem suggest an address
+         it likes better, and try again with that. */
+      anon_start = VG_(am_get_advisory_client_simple)
+                      ( 0/*floating*/, anon_size+resvn_size, &ok );
+      if (ok) {
+         resvn_start = anon_start + anon_size;
+         ok = VG_(am_create_reservation)( 
+                 resvn_start, 
+                 resvn_size, 
+                 SmLower, 
+                 anon_size
+              );
+         if (ok)
+            VG_(brk_base) = VG_(brk_limit) = anon_start;
+      }
+      /* that too might have failed, but if it has, we're hosed: there
+         is no Plan C. */
+   }
+   vg_assert(ok);
+
+   /* We make the data segment (heap) executable because LinuxThreads on
+      ppc32 creates trampolines in this area.  Also, on x86/Linux the data
+      segment is RWX natively, at least according to /proc/self/maps.
+      Also, having a non-executable data seg would kill any program which
+      tried to create code in the data seg and then run it. */
+   sres = VG_(am_mmap_anon_fixed_client)( 
+             anon_start, 
+             anon_size, 
+             VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
+          );
+   vg_assert(!sres.isError);
+   vg_assert(sres.val == anon_start);
+}
+
 
 /*====================================================================*/
-/*=== Command line setup                                           ===*/
-/*====================================================================*/
-
-static char* get_file_clo(char* dir)
-{
-#  define FLEN 512
-   Int fd, n;
-   struct stat s1;
-   char* f_clo = NULL;
-   char filename[FLEN];
-
-   snprintf(filename, FLEN, "%s/.valgrindrc", ( NULL == dir ? "" : dir ) );
-   fd = VG_(open)(filename, 0, VKI_S_IRUSR);
-   if ( fd > 0 ) {
-      if ( 0 == fstat(fd, &s1) ) {
-         f_clo = malloc(s1.st_size+1);
-         vg_assert(f_clo);
-         n = read(fd, f_clo, s1.st_size);
-         if (n == -1) n = 0;
-         f_clo[n] = '\0';
-      }
-      close(fd);
-   }
-   return f_clo;
-#  undef FLEN
-}
-
-static Int count_args(char* s)
-{
-   Int n = 0;
-   if (s) {
-      char* cp = s;
-      while (True) {
-         // We have alternating sequences: blanks, non-blanks, blanks...
-         // count the non-blanks sequences.
-         while ( VG_(isspace)(*cp) )    cp++;
-         if    ( !*cp )                 break;
-         n++;
-         while ( !VG_(isspace)(*cp) && *cp ) cp++;
-      }
-   }
-   return n;
-}
-
-/* add args out of environment, skipping multiple spaces and -- args */
-static char** copy_args( char* s, char** to )
-{
-   if (s) {
-      char* cp = s;
-      while (True) {
-         // We have alternating sequences: blanks, non-blanks, blanks...
-         // copy the non-blanks sequences, and add terminating '\0'
-         while ( VG_(isspace)(*cp) )    cp++;
-         if    ( !*cp )                 break;
-         *to++ = cp;
-         while ( !VG_(isspace)(*cp) && *cp ) cp++;
-         if ( *cp ) *cp++ = '\0';            // terminate if necessary
-         if (VG_STREQ(to[-1], "--")) to--;   // undo any '--' arg
-      }
-   }
-   return to;
-}
-
-// Augment command line with arguments from environment and .valgrindrc
-// files.
-static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
-{
-   int    vg_argc0 = *vg_argc_inout;
-   char** vg_argv0 = *vg_argv_inout;
-
-   char*  env_clo = getenv(VALGRINDOPTS);
-   char*  f1_clo  = get_file_clo( getenv("HOME") );
-   char*  f2_clo  = get_file_clo(".");
-
-   /* copy any extra args from file or environment, if present */
-   if ( (env_clo && *env_clo) || (f1_clo && *f1_clo) || (f2_clo && *f2_clo) ) {
-      /* ' ' separated extra options */
-      char **from;
-      char **to;
-      int orig_arg_count, env_arg_count, f1_arg_count, f2_arg_count;
-
-      for ( orig_arg_count = 0; vg_argv0[orig_arg_count]; orig_arg_count++ );
-
-      env_arg_count = count_args(env_clo);
-      f1_arg_count  = count_args(f1_clo);
-      f2_arg_count  = count_args(f2_clo);
-
-      if (0)
-	 printf("extra-argc=%d %d %d\n",
-		env_arg_count, f1_arg_count, f2_arg_count);
-
-      /* +2: +1 for null-termination, +1 for added '--' */
-      from     = vg_argv0;
-      vg_argv0 = malloc( (orig_arg_count + env_arg_count + f1_arg_count 
-                          + f2_arg_count + 2) * sizeof(char **));
-      vg_assert(vg_argv0);
-      to      = vg_argv0;
-
-      /* copy argv[0] */
-      *to++ = *from++;
-
-      /* Copy extra args from env var and file, in the order: ~/.valgrindrc,
-       * $VALGRIND_OPTS, ./.valgrindrc -- more local options are put later
-       * to override less local ones. */
-      to = copy_args(f1_clo,  to);
-      to = copy_args(env_clo, to);
-      to = copy_args(f2_clo,  to);
-    
-      // Free memory
-      free(f1_clo);
-      free(f2_clo);
-
-      /* copy original arguments, stopping at command or -- */
-      while (*from) {
-	 if (**from != '-')
-	    break;
-	 if (VG_STREQ(*from, "--")) {
-	    from++;		/* skip -- */
-	    break;
-	 }
-	 *to++ = *from++;
-      }
-
-      /* add -- */
-      *to++ = "--";
-
-      vg_argc0 = to - vg_argv0;
-
-      /* copy rest of original command line, then NULL */
-      while (*from) *to++ = *from++;
-      *to = NULL;
-   }
-
-   *vg_argc_inout = vg_argc0;
-   *vg_argv_inout = vg_argv0;
-}
-
-#define VG_CLO_SEP   '\01'
-
-static void get_command_line( int argc, char** argv,
-                              Int* vg_argc_out, Char*** vg_argv_out, 
-                                                char*** cl_argv_out )
-{
-   int    vg_argc0;
-   char** vg_argv0;
-   char** cl_argv;
-   char*  env_clo = getenv(VALGRINDCLO);
-
-   if (env_clo != NULL && *env_clo != '\0') {
-      char *cp;
-      char **cpp;
-
-      /* OK, VALGRINDCLO is set, which means we must be a child of another
-         Valgrind process using --trace-children, so we're getting all our
-         arguments from VALGRINDCLO, and the entire command line belongs to
-         the client (including argv[0]) */
-      vg_argc0 = 1;		/* argv[0] */
-      for (cp = env_clo; *cp; cp++)
-	 if (*cp == VG_CLO_SEP)
-	    vg_argc0++;
-
-      vg_argv0 = malloc(sizeof(char **) * (vg_argc0 + 1));
-      vg_assert(vg_argv0);
-
-      cpp = vg_argv0;
-
-      *cpp++ = "valgrind";	/* nominal argv[0] */
-      *cpp++ = env_clo;
-
-      // Replace the VG_CLO_SEP args separator with '\0'
-      for (cp = env_clo; *cp; cp++) {
-	 if (*cp == VG_CLO_SEP) {
-	    *cp++ = '\0';	/* chop it up in place */
-	    *cpp++ = cp;
-	 }
-      }
-      *cpp = NULL;
-      cl_argv = argv;
-
-   } else {
-      Bool noaugment = False;
-
-      /* Count the arguments on the command line. */
-      vg_argv0 = argv;
-
-      for (vg_argc0 = 1; vg_argc0 < argc; vg_argc0++) {
-         Char* arg = argv[vg_argc0];
-         if (arg[0] != '-') /* exe name */
-	    break;
-	 if (VG_STREQ(arg, "--")) { /* dummy arg */
-	    vg_argc0++;
-	    break;
-	 }
-         VG_BOOL_CLO(arg, "--command-line-only", noaugment)
-      }
-      cl_argv = &argv[vg_argc0];
-
-      /* Get extra args from VALGRIND_OPTS and .valgrindrc files.
-         Note we don't do this if getting args from VALGRINDCLO, as 
-         those extra args will already be present in VALGRINDCLO.
-         (We also don't do it when --command-line-only=yes.) */
-      if (!noaugment)
-	 augment_command_line(&vg_argc0, &vg_argv0);
-   }
-
-   if (0) {
-      Int i;
-      for (i = 0; i < vg_argc0; i++)
-         printf("vg_argv0[%d]=\"%s\"\n", i, vg_argv0[i]);
-   }
-
-   *vg_argc_out =         vg_argc0;
-   *vg_argv_out = (Char**)vg_argv0;
-   *cl_argv_out =         cl_argv;
-}
-
-
-/*====================================================================*/
-/*=== Environment and stack setup                                  ===*/
+/*=== Find executable                                              ===*/
 /*====================================================================*/
 
 /* Scan a colon-separated list, and call a function on each element.
@@ -698,7 +783,7 @@ static void get_command_line( int argc, char** argv,
    it reaches the end of the list without that happening.
 */
 static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
-{
+ {
    char *cp, *entry;
    int end;
 
@@ -728,555 +813,58 @@ static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
    return False;
 }
 
-/* Prepare the client's environment.  This is basically a copy of our
-   environment, except:
-     LD_PRELOAD=$VALGRINDLIB/vg_preload_core.so:($VALGRINDLIB/vgpreload_TOOL.so:)?$LD_PRELOAD
+/* Need a static copy because can't use dynamic mem allocation yet */
+static HChar executable_name_in [VKI_PATH_MAX];
+static HChar executable_name_out[VKI_PATH_MAX];
 
-   If this is missing, then it is added.
-
-   Yummy.  String hacking in C.
-
-   If this needs to handle any more variables it should be hacked
-   into something table driven.
- */
-static char **fix_environment(char **origenv, const char *preload)
+static Bool match_executable(const char *entry) 
 {
-   static const char preload_core_so[]    = "vg_preload_core.so";
-   static const char ld_preload[]         = "LD_PRELOAD=";
-   static const char valgrind_clo[]       = VALGRINDCLO "=";
-   static const int  ld_preload_len       = sizeof(ld_preload)-1;
-   static const int  valgrind_clo_len     = sizeof(valgrind_clo)-1;
-   int ld_preload_done       = 0;
-   char *preload_core_path;
-   int   preload_core_path_len;
-   int vgliblen = strlen(VG_(libdir));
-   char **cpp;
-   char **ret;
-   int envc;
-   const int preloadlen = (preload == NULL) ? 0 : strlen(preload);
+   HChar buf[VG_(strlen)(entry) + VG_(strlen)(executable_name_in) + 3];
 
-   /* Find the vg_preload_core.so; also make room for the tool preload
-      library */
-   preload_core_path_len = sizeof(preload_core_so) + vgliblen + preloadlen + 16;
-   preload_core_path = malloc(preload_core_path_len);
-   vg_assert(preload_core_path);
-
-   if (preload)
-      snprintf(preload_core_path, preload_core_path_len, "%s/%s:%s", 
-	       VG_(libdir), preload_core_so, preload);
-   else
-      snprintf(preload_core_path, preload_core_path_len, "%s/%s", 
-	       VG_(libdir), preload_core_so);
-   
-   /* Count the original size of the env */
-   envc = 0;			/* trailing NULL */
-   for (cpp = origenv; cpp && *cpp; cpp++)
-      envc++;
-
-   /* Allocate a new space */
-   ret = malloc(sizeof(char *) * (envc+1+1)); /* 1 new entry + NULL */
-   vg_assert(ret);
-
-   /* copy it over */
-   for (cpp = ret; *origenv; )
-      *cpp++ = *origenv++;
-   *cpp = NULL;
-   
-   vg_assert(envc == (cpp - ret));
-
-   /* Walk over the new environment, mashing as we go */
-   for (cpp = ret; cpp && *cpp; cpp++) {
-      if (memcmp(*cpp, ld_preload, ld_preload_len) == 0) {
-	 int len = strlen(*cpp) + preload_core_path_len;
-	 char *cp = malloc(len);
-         vg_assert(cp);
-
-	 snprintf(cp, len, "%s%s:%s",
-		  ld_preload, preload_core_path, (*cpp)+ld_preload_len);
-
-	 *cpp = cp;
-	 
-	 ld_preload_done = 1;
-      } else if (memcmp(*cpp, valgrind_clo, valgrind_clo_len) == 0) {
-	 *cpp = "";
-      }
-   }
-
-   /* Add the missing bits */
-   if (!ld_preload_done) {
-      int len = ld_preload_len + preload_core_path_len;
-      char *cp = malloc(len);
-      vg_assert(cp);
-      
-      snprintf(cp, len, "%s%s", ld_preload, preload_core_path);
-      
-      ret[envc++] = cp;
-   }
-
-   free(preload_core_path);
-   ret[envc] = NULL;
-
-   return ret;
-}
-
-extern char **environ;		/* our environment */
-
-/* Add a string onto the string table, and return its address */
-static char *copy_str(char **tab, const char *str)
-{
-   char *cp = *tab;
-   char *orig = cp;
-
-   while(*str)
-      *cp++ = *str++;
-   *cp++ = '\0';
-
-   if (0)
-      printf("copied %p \"%s\" len %lld\n", orig, orig, (Long)(cp-orig));
-
-   *tab = cp;
-
-   return orig;
-}
-
-/* 
-   This sets up the client's initial stack, containing the args,
-   environment and aux vector.
-
-   The format of the stack is:
-
-   higher address +-----------------+
-		  | Trampoline code |
-		  +-----------------+
-                  |                 |
-		  : string table    :
-		  |                 |
-		  +-----------------+
-		  | AT_NULL         |
-		  -                 -
-		  | auxv            |
-		  +-----------------+
-		  |  NULL           |
-		  -                 -
-		  | envp            |
-		  +-----------------+
-		  |  NULL           |
-		  -                 -
-		  | argv            |
-		  +-----------------+
-		  | argc            |
-   lower address  +-----------------+ <- sp
-                  | undefined       |
-		  :                 :
- */
-static Addr setup_client_stack(void* init_sp,
-                               char **orig_argv, char **orig_envp, 
-			       const struct exeinfo *info,
-                               UInt** client_auxv)
-{
-   void* res;
-   char **cpp;
-   char *strtab;		/* string table */
-   char *stringbase;
-   Addr *ptr;
-   struct ume_auxv *auxv;
-   const struct ume_auxv *orig_auxv;
-   const struct ume_auxv *cauxv;
-   unsigned stringsize;		/* total size of strings in bytes */
-   unsigned auxsize;		/* total size of auxv in bytes */
-   int argc;			/* total argc */
-   int envc;			/* total number of env vars */
-   unsigned stacksize;		/* total client stack size */
-   Addr cl_esp;	                /* client stack base (initial esp) */
-
-   /* use our own auxv as a prototype */
-   orig_auxv = find_auxv(init_sp);
-
-   /* ==================== compute sizes ==================== */
-
-   /* first of all, work out how big the client stack will be */
-   stringsize = 0;
-
-   /* paste on the extra args if the loader needs them (ie, the #! 
-      interpreter and its argument) */
-   argc = 0;
-   if (info->interp_name != NULL) {
-      argc++;
-      stringsize += strlen(info->interp_name) + 1;
-   }
-   if (info->interp_args != NULL) {
-      argc++;
-      stringsize += strlen(info->interp_args) + 1;
-   }
-
-   /* now scan the args we're given... */
-   for (cpp = orig_argv; *cpp; cpp++) {
-      argc++;
-      stringsize += strlen(*cpp) + 1;
-   }
-   
-   /* ...and the environment */
-   envc = 0;
-   for (cpp = orig_envp; cpp && *cpp; cpp++) {
-      envc++;
-      stringsize += strlen(*cpp) + 1;
-   }
-
-   /* now, how big is the auxv? */
-   auxsize = sizeof(*auxv);	/* there's always at least one entry: AT_NULL */
-   for (cauxv = orig_auxv; cauxv->a_type != AT_NULL; cauxv++) {
-#ifdef AT_PLATFORM /* XXX -netbsd */
-      if (cauxv->a_type == AT_PLATFORM)
-	 stringsize += strlen(cauxv->u.a_ptr) + 1;
-#endif 
-      auxsize += sizeof(*cauxv);
-   }
-
-   /* OK, now we know how big the client stack is */
-   stacksize =
-      sizeof(Word) +			/* argc */
-      sizeof(char **)*argc +		/* argv */
-      sizeof(char **) +			/* terminal NULL */
-      sizeof(char **)*envc +		/* envp */
-      sizeof(char **) +			/* terminal NULL */
-      auxsize +				/* auxv */
-      VG_ROUNDUP(stringsize, sizeof(Word)) +/* strings (aligned) */
-      VKI_PAGE_SIZE;			/* page for trampoline code */
-
-   if (0) VG_(printf)("stacksize = %d\n", stacksize);
-
-   // decide where stack goes!
-   VG_(clstk_end) = VG_(client_end);
-
-   VG_(client_trampoline_code) = VG_(clstk_end) - VKI_PAGE_SIZE;
-
-   /* cl_esp is the client's stack pointer */
-   cl_esp = VG_(clstk_end) - stacksize;
-   cl_esp = VG_ROUNDDN(cl_esp, 16); /* make stack 16 byte aligned */
-
-   /* base of the string table (aligned) */
-   stringbase = strtab = (char *)(VG_(client_trampoline_code) 
-                         - VG_ROUNDUP(stringsize, sizeof(int)));
-
-   VG_(clstk_base) = VG_PGROUNDDN(cl_esp);
-
-   if (0)
-      printf("stringsize=%d auxsize=%d stacksize=%d\n"
-             "clstk_base %p\n"
-             "clstk_end  %p\n",
-	     stringsize, auxsize, stacksize,
-             (void*)VG_(clstk_base), (void*)VG_(clstk_end));
-
-   /* ==================== allocate space ==================== */
-
-   /* allocate a stack - mmap enough space for the stack */
-   res = mmap((void *)VG_PGROUNDDN(cl_esp), 
-              VG_(clstk_end) - VG_PGROUNDDN(cl_esp),
-	      PROT_READ | PROT_WRITE | PROT_EXEC, 
-	      MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
-   vg_assert((void*)-1 != res); 
-
-   /* ==================== copy client stack ==================== */
-
-   ptr = (Addr*)cl_esp;
-
-   /* --- argc --- */
-   *ptr++ = argc;		/* client argc */
-
-   /* --- argv --- */
-   if (info->interp_name) {
-      *ptr++ = (Addr)copy_str(&strtab, info->interp_name);
-      free(info->interp_name);
-   }
-   if (info->interp_args) {
-      *ptr++ = (Addr)copy_str(&strtab, info->interp_args);
-      free(info->interp_args);
-   }
-   for (cpp = orig_argv; *cpp; ptr++, cpp++) {
-      *ptr = (Addr)copy_str(&strtab, *cpp);
-   }
-   *ptr++ = 0;
-
-   /* --- envp --- */
-   VG_(client_envp) = (Char **)ptr;
-   for (cpp = orig_envp; cpp && *cpp; ptr++, cpp++)
-      *ptr = (Addr)copy_str(&strtab, *cpp);
-   *ptr++ = 0;
-
-   /* --- auxv --- */
-   auxv = (struct ume_auxv *)ptr;
-   *client_auxv = (UInt *)auxv;
-
-   for (; orig_auxv->a_type != AT_NULL; auxv++, orig_auxv++) {
-      /* copy the entry... */
-      *auxv = *orig_auxv;
-
-      /* ...and fix up the copy */
-      switch(auxv->a_type) {
-      case AT_PHDR:
-	 if (info->phdr == 0)
-	    auxv->a_type = AT_IGNORE;
-	 else
-	    auxv->u.a_val = info->phdr;
-	 break;
-
-      case AT_PHNUM:
-	 if (info->phdr == 0)
-	    auxv->a_type = AT_IGNORE;
-	 else
-	    auxv->u.a_val = info->phnum;
-	 break;
-
-      case AT_BASE:
-	 auxv->u.a_val = info->interp_base;
-	 break;
-#ifdef AT_PLATFORM
-      case AT_PLATFORM:		/* points to a platform description string */
-	 auxv->u.a_ptr = copy_str(&strtab, orig_auxv->u.a_ptr);
-	 break;
-#endif
-      case AT_ENTRY:
-	 auxv->u.a_val = info->entry;
-	 break;
-
-      case AT_IGNORE:
-      case AT_EXECFD:
-      case AT_PHENT:
-      case AT_PAGESZ:
-      case AT_FLAGS:
-#ifdef AT_NOTELF
-      case AT_NOTELF:
-#endif
-#ifdef AT_UID
-      case AT_UID:
-#endif
-      case AT_EUID:
-#ifdef AT_GID
-      case AT_GID:
-#endif 
-      case AT_EGID:
-#ifdef AT_CLKTCK
-      case AT_CLKTCK:
-#endif
-#ifdef AT_HWCAP
-      case AT_HWCAP:
-#endif
-#ifdef AT_FPUCW
-      case AT_FPUCW:
-#endif
-      case AT_DCACHEBSIZE:
-      case AT_ICACHEBSIZE:
-      case AT_UCACHEBSIZE:
-	 /* All these are pointerless, so we don't need to do anything
-	    about them. */
-	 break;
-
-      case AT_SECURE:
-	 /* If this is 1, then it means that this program is running
-	    suid, and therefore the dynamic linker should be careful
-	    about LD_PRELOAD, etc.  However, since stage1 (the thing
-	    the kernel actually execve's) should never be SUID, and we
-	    need LD_PRELOAD to work for the client, we
-	    set AT_SECURE to 0. */
-	 auxv->u.a_val = 0;
-	 break;
-
-      case AT_SYSINFO:
-	 /* Leave this unmolested for now, but we'll update it later
-	    when we set up the client trampoline code page */
-	 break;
-
-      case AT_SYSINFO_EHDR:
-	 /* Trash this, because we don't reproduce it */
-	 auxv->a_type = AT_IGNORE;
-	 break;
-
-      default:
-	 /* stomp out anything we don't know about */
-	 if (0)
-	    printf("stomping auxv entry %lld\n", (ULong)auxv->a_type);
-	 auxv->a_type = AT_IGNORE;
-	 break;
-	 
-      }
-   }
-   *auxv = *orig_auxv;
-   vg_assert(auxv->a_type == AT_NULL);
-
-// XXX: what architectures is this necessary for?  x86 yes, PPC no, others ?
-// Perhaps a per-arch VGA_NEEDS_TRAMPOLINE constant is necessary?
-#if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
-   /* --- trampoline page --- */
-   VG_(memcpy)( (void *)VG_(client_trampoline_code),
-                &VG_(trampoline_code_start), VG_(trampoline_code_length) );
-#endif
-
-   vg_assert((strtab-stringbase) == stringsize);
-
-   /* We know the initial ESP is pointing at argc/argv */
-   VG_(client_argc) = *(Int*)cl_esp;
-   VG_(client_argv) = (Char**)(cl_esp + sizeof(HWord));
-
-   if (0) VG_(printf)("startup SP = %p\n", cl_esp);
-   return cl_esp;
-}
-
-/*====================================================================*/
-/*=== Find executable                                              ===*/
-/*====================================================================*/
-
-static const char* executable_name;
-
-static Bool match_executable(const char *entry) {
-   char buf[strlen(entry) + strlen(executable_name) + 2];
-
-   /* empty PATH element means . */
+   /* empty PATH element means '.' */
    if (*entry == '\0')
       entry = ".";
 
-   snprintf(buf, sizeof(buf), "%s/%s", entry, executable_name);
-   
-   if (access(buf, R_OK|X_OK) == 0) {
-      executable_name = strdup(buf);
-      vg_assert(NULL != executable_name);
-      return True;
+   VG_(snprintf)(buf, sizeof(buf), "%s/%s", entry, executable_name_in);
+
+   // Don't match directories
+   if (VG_(is_dir)(buf))
+      return False;
+
+   // If we match an executable, we choose that immediately.  If we find a
+   // matching non-executable we remember it but keep looking for an
+   // matching executable later in the path.
+   if (VG_(access)(buf, True/*r*/, False/*w*/, True/*x*/) == 0) {
+      VG_(strncpy)( executable_name_out, buf, VKI_PATH_MAX-1 );
+      executable_name_out[VKI_PATH_MAX-1] = 0;
+      return True;      // Stop looking
+   } else if (VG_(access)(buf, True/*r*/, False/*w*/, False/*x*/) == 0 
+           && VG_STREQ(executable_name_out, "")) 
+   {
+      VG_(strncpy)( executable_name_out, buf, VKI_PATH_MAX-1 );
+      executable_name_out[VKI_PATH_MAX-1] = 0;
+      return False;     // Keep looking
+   } else { 
+      return False;     // Keep looking
    }
-   return False;
 }
 
-static const char* find_executable(const char* exec)
+// Returns NULL if it wasn't found.
+static HChar* find_executable ( HChar* exec )
 {
    vg_assert(NULL != exec);
-   executable_name = exec;
-   if (strchr(executable_name, '/') == NULL) {
-      /* no '/' - we need to search the path */
-      char *path = getenv("PATH");
+   if (VG_(strchr)(exec, '/')) {
+      // Has a '/' - use the name as is
+      VG_(strncpy)( executable_name_out, exec, VKI_PATH_MAX-1 );
+   } else {
+      // No '/' - we need to search the path
+      HChar* path;
+      VG_(strncpy)( executable_name_in,  exec, VKI_PATH_MAX-1 );
+      VG_(memset) ( executable_name_out, 0,    VKI_PATH_MAX );
+      path = VG_(getenv)("PATH");
       scan_colsep(path, match_executable);
    }
-   return executable_name;
-}
-
-
-/*====================================================================*/
-/*=== Loading tools                                                ===*/
-/*====================================================================*/
-
-static void list_tools(void)
-{
-   DIR *dir = opendir(VG_(libdir));
-   struct dirent *de;
-   int first = 1;
-
-   if (dir == NULL) {
-      fprintf(stderr, "Can't open %s: %s (installation problem?)\n",
-              VG_(libdir), strerror(errno));
-      return;
-   }
-
-   while ((de = readdir(dir)) != NULL) {
-      int len = strlen(de->d_name);
-
-      /* look for vgtool_TOOL.so names */
-      if (len > (7+1+3) &&   /* "vgtool_" + at least 1-char toolname + ".so" */
-         strncmp(de->d_name, "vgtool_", 7) == 0 &&
-         VG_STREQ(de->d_name + len - 3, ".so")) {
-         if (first) {
-            fprintf(stderr, "Available tools:\n");
-            first = 0;
-         }
-         de->d_name[len-3] = '\0';
-         fprintf(stderr, "\t%s\n", de->d_name+7);
-      }
-   }
-
-   closedir(dir);
-
-   if (first)
-      fprintf(stderr, "No tools available in \"%s\" (installation problem?)\n",
-             VG_(libdir));
-}
-
-
-/* Find and load a tool, and check it looks ok.  Also looks to see if there's 
- * a matching vgpreload_*.so file, and returns its name in *preloadpath. */
-static void load_tool( const char *toolname,
-                       ToolInfo** toolinfo_out, char **preloadpath_out )
-{
-   Bool      ok;
-   int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
-   char      buf[len];
-   void*     handle;
-   ToolInfo* toolinfo;
-   char*     preloadpath = NULL;
-
-   // XXX: allowing full paths for --tool option -- does it make sense?
-   // Doesn't allow for vgpreload_<tool>.so.
-
-   if (strchr(toolname, '/') != 0) {
-      /* toolname contains '/', and so must be a pathname */
-      handle = dlopen(toolname, RTLD_NOW);
-   } else {
-      /* just try in the libdir */
-      snprintf(buf, len, "%s/vgtool_%s.so", VG_(libdir), toolname);
-      handle = dlopen(buf, RTLD_NOW);
-
-      if (handle != NULL) {
-	 snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-	 if (access(buf, R_OK) == 0) {
-	    preloadpath = strdup(buf);
-            vg_assert(NULL != preloadpath);
-         }
-      }
-   }
-
-   ok = (NULL != handle);
-   if (!ok) {
-      fprintf(stderr, "Can't open tool \"%s\": %s\n", toolname, dlerror());
-      goto bad_load;
-   }
-
-   toolinfo = dlsym(handle, "vgPlain_tool_info");
-   ok = (NULL != toolinfo);
-   if (!ok) {
-      fprintf(stderr, "Tool \"%s\" doesn't define its ToolInfo - "
-                      "add VG_DETERMINE_INTERFACE_VERSION?\n", toolname);
-      goto bad_load;
-   }
-
-   ok = (toolinfo->sizeof_ToolInfo == sizeof(*toolinfo) &&
-         toolinfo->interface_version == VG_CORE_INTERFACE_VERSION &&
-         toolinfo->tl_pre_clo_init != NULL);
-   if (!ok) { 
-      fprintf(stderr, "Error:\n"
-              "  Tool and core interface versions do not match.\n"
-              "  Interface version used by core is: %d (size %d)\n"
-              "  Interface version used by tool is: %d (size %d)\n"
-              "  The version numbers must match.\n",
-              VG_CORE_INTERFACE_VERSION, 
-              (Int)sizeof(*toolinfo),
-              toolinfo->interface_version,
-              toolinfo->sizeof_ToolInfo);
-      fprintf(stderr, "  You need to at least recompile, and possibly update,\n");
-      if (VG_CORE_INTERFACE_VERSION > toolinfo->interface_version)
-         fprintf(stderr, "  your tool to work with this version of Valgrind.\n");
-      else
-         fprintf(stderr, "  your version of Valgrind to work with this tool.\n");
-      goto bad_load;
-   }
-
-   vg_assert(NULL != toolinfo);
-   *toolinfo_out    = toolinfo;
-   *preloadpath_out = preloadpath;
-   return;
-
-
- bad_load:
-   if (handle != NULL)
-      dlclose(handle);
-
-   fprintf(stderr, "valgrind: couldn't load tool\n");
-   list_tools();
-   exit(127);
+   return VG_STREQ(executable_name_out, "") ? NULL : executable_name_out;
 }
 
 
@@ -1319,108 +907,45 @@ static void config_error ( Char* msg )
 /*=== Loading the client                                           ===*/
 /*====================================================================*/
 
-static void load_client(char* cl_argv[], const char* exec, Int need_help,
-                 /*out*/struct exeinfo* info, /*out*/Addr* client_eip)
-{
-   // If they didn't specify an executable with --exec, and didn't specify 
-   // --help, then use client argv[0] (searching $PATH if necessary).
-   if (NULL == exec && !need_help) {
-      if (cl_argv[0] == NULL || 
-          ( NULL == (exec = find_executable(cl_argv[0])) ) )
-      {
-         missing_prog();
-      }
-   }
+/* Load the client whose name is VG_(argv_the_exename). */
 
-   info->map_base = VG_(client_mapbase);
+static void load_client ( /*OUT*/struct exeinfo* info, 
+                          /*OUT*/Addr* client_eip)
+{
+   HChar* exe_name;
+   Int    ret;
+   SysRes res;
+
+   vg_assert( VG_(args_the_exename) != NULL);
+   exe_name = find_executable( VG_(args_the_exename) );
+
+   if (!exe_name) {
+      VG_(printf)("valgrind: %s: command not found\n", VG_(args_the_exename));
+      VG_(exit)(127);      // 127 is Posix NOTFOUND
+   }
+   VG_(debugLog)(1, "load_client", "into memset\n"); 
+                            
+
+   VG_(memset)(info, 0, sizeof(*info));
    info->exe_base = VG_(client_base);
    info->exe_end  = VG_(client_end);
-   info->argv     = cl_argv;
+   VG_(debugLog)(1, "load_client", "do_exec\n"); 
+   ret = VG_(do_exec)(exe_name, info);
+   VG_(debugLog)(1, "load_client", "client loaded!\n"); 
+   // The client was successfully loaded!  Continue.
 
-   if (need_help) {
-      VG_(clexecfd) = -1;
-      // Totally zero 'info' before continuing.
-      VG_(memset)(info, 0, sizeof(*info));
-   } else {
-      Int ret;
-      VG_(clexecfd) = VG_(open)(exec, VKI_O_RDONLY, VKI_S_IRUSR);
-      ret = do_exec(exec, info);
-      if (ret != 0) {
-         fprintf(stderr, "valgrind: do_exec(%s) failed: %s\n",
-                         exec, strerror(ret));
-         exit(127);
-      }
-   }
-
+   /* Get hold of a file descriptor which refers to the client
+      executable.  This is needed for attaching to GDB. */
+   res = VG_(open)(exe_name, VKI_O_RDONLY, VKI_S_IRUSR);
+   if (!res.isError)
+      VG_(cl_exec_fd) = res.val;
+   VG_(debugLog)(1, "load_client", "after open\n"); 
    /* Copy necessary bits of 'info' that were filled in */
-   *client_eip = info->init_eip;
-   VG_(brk_base) = VG_(brk_limit) = info->brkbase;
+   *client_eip  = info->init_eip;
+   VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase);
+   VG_(debugLog)(1, "load_client", "finished load_client\n"); 
 }
 
-/*====================================================================*/
-/*=== Address space unpadding                                      ===*/
-/*====================================================================*/
-
-typedef struct {
-   char*        killpad_start;
-   char*        killpad_end;
-   struct stat* killpad_padstat;
-} killpad_extra;
-
-static int killpad(char *segstart, char *segend, const char *perm, off_t off, 
-                   int maj, int min, int ino, void* ex)
-{
-   killpad_extra* extra = ex;
-   void *b, *e;
-   int res;
-
-   vg_assert(NULL != extra->killpad_padstat);
-
-   if (extra->killpad_padstat->st_dev != makedev(maj, min) || 
-       extra->killpad_padstat->st_ino != ino)
-      return 1;
-   
-   if (segend <= extra->killpad_start || segstart >= extra->killpad_end)
-      return 1;
-   
-   if (segstart <= extra->killpad_start)
-      b = extra->killpad_start;
-   else
-      b = segstart;
-   
-   if (segend >= extra->killpad_end)
-      e = extra->killpad_end;
-   else
-      e = segend;
-   
-   res = munmap(b, (char *)e-(char *)b);
-   vg_assert(0 == res);
-   
-   return 1;
-}
-
-// Remove padding of 'padfile' from a range of address space.
-static void as_unpad(void *start, void *end, int padfile)
-{
-   static struct stat padstat;
-   killpad_extra extra;
-   int res;
-
-   vg_assert(padfile >= 0);
-   
-   res = fstat(padfile, &padstat);
-   vg_assert(0 == res);
-   extra.killpad_padstat = &padstat;
-   extra.killpad_start   = start;
-   extra.killpad_end     = end;
-   foreach_map(killpad, &extra);
-}
-
-static void as_closepadfile(int padfile)
-{
-   int res = close(padfile);
-   vg_assert(0 == res);
-}
 
 /*====================================================================*/
 /*=== Command-line: variables, processing, etc                     ===*/
@@ -1428,10 +953,10 @@ static void as_closepadfile(int padfile)
 
 // See pub_{core,tool}_options.h for explanations of all these.
 
-static void usage ( Bool debug_help )
+static void usage_NORETURN ( Bool debug_help )
 {
    Char* usage1 = 
-"usage: valgrind --tool=<toolname> [options] prog-and-args\n"
+"usage: valgrind [options] prog-and-args\n"
 "\n"
 "  common user options for all Valgrind tools, with defaults in [ ]:\n"
 "    --tool=<name>             use the Valgrind tool named <name> [memcheck]\n"
@@ -1440,25 +965,30 @@ static void usage ( Bool debug_help )
 "    --version                 show version\n"
 "    -q --quiet                run silently; only print error msgs\n"
 "    -v --verbose              be more verbose, incl counts of errors\n"
-"    --xml=yes                 all output is in XML (Memcheck only)\n"
 "    --trace-children=no|yes   Valgrind-ise child processes? [no]\n"
 "    --track-fds=no|yes        track open file descriptors? [no]\n"
 "    --time-stamp=no|yes       add timestamps to log messages? [no]\n"
+"    --log-fd=<number>         log messages to file descriptor [2=stderr]\n"
+"    --log-file=<file>         log messages to <file>.<pid>\n"
+"    --log-file-exactly=<file> log messages to <file>\n"
+"    --log-file-qualifier=<VAR> incorporate $VAR in logfile name [none]\n"
+"    --log-socket=ipaddr:port  log messages to socket ipaddr:port\n"
 "\n"
 "  uncommon user options for all Valgrind tools:\n"
 "    --run-libc-freeres=no|yes free up glibc memory at exit? [yes]\n"
-"    --weird-hacks=hack1,hack2,...  recognised hacks: lax-ioctls,ioctl-mmap [none]\n"
-"    --pointercheck=no|yes     enforce client address space limits [yes]\n"
-"    --support-elan3=no|yes    hacks for Quadrics Elan3 support [no]\n"
+"    --sim-hints=hint1,hint2,...  known hints:\n"
+"                                 lax-ioctls, enable-outer [none]\n"
 "    --show-emwarns=no|yes     show warnings about emulation limits? [no]\n"
+"    --smc-check=none|stack|all  checks for self-modifying code: none,\n"
+"                              only for code found in stacks, or all [stack]\n"
+"    --kernel-variant=variant1,variant2,...  known variants: bproc [none]\n"
+"                              handle non-standard kernel variants\n"
 "\n"
 "  user options for Valgrind tools that report errors:\n"
-"    --log-fd=<number>         log messages to file descriptor [2=stderr]\n"
-"    --log-file=<file>         log messages to <file>.pid<pid>\n"
-"    --log-file-exactly=<file> log messages to <file>\n"
-"    --log-socket=ipaddr:port  log messages to socket ipaddr:port\n"
+"    --xml=yes                 all output is in XML (Memcheck/Nulgrind only)\n"
+"    --xml-user-comment=STR    copy STR verbatim to XML output\n"
 "    --demangle=no|yes         automatically demangle C++ names? [yes]\n"
-"    --num-callers=<number>    show <num> callers in stack traces [12]\n"
+"    --num-callers=<number>    show <number> callers in stack traces [12]\n"
 "    --error-limit=no|yes      stop showing new errors if too many? [yes]\n"
 "    --show-below-main=no|yes  continue stack traces below main() [no]\n"
 "    --suppressions=<filename> suppress errors described in <filename>\n"
@@ -1474,13 +1004,9 @@ static void usage ( Bool debug_help )
 "\n"
 "  debugging options for all Valgrind tools:\n"
 "    --sanity-level=<number>   level of sanity checking to do [1]\n"
-"    --single-step=no|yes      translate each instr separately? [no]\n"
-"    --optimise=no|yes         improve intermediate code? [yes]\n"
-"    --profile=no|yes          profile? (tool must be built for it) [no]\n"
-"    --branchpred=yes|no       generate branch prediction hints [no]\n"
 "    --trace-flags=<XXXXXXXX>   show generated code? (X = 0|1) [00000000]\n"
 "    --profile-flags=<XXXXXXXX> ditto, but for profiling (X = 0|1) [00000000]\n"
-"    --trace-notbelow=<number>    only show BBs above <number> [0]\n"
+"    --trace-notbelow=<number> only show BBs above <number> [0]\n"
 "    --trace-syscalls=no|yes   show all system calls? [no]\n"
 "    --trace-signals=no|yes    show signal handling details? [no]\n"
 "    --trace-symtab=no|yes     show symbol table details? [no]\n"
@@ -1554,40 +1080,50 @@ static void usage ( Bool debug_help )
    VG_(exit)(0);
 }
 
-static void pre_process_cmd_line_options
-      ( Int* need_help, const char** tool, const char** exec )
-{
-   UInt i;
 
-   LibVEX_default_VexControl(& VG_(clo_vex_control));
+/* Peer at previously set up VG_(args_for_valgrind) and extract any
+   request for help and also the tool name. */
+
+static void get_helprequest_and_toolname ( Int* need_help, HChar** tool )
+{
+   UInt   i;
+   HChar* str;
 
    /* parse the options we have (only the options we care about now) */
-   for (i = 1; i < vg_argc; i++) {
+   for (i = 0; i < VG_(args_for_valgrind).used; i++) {
 
-      if (strcmp(vg_argv[i], "--version") == 0) {
-         printf("valgrind-" VERSION "\n");
-         exit(0);
+      str = VG_(args_for_valgrind).strs[i];
+      vg_assert(str);
 
-      } else if (VG_CLO_STREQ(vg_argv[i], "--help") ||
-                 VG_CLO_STREQ(vg_argv[i], "-h")) {
+      if (VG_STREQ(str, "--version")) {
+         // Ensure the version string goes to stdout
+         VG_(clo_log_fd) = 1;
+         VG_(printf)("valgrind-" VERSION "\n");
+         VG_(exit)(0);
+
+      } else if (VG_CLO_STREQ(str, "--help") ||
+                 VG_CLO_STREQ(str, "-h")) {
          *need_help = 1;
 
-      } else if (VG_CLO_STREQ(vg_argv[i], "--help-debug")) {
+      } else if (VG_CLO_STREQ(str, "--help-debug")) {
          *need_help = 2;
 
-      } else if (VG_CLO_STREQN(7, vg_argv[i], "--tool=")) {
-	 *tool = &vg_argv[i][7];
-	 
-      } else if (VG_CLO_STREQN(7, vg_argv[i], "--exec=")) {
-	 *exec = &vg_argv[i][7];
+      // The tool has already been determined, but we need to know the name
+      // here.
+      } else if (VG_CLO_STREQN(7, str, "--tool=")) {
+         *tool = &str[7];
       }
    }
 }
 
-static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
+static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
 {
-   Int  i, eventually_log_fd;
-   Int  toolname_len = VG_(strlen)(toolname);
+   // VG_(clo_log_fd) is used by all the messaging.  It starts as 2 (stderr)
+   // and we cannot change it until we know what we are changing it to is
+   // ok.  So we have tmp_log_fd to hold the tmp fd prior to that point.
+   SysRes sres;
+   Int    i, eventually_log_fd;
+   Int    toolname_len = VG_(strlen)(toolname);
    enum {
       VgLogTo_Fd,
       VgLogTo_File,
@@ -1603,24 +1139,10 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
      config_error("Please use absolute paths in "
                   "./configure --prefix=... or --libdir=...");
 
-// XXX: what architectures is this necessary for?  x86 yes, PPC no, others ?
-#if defined(VGP_x86_linux)
-   {
-      UInt* auxp;
-      for (auxp = client_auxv; auxp[0] != AT_NULL; auxp += 2) {
-         switch(auxp[0]) {
-         case AT_SYSINFO:
-            auxp[1] = (Int)(VG_(client_trampoline_code) + VG_(tramp_syscall_offset));
-            break;
-         }
-      } 
-   }
-#endif
+   for (i = 0; i < VG_(args_for_valgrind).used; i++) {
 
-   for (i = 1; i < vg_argc; i++) {
-
-      Char* arg = vg_argv[i];
-      Char* colon = arg;
+      HChar* arg   = VG_(args_for_valgrind).strs[i];
+      HChar* colon = arg;
 
       /* Look for a colon in the switch name */
       while (*colon && *colon != ':' && *colon != '=')
@@ -1635,7 +1157,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
             // prefix matches, convert "--toolname:foo" to "--foo"
             if (0)
                VG_(printf)("tool-specific arg: %s\n", arg);
-            arg = strdup(arg + toolname_len + 1);
+            arg = VG_(strdup)(arg + toolname_len + 1);
             arg[0] = '-';
             arg[1] = '-';
 
@@ -1647,7 +1169,6 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       
       /* Ignore these options - they've already been handled */
       if (VG_CLO_STREQN( 7, arg, "--tool="))              goto skip_arg;
-      if (VG_CLO_STREQN( 7, arg, "--exec="))              goto skip_arg;
       if (VG_CLO_STREQN(20, arg, "--command-line-only=")) goto skip_arg;
 
       if (     VG_CLO_STREQ(arg, "--"))                  goto skip_arg;
@@ -1665,15 +1186,11 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       }
 
       else VG_BOOL_CLO(arg, "--xml",              VG_(clo_xml))
-      else VG_BOOL_CLO(arg, "--branchpred",       VG_(clo_branchpred))
       else VG_BOOL_CLO(arg, "--db-attach",        VG_(clo_db_attach))
       else VG_BOOL_CLO(arg, "--demangle",         VG_(clo_demangle))
       else VG_BOOL_CLO(arg, "--error-limit",      VG_(clo_error_limit))
-      else VG_BOOL_CLO(arg, "--pointercheck",     VG_(clo_pointercheck))
-      else VG_BOOL_CLO(arg, "--support-elan3",    VG_(clo_support_elan3))
       else VG_BOOL_CLO(arg, "--show-emwarns",     VG_(clo_show_emwarns))
       else VG_NUM_CLO (arg, "--max-stackframe",   VG_(clo_max_stackframe))
-      else VG_BOOL_CLO(arg, "--profile",          VG_(clo_profile))
       else VG_BOOL_CLO(arg, "--run-libc-freeres", VG_(clo_run_libc_freeres))
       else VG_BOOL_CLO(arg, "--show-below-main",  VG_(clo_show_below_main))
       else VG_BOOL_CLO(arg, "--time-stamp",       VG_(clo_time_stamp))
@@ -1690,13 +1207,22 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       else VG_BOOL_CLO(arg, "--model-pthreads",   VG_(clo_model_pthreads))
 
       else VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command))
-      else VG_STR_CLO (arg, "--weird-hacks",      VG_(clo_weird_hacks))
+      else VG_STR_CLO (arg, "--sim-hints",        VG_(clo_sim_hints))
 
       else VG_NUM_CLO (arg, "--dump-error",       VG_(clo_dump_error))
       else VG_NUM_CLO (arg, "--input-fd",         VG_(clo_input_fd))
       else VG_NUM_CLO (arg, "--sanity-level",     VG_(clo_sanity_level))
       else VG_BNUM_CLO(arg, "--num-callers",      VG_(clo_backtrace_size), 1,
                                                   VG_DEEPEST_BACKTRACE)
+
+      else if (VG_CLO_STREQ(arg, "--smc-check=none"))
+         VG_(clo_smc_check) = Vg_SmcNone;
+      else if (VG_CLO_STREQ(arg, "--smc-check=stack"))
+         VG_(clo_smc_check) = Vg_SmcStack;
+      else if (VG_CLO_STREQ(arg, "--smc-check=all"))
+         VG_(clo_smc_check) = Vg_SmcAll;
+
+      else VG_STR_CLO (arg, "--kernel-variant",   VG_(clo_kernel_variant))
 
       else VG_BNUM_CLO(arg, "--vex-iropt-verbosity",
                        VG_(clo_vex_control).iropt_verbosity, 0, 10)
@@ -1722,6 +1248,10 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          VG_(clo_log_name) = &arg[11];
       }
 
+      else if (VG_CLO_STREQN(21, arg, "--log-file-qualifier=")) {
+         VG_(clo_log_file_qualifier) = &arg[21];
+      }
+
       else if (VG_CLO_STREQN(19, arg, "--log-file-exactly=")) {
          log_to            = VgLogTo_FileExactly;
          VG_(clo_log_name) = &arg[19];
@@ -1730,6 +1260,10 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       else if (VG_CLO_STREQN(13, arg, "--log-socket=")) {
          log_to            = VgLogTo_Socket;
          VG_(clo_log_name) = &arg[13];
+      }
+
+      else if (VG_CLO_STREQN(19, arg, "--xml-user-comment=")) {
+         VG_(clo_xml_user_comment) = &arg[19];
       }
 
       else if (VG_CLO_STREQN(15, arg, "--suppressions=")) {
@@ -1799,8 +1333,9 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          VG_(bad_option)(arg);
       }
     skip_arg:
-      if (arg != vg_argv[i])
-         free(arg);
+      if (arg != VG_(args_for_valgrind).strs[i]) {
+         VG_(free)(arg);
+      }
    }
 
    /* Make VEX control parameters sane */
@@ -1854,6 +1389,8 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       VG_(clo_wait_for_gdb) = False;
       /* No file-descriptor leak checking yet */
       VG_(clo_track_fds) = False;
+      /* Disable timestamped output */
+      VG_(clo_time_stamp) = False;
       /* Also, we want to set options for the leak checker, but that
          will have to be done in Memcheck's flag-handling code, not
          here. */
@@ -1878,40 +1415,57 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
       case VgLogTo_Fd: 
          vg_assert(VG_(clo_log_name) == NULL);
-         VG_(clo_log_fd) = eventually_log_fd;
          break;
 
       case VgLogTo_File: {
-         Char logfilename[1000];
-	 Int seq = 0;
-	 Int pid = VG_(getpid)();
+         HChar  logfilename[1000];
+	 Int    seq  = 0;
+	 Int    pid  = VG_(getpid)();
+         HChar* qual = NULL;
 
          vg_assert(VG_(clo_log_name) != NULL);
          vg_assert(VG_(strlen)(VG_(clo_log_name)) <= 900); /* paranoia */
 
+	 if (VG_(clo_log_file_qualifier)) {
+            qual = VG_(getenv)(VG_(clo_log_file_qualifier));
+	 }
+
 	 for (;;) {
-	    if (seq == 0)
-	       VG_(sprintf)(logfilename, "%s.pid%d",
-			    VG_(clo_log_name), pid );
-	    else
-	       VG_(sprintf)(logfilename, "%s.pid%d.%d",
-			    VG_(clo_log_name), pid, seq );
+            HChar pidtxt[20], seqtxt[20];
+
+            VG_(sprintf)(pidtxt, "%d", pid);
+
+            if (seq == 0)
+               seqtxt[0] = 0;
+            else
+               VG_(sprintf)(seqtxt, ".%d", seq);
+
 	    seq++;
 
+            /* Result:
+                  if (qual)      base_name ++ "." ++ qual ++ seqtxt
+                  if (not qual)  base_name ++ "." ++ pid  ++ seqtxt
+            */
+            VG_(sprintf)( logfilename, 
+                          "%s.%s%s",
+                          VG_(clo_log_name), 
+                          qual ? qual : pidtxt,
+                          seqtxt );
+
             // EXCL: it will fail with EEXIST if the file already exists.
-	    eventually_log_fd 
+            sres
 	       = VG_(open)(logfilename, 
 			   VKI_O_CREAT|VKI_O_WRONLY|VKI_O_EXCL|VKI_O_TRUNC, 
 			   VKI_S_IRUSR|VKI_S_IWUSR);
-	    if (eventually_log_fd >= 0) {
-	       VG_(clo_log_fd) = VG_(safe_fd)(eventually_log_fd);
+	    if (!sres.isError) {
+               eventually_log_fd = sres.val;
 	       break; /* for (;;) */
 	    } else {
                // If the file already existed, we try the next name.  If it
                // was some other file error, we give up.
-	       if (eventually_log_fd != -VKI_EEXIST) {
+	       if (sres.val != VKI_EEXIST) {
 		  VG_(message)(Vg_UserMsg, 
-			       "Can't create/open log file '%s.pid%d'; giving up!", 
+			       "Can't create/open log file '%s.%d'; giving up!", 
 			       VG_(clo_log_name), pid);
 		  VG_(bad_option)(
 		     "--log-file=<file> (didn't work out for some reason.)");
@@ -1926,12 +1480,12 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          vg_assert(VG_(clo_log_name) != NULL);
          vg_assert(VG_(strlen)(VG_(clo_log_name)) <= 900); /* paranoia */
 
-         eventually_log_fd 
+         sres
             = VG_(open)(VG_(clo_log_name),
                         VKI_O_CREAT|VKI_O_WRONLY|VKI_O_TRUNC, 
                         VKI_S_IRUSR|VKI_S_IWUSR);
-         if (eventually_log_fd >= 0) {
-            VG_(clo_log_fd) = VG_(safe_fd)(eventually_log_fd);
+         if (!sres.isError) {
+            eventually_log_fd = sres.val;
          } else {
             VG_(message)(Vg_UserMsg, 
                          "Can't create/open log file '%s'; giving up!", 
@@ -1966,9 +1520,9 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
                 "" );
             /* We don't change anything here. */
             vg_assert(VG_(clo_log_fd) == 2);
+            eventually_log_fd = 2;
 	 } else {
             vg_assert(eventually_log_fd > 0);
-            VG_(clo_log_fd) = eventually_log_fd;
             VG_(logging_to_socket) = True;
          }
          break;
@@ -1977,43 +1531,69 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
 
    /* Check that the requested tool actually supports XML output. */
-   if (VG_(clo_xml) && 0 != VG_(strcmp)(toolname, "memcheck")) {
+   if (VG_(clo_xml) && !VG_STREQ(toolname, "memcheck")
+                    && !VG_STREQ(toolname, "none")) {
       VG_(clo_xml) = False;
       VG_(message)(Vg_UserMsg, 
-         "Currently only Memcheck supports XML output."); 
+         "Currently only Memcheck|None supports XML output."); 
       VG_(bad_option)("--xml=yes");
       /*NOTREACHED*/
    }
 
-   // Move log_fd into the safe range, so it doesn't conflict with any app fds.
-   // XXX: this is more or less duplicating the behaviour of the calls to
-   // VG_(safe_fd)() above, although this does not close the original fd.
-   // Perhaps the VG_(safe_fd)() calls above should be removed, and this
-   // code should be replaced with a call to VG_(safe_fd)().   --njn
-   eventually_log_fd = VG_(fcntl)(VG_(clo_log_fd), VKI_F_DUPFD, VG_(fd_hard_limit));
-   if (eventually_log_fd < 0)
-      VG_(message)(Vg_UserMsg, "valgrind: failed to move logfile fd into safe range");
-   else {
+    if (eventually_log_fd >= 0) {
+      // Move log_fd into the safe range, so it doesn't conflict with any app fds.
+      eventually_log_fd = VG_(fcntl)(eventually_log_fd, VKI_F_DUPFD, VG_(fd_hard_limit));
+      if (eventually_log_fd < 0) {
+         VG_(message)(Vg_UserMsg, "valgrind: failed to move logfile fd into safe range, using stderr");
+         VG_(clo_log_fd) = 2;   // stderr
+      } else {
+         VG_(clo_log_fd) = eventually_log_fd;
+         VG_(fcntl)(VG_(clo_log_fd), VKI_F_SETFD, VKI_FD_CLOEXEC);
+      }
+   } else {
+      // If they said --log-fd=-1, don't print anything.  Plausible for use in
+      // regression testing suites that use client requests to count errors.
       VG_(clo_log_fd) = eventually_log_fd;
-      VG_(fcntl)(VG_(clo_log_fd), VKI_F_SETFD, VKI_FD_CLOEXEC);
    }
 
-   /* Ok, the logging sink is running now.  Print a suitable preamble.
-      If logging to file or a socket, write details of parent PID and
-      command line args, to help people trying to interpret the
-      results of a run which encompasses multiple processes. */
+   if (VG_(clo_n_suppressions) < VG_CLO_MAX_SFILES-1 &&
+       (VG_(needs).core_errors || VG_(needs).tool_errors)) {
+      /* If we haven't reached the max number of suppressions, load
+         the default one. */
+      static const Char default_supp[] = "default.supp";
+      Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
+      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
+      VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
+      VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
+      VG_(clo_n_suppressions)++;
+   }
+
+   return (log_to == VgLogTo_Fd);
+}
+
+
+/*====================================================================*/
+/*=== Printing the preamble                                        ===*/
+/*====================================================================*/
+
+/* Ok, the logging sink is running now.  Print a suitable preamble.
+   If logging to file or a socket, write details of parent PID and
+   command line args, to help people trying to interpret the
+   results of a run which encompasses multiple processes. */
+static void print_preamble(Bool logging_to_fd, const char* toolname)
+{
+   HChar* xpre  = VG_(clo_xml) ? "  <line>" : "";
+   HChar* xpost = VG_(clo_xml) ? "</line>" : "";
+   Int    i;
 
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "<?xml version=\"1.0\"?>");
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<valgrindoutput>");
       VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "<protocolversion>1</protocolversion>");
+      VG_(message)(Vg_UserMsg, "<protocolversion>2</protocolversion>");
       VG_(message)(Vg_UserMsg, "");
    }
-
-   HChar* xpre  = VG_(clo_xml) ? "  <line>" : "";
-   HChar* xpost = VG_(clo_xml) ? "</line>" : "";
 
    if (VG_(clo_verbosity > 0)) {
 
@@ -2046,56 +1626,106 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          "%sCopyright (C) 2000-2005, and GNU GPL'd, by Julian Seward et al.%s",
          xpre, xpost );
 
+      if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
+         VG_(message)(Vg_UserMsg, "For more details, rerun with: -v");
+
       if (VG_(clo_xml))
          VG_(message)(Vg_UserMsg, "</preamble>");
    }
 
-   if (VG_(clo_verbosity) > 0 && log_to != VgLogTo_Fd) {
+   if (!VG_(clo_xml) && VG_(clo_verbosity) > 0 && !logging_to_fd) {
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, 
          "My PID = %d, parent PID = %d.  Prog and args are:",
          VG_(getpid)(), VG_(getppid)() );
-      for (i = 0; i < VG_(client_argc); i++) 
-         VG_(message)(Vg_UserMsg, "   %s", VG_(client_argv)[i]);
+      if (VG_(args_the_exename))
+         VG_(message)(Vg_UserMsg, "   %s", VG_(args_the_exename));
+      for (i = 0; i < VG_(args_for_client).used; i++) 
+         VG_(message)(Vg_UserMsg, "   %s", VG_(args_for_client).strs[i]);
+      if (VG_(clo_log_file_qualifier)) {
+         HChar* val = VG_(getenv)(VG_(clo_log_file_qualifier));
+         VG_(message)(Vg_UserMsg, "");
+         VG_(message)(Vg_UserMsg, "Log file qualifier: var %s, value %s.",
+                                  VG_(clo_log_file_qualifier),
+                                  val ? val : "");
+      }
    }
    else
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<pid>%d</pid>", VG_(getpid)());
       VG_(message)(Vg_UserMsg, "<ppid>%d</ppid>", VG_(getppid)());
-      VG_(message)(Vg_UserMsg, "<tool>%s</tool>", toolname);
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "<argv>");   
-      for (i = 0; i < VG_(client_argc); i++) {
-         HChar* tag = i==0 ? "exe" : "arg";
-         VG_(message)(Vg_UserMsg, "  <%s>%s</%s>", 
-                                  tag, VG_(client_argv)[i], tag);
+      VG_(message)(Vg_UserMsg, "<tool>%t</tool>", toolname);
+      if (VG_(clo_log_file_qualifier)) {
+         HChar* val = VG_(getenv)(VG_(clo_log_file_qualifier));
+         VG_(message)(Vg_UserMsg, "<logfilequalifier> <var>%t</var> "
+                                  "<value>%t</value> </logfilequalifier>",
+                                  VG_(clo_log_file_qualifier),
+                                  val ? val : "");
       }
-      VG_(message)(Vg_UserMsg, "</argv>");   
+      if (VG_(clo_xml_user_comment)) {
+         /* Note: the user comment itself is XML and is therefore to
+            be passed through verbatim (%s) rather than escaped
+            (%t). */
+         VG_(message)(Vg_UserMsg, "<usercomment>%s</usercomment>",
+                                  VG_(clo_xml_user_comment));
+      }
+      VG_(message)(Vg_UserMsg, "");
+      VG_(message)(Vg_UserMsg, "<args>");
+
+      VG_(message)(Vg_UserMsg, "  <vargv>");
+      if (VG_(name_of_launcher))
+         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                                  VG_(name_of_launcher));
+      for (i = 0; i < VG_(args_for_valgrind).used; i++) {
+         VG_(message)(Vg_UserMsg, 
+                      "    <arg>%t</arg>", 
+                      VG_(args_for_valgrind).strs[i]);
+      }
+      VG_(message)(Vg_UserMsg, "  </vargv>");
+
+      VG_(message)(Vg_UserMsg, "  <argv>");
+      if (VG_(args_the_exename))
+         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                                  VG_(args_the_exename));
+      for (i = 0; i < VG_(args_for_client).used; i++) {
+         VG_(message)(Vg_UserMsg, "    <arg>%t</arg>", 
+                                  VG_(args_for_client).strs[i]);
+      }
+      VG_(message)(Vg_UserMsg, "  </argv>");
+
+      VG_(message)(Vg_UserMsg, "</args>");
    }
 
+   // Empty line after the preamble
+   if (VG_(clo_verbosity) > 0)
+      VG_(message)(Vg_UserMsg, "");
+
    if (VG_(clo_verbosity) > 1) {
-      Int fd;
-      if (log_to != VgLogTo_Fd)
+      SysRes fd;
+      VexArch vex_arch;
+      VexArchInfo vex_archinfo;
+      if (!logging_to_fd)
          VG_(message)(Vg_DebugMsg, "");
-      VG_(message)(Vg_DebugMsg, "Valgrind library directory: %s", VG_(libdir));
       VG_(message)(Vg_DebugMsg, "Command line");
-      for (i = 0; i < VG_(client_argc); i++)
-         VG_(message)(Vg_DebugMsg, "   %s", VG_(client_argv)[i]);
+      if (VG_(args_the_exename))
+         VG_(message)(Vg_DebugMsg, "   %s", VG_(args_the_exename));
+      for (i = 0; i < VG_(args_for_client).used; i++)
+         VG_(message)(Vg_DebugMsg, "   %s", VG_(args_for_client).strs[i]);
 
       VG_(message)(Vg_DebugMsg, "Startup, with flags:");
-      for (i = 1; i < vg_argc; i++) {
-         VG_(message)(Vg_DebugMsg, "   %s", vg_argv[i]);
+      for (i = 0; i < VG_(args_for_valgrind).used; i++) {
+         VG_(message)(Vg_DebugMsg, "   %s", VG_(args_for_valgrind).strs[i]);
       }
 
       VG_(message)(Vg_DebugMsg, "Contents of /proc/version:");
       fd = VG_(open) ( "/proc/version", VKI_O_RDONLY, 0 );
-      if (fd < 0) {
+      if (fd.isError) {
          VG_(message)(Vg_DebugMsg, "  can't open /proc/version");
       } else {
 #        define BUF_LEN    256
          Char version_buf[BUF_LEN];
-         Int n = VG_(read) ( fd, version_buf, BUF_LEN );
+         Int n = VG_(read) ( fd.val, version_buf, BUF_LEN );
          vg_assert(n <= BUF_LEN);
          if (n > 0) {
             version_buf[n-1] = '\0';
@@ -2103,101 +1733,26 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          } else {
             VG_(message)(Vg_DebugMsg, "  (empty?)");
          }
-         VG_(close)(fd);
+         VG_(close)(fd.val);
 #        undef BUF_LEN
       }
+
+      VG_(machine_get_VexArchInfo)( &vex_arch, &vex_archinfo );
+      VG_(message)(Vg_DebugMsg, "Arch and subarch: %s, %s",
+                                LibVEX_ppVexArch   ( vex_arch ),
+                                LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
+      VG_(message)(Vg_DebugMsg, "Valgrind library directory: %s", VG_(libdir));
    }
-
-   if (VG_(clo_n_suppressions) < VG_CLO_MAX_SFILES-1 &&
-       (VG_(needs).core_errors || VG_(needs).tool_errors)) {
-      /* If there are no suppression files specified and the tool
-	 needs one, load the default */
-      static const Char default_supp[] = "default.supp";
-      Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
-      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
-      VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
-      VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
-      VG_(clo_n_suppressions)++;
-   }
-}
-
-// Build the string for VALGRINDCLO.
-Char* VG_(build_child_VALGRINDCLO)( Char* exename )
-{
-   /* If we're tracing the children, then we need to start it
-      with our starter+arguments, which are copied into VALGRINDCLO,
-      except the --exec= option is changed if present.
-   */
-   Int i;
-   Char *exec;
-   Char *cp;
-   Char *optvar;
-   Int  optlen, execlen;
-
-   // All these allocated blocks are not free - because we're either
-   // going to exec, or panic when we fail.
-
-   // Create --exec= option: "--exec=<exename>"
-   exec = VG_(arena_malloc)(VG_AR_CORE, 
-                            VG_(strlen)( exename ) + 7/*--exec=*/ + 1/*\0*/);
-   vg_assert(NULL != exec);
-   VG_(sprintf)(exec, "--exec=%s", exename);
-
-   // Allocate space for optvar (may overestimate by counting --exec twice,
-   // no matter)
-   optlen = 1;
-   for (i = 0; i < vg_argc; i++)
-      optlen += VG_(strlen)(vg_argv[i]) + 1;
-   optlen += VG_(strlen)(exec)+1;
-   optvar = VG_(arena_malloc)(VG_AR_CORE, optlen);
-
-   // Copy all valgrind args except the old --exec (if present)
-   // VG_CLO_SEP is the separator.
-   cp = optvar;
-   for (i = 1; i < vg_argc; i++) {
-      Char *arg = vg_argv[i];
-      
-      if (VG_(memcmp)(arg, "--exec=", 7) == 0) {
-         // don't copy existing --exec= arg
-      } else if (VG_(strcmp)(arg, "--") == 0) {
-         // stop at "--"
-         break;
-      } else {
-         // copy non "--exec" arg
-         Int len = VG_(strlen)(arg);
-         VG_(memcpy)(cp, arg, len);
-         cp += len;
-         *cp++ = VG_CLO_SEP;
-      }
-   }
-   // Add the new --exec= option
-   execlen = VG_(strlen)(exec);
-   VG_(memcpy)(cp, exec, execlen);
-   cp += execlen;
-   *cp++ = VG_CLO_SEP;
-
-   *cp = '\0';
-
-   return optvar;
-}
-
-// Build "/proc/self/fd/<execfd>".
-Char* VG_(build_child_exename)( void )
-{
-   Char* exename = VG_(arena_malloc)(VG_AR_CORE, 64);
-   vg_assert(NULL != exename);
-#ifdef VGO_netbsdelf2
-   VG_(sprintf)(exename, "/proc/curproc/fd/%d", vgexecfd);
-#else
-   VG_(sprintf)(exename, "/proc/self/fd/%d", vgexecfd);
-#endif
-   return exename;
 }
 
 
 /*====================================================================*/
 /*=== File descriptor setup                                        ===*/
 /*====================================================================*/
+
+/* Number of file descriptors that Valgrind tries to reserve for
+   it's own use - just a small constant. */
+#define N_RESERVED_FDS (10)
 
 static void setup_file_descriptors(void)
 {
@@ -2223,121 +1778,10 @@ static void setup_file_descriptors(void)
    /* Update the soft limit. */
    VG_(setrlimit)(VKI_RLIMIT_NOFILE, &rl);
 
-   if (vgexecfd != -1)
-      vgexecfd = VG_(safe_fd)( vgexecfd );
-   if (VG_(clexecfd) != -1)
-      VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
+   if (VG_(cl_exec_fd) != -1)
+      VG_(cl_exec_fd) = VG_(safe_fd)( VG_(cl_exec_fd) );
 }
 
-/*====================================================================*/
-/*===  Initialise program data/text, etc.                          ===*/
-/*====================================================================*/
-
-static void build_valgrind_map_callback ( Addr start, SizeT size, UInt prot,
-					  UInt dev, UInt ino, ULong foffset, 
-					  const UChar* filename )
-{
-   /* Only record valgrind mappings for now, without loading any
-      symbols.  This is so we know where the free space is before we
-      start allocating more memory (note: heap is OK, it's just mmap
-      which is the problem here). */
-   if (start >= VG_(client_end) && start < VG_(valgrind_last)) {
-      VG_(debugLog)(2, "main",
-                    "valgrind-seg: %p-%p prot 0x%x file=%s\n",
-                    (void*)start, (void*)(start+size), prot, filename);
-      VG_(map_file_segment)(start, size, prot,
-                            SF_MMAP|SF_NOSYMS|SF_VALGRIND,
-                            dev, ino, foffset, filename);
-      /* update VG_(valgrind_last) if it looks wrong */
-      if (start+size > VG_(valgrind_last))
-         VG_(valgrind_last) = start+size-1;
-   }
-}
-
-// Global var used to pass local data to callback
-Addr sp_at_startup___global_arg = 0;
-
-/* 
-   This second pass adds in client mappings, and loads symbol tables
-   for all interesting mappings.  The trouble is that things can
-   change as we go, because we're calling the Tool to track memory as
-   we find it.
-
-   So for Valgrind mappings, we don't replace any mappings which
-   aren't still identical (which will include the .so mappings, so we
-   will load their symtabs)>
- */
-static void build_segment_map_callback ( Addr start, SizeT size, UInt prot,
-					 UInt dev, UInt ino, ULong foffset,
-					 const UChar* filename )
-{
-   UInt flags;
-   Bool is_stack_segment;
-   Addr r_esp;
-
-   is_stack_segment 
-      = (start == VG_(clstk_base) && (start+size) == VG_(clstk_end));
-
-   VG_(debugLog)(2, "main",
-                 "any-seg: %p-%p prot 0x%x stack=%d file=%s\n",
-                 (void*)start, (void*)(start+size), prot, is_stack_segment, 
-                 filename);
-
-   if (is_stack_segment)
-      flags = SF_STACK | SF_GROWDOWN;
-   else
-      flags = SF_EXEC|SF_MMAP;
-
-   if (filename != NULL)
-      flags |= SF_FILE;
-
-#if 0
-   // This needs to be fixed properly.   jrs 20050307
-   if (start >= VG_(client_end) && start < VG_(valgrind_last)) {
-      Segment *s = VG_(find_segment_before)(start);
-
-      /* We have to be a bit careful about inserting new mappings into
-	 the Valgrind part of the address space.  We're actively
-	 changing things as we parse these mappings, particularly in
-	 shadow memory, and so we don't want to overwrite those
-	 changes.  Therefore, we only insert/update a mapping if it is
-	 mapped from a file or it exactly matches an existing mapping.
-
-	 NOTE: we're only talking about the Segment list mapping
-	 metadata; this doesn't actually mmap anything more. */
-      if (filename || (s && s->addr == start && s->len == size)) {
-	 flags |= SF_VALGRIND;
-	 VG_(map_file_segment)(start, size, prot, flags, dev, ino, foffset, filename);
-      } else {
-	 /* assert range is already mapped */
-	 vg_assert(VG_(is_addressable)(start, size, VKI_PROT_NONE));
-      }
-   } else
-#endif
-      VG_(map_file_segment)(start, size, prot, flags, dev, ino, foffset, filename);
-
-   if (VG_(is_client_addr)(start) && VG_(is_client_addr)(start+size-1)) {
-	   VG_TRACK( new_mem_startup, start, size,
-		     !!(prot & VKI_PROT_READ), 
-                     !!(prot & VKI_PROT_WRITE), 
-                     !!(prot & VKI_PROT_EXEC));
-   }
-
-   /* If this is the stack segment mark all below %esp as noaccess. */
-   r_esp = sp_at_startup___global_arg;
-   vg_assert(0 != r_esp);
-   if (is_stack_segment) {
-      if (0) {
-         VG_(message)(Vg_DebugMsg, "invalidating stack area: %p .. %p",
-                      start,r_esp);
-         VG_(message)(Vg_DebugMsg, "  validating stack area: %p .. %p",
-                      r_esp, start+size);
-      }
-      VG_TRACK( die_mem_stack, start, r_esp-start );
-      // what's this for?
-      //VG_TRACK( post_mem_write, r_esp, (start+size)-r_esp );
-   }
-}
 
 /*====================================================================*/
 /*===  Initialise the first thread.                                ===*/
@@ -2348,7 +1792,7 @@ static void build_segment_map_callback ( Addr start, SizeT size, UInt prot,
    starting values.
 */
 static void init_thread1state ( Addr client_ip, 
-                                Addr sp_at_startup,
+                                Addr client_sp,
                                 /*inout*/ ThreadArchState* arch )
 {
 #if defined(VGA_x86)
@@ -2362,7 +1806,7 @@ static void init_thread1state ( Addr client_ip,
    VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestX86State));
 
    /* Put essential stuff into the new state. */
-   arch->vex.guest_ESP = sp_at_startup;
+   arch->vex.guest_ESP = client_sp;
    arch->vex.guest_EIP = client_ip;
 
    /* initialise %cs, %ds and %ss to point at the operating systems
@@ -2370,6 +1814,7 @@ static void init_thread1state ( Addr client_ip,
    asm volatile("movw %%cs, %0" : : "m" (arch->vex.guest_CS));
    asm volatile("movw %%ds, %0" : : "m" (arch->vex.guest_DS));
    asm volatile("movw %%ss, %0" : : "m" (arch->vex.guest_SS));
+
 #elif defined(VGA_amd64)
    vg_assert(0 == sizeof(VexGuestAMD64State) % 8);
 
@@ -2381,8 +1826,37 @@ static void init_thread1state ( Addr client_ip,
    VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestAMD64State));
 
    /* Put essential stuff into the new state. */
-   arch->vex.guest_RSP = sp_at_startup;
+   arch->vex.guest_RSP = client_sp;
    arch->vex.guest_RIP = client_ip;
+
+#elif defined(VGA_ppc32)
+   vg_assert(0 == sizeof(VexGuestPPC32State) % 8);
+
+   /* Zero out the initial state, and set up the simulated FPU in a
+      sane way. */
+   LibVEX_GuestPPC32_initialise(&arch->vex);
+
+   /* Zero out the shadow area. */
+   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC32State));
+
+   /* Put essential stuff into the new state. */
+   arch->vex.guest_GPR1 = client_sp;
+   arch->vex.guest_CIA  = client_ip;
+
+#elif defined(VGA_ppc64)
+   vg_assert(0 == sizeof(VexGuestPPC64State) % 16);
+
+   /* Zero out the initial state, and set up the simulated FPU in a
+      sane way. */
+   LibVEX_GuestPPC64_initialise(&arch->vex);
+
+   /* Zero out the shadow area. */
+   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC64State));
+
+   /* Put essential stuff into the new state. */
+   arch->vex.guest_GPR1 = client_sp;
+   arch->vex.guest_GPR2 = client_toc;
+   arch->vex.guest_CIA  = client_ip;
 #else
 #  error Unknown arch
 #endif
@@ -2393,92 +1867,77 @@ static void init_thread1state ( Addr client_ip,
 
 
 /*====================================================================*/
-/*=== Sanity check machinery (permanently engaged)                 ===*/
+/*=== BB profiling                                                 ===*/
 /*====================================================================*/
 
-/* A fast sanity check -- suitable for calling circa once per
-   millisecond. */
-
-void VG_(sanity_check_general) ( Bool force_expensive )
+static 
+void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 {
-   ThreadId tid;
+   ULong score_cumul,   score_here;
+   Char  buf_cumul[10], buf_here[10];
+   Char  name[64];
+   Int   r;
 
-   VGP_PUSHCC(VgpCoreCheapSanity);
+   VG_(printf)("\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("--- BEGIN BB Profile (summary of scores)                ---\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("\n");
 
-   if (VG_(clo_sanity_level) < 1) return;
+   VG_(printf)("Total score = %lld\n\n", score_total);
 
-   /* --- First do all the tests that we can do quickly. ---*/
-
-   sanity_fast_count++;
-
-   /* Check stuff pertaining to the memory check system. */
-
-   /* Check that nobody has spuriously claimed that the first or
-      last 16 pages of memory have become accessible [...] */
-   if (VG_(needs).sanity_checks) {
-      VGP_PUSHCC(VgpToolCheapSanity);
-      vg_assert(VG_TDICT_CALL(tool_cheap_sanity_check));
-      VGP_POPCC(VgpToolCheapSanity);
+   score_cumul = 0;
+   for (r = 0; r < n_tops; r++) {
+      if (tops[r].addr == 0)
+         continue;
+      name[0] = 0;
+      VG_(get_fnname_w_offset)(tops[r].addr, name, 64);
+      name[63] = 0;
+      score_here = tops[r].score;
+      score_cumul += score_here;
+      VG_(percentify)(score_cumul, score_total, 2, 6, buf_cumul);
+      VG_(percentify)(score_here,  score_total, 2, 6, buf_here);
+      VG_(printf)("%3d: (%9lld %s)   %9lld %s      0x%llx %s\n",
+                  r,
+                  score_cumul, buf_cumul,
+                  score_here,  buf_here, tops[r].addr, name );
    }
 
-   /* --- Now some more expensive checks. ---*/
+   VG_(printf)("\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("--- BB Profile (BB details)                             ---\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("\n");
 
-   /* Once every 25 times, check some more expensive stuff. */
-   if ( force_expensive
-     || VG_(clo_sanity_level) > 1
-     || (VG_(clo_sanity_level) == 1 && (sanity_fast_count % 25) == 0)) {
-
-      VGP_PUSHCC(VgpCoreExpensiveSanity);
-      sanity_slow_count++;
-
-#     if 0
-      { void zzzmemscan(void); zzzmemscan(); }
-#     endif
-
-      if ((sanity_fast_count % 250) == 0)
-         VG_(sanity_check_tt_tc)("VG_(sanity_check_general)");
-
-      if (VG_(needs).sanity_checks) {
-          VGP_PUSHCC(VgpToolExpensiveSanity);
-          vg_assert(VG_TDICT_CALL(tool_expensive_sanity_check));
-          VGP_POPCC(VgpToolExpensiveSanity);
-      }
-
-      /* Check that Segments and /proc/self/maps match up */
-      //vg_assert(VG_(sanity_check_memory)());
-
-      /* Look for stack overruns.  Visit all threads. */
-      for(tid = 1; tid < VG_N_THREADS; tid++) {
-	 SSizeT remains;
-
-	 if (VG_(threads)[tid].status == VgTs_Empty ||
-	     VG_(threads)[tid].status == VgTs_Zombie)
-	    continue;
-
-	 remains = VGA_(stack_unused)(tid);
-	 if (remains < VKI_PAGE_SIZE)
-	    VG_(message)(Vg_DebugMsg, 
-                         "WARNING: Thread %d is within %d bytes "
-                         "of running out of stack!",
-		         tid, remains);
-      }
-
-      /* 
-      if ((sanity_fast_count % 500) == 0) VG_(mallocSanityCheckAll)(); 
-      */
-      VGP_POPCC(VgpCoreExpensiveSanity);
+   score_cumul = 0;
+   for (r = 0; r < n_tops; r++) {
+      if (tops[r].addr == 0)
+         continue;
+      name[0] = 0;
+      VG_(get_fnname_w_offset)(tops[r].addr, name, 64);
+      name[63] = 0;
+      score_here = tops[r].score;
+      score_cumul += score_here;
+      VG_(percentify)(score_cumul, score_total, 2, 6, buf_cumul);
+      VG_(percentify)(score_here,  score_total, 2, 6, buf_here);
+      VG_(printf)("\n");
+      VG_(printf)("=-=-=-=-=-=-=-=-=-=-=-=-=-= begin BB rank %d "
+                  "=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n", r);
+      VG_(printf)("%3d: (%9lld %s)   %9lld %s      0x%llx %s\n",
+                  r,
+                  score_cumul, buf_cumul,
+                  score_here,  buf_here, tops[r].addr, name );
+      VG_(printf)("\n");
+      VG_(translate)(0, tops[r].addr, True, VG_(clo_profile_flags), 0);
+      VG_(printf)("=-=-=-=-=-=-=-=-=-=-=-=-=-=  end BB rank %d  "
+                  "=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n", r);
    }
 
-   if (VG_(clo_sanity_level) > 1) {
-      VGP_PUSHCC(VgpCoreExpensiveSanity);
-      /* Check sanity of the low-level memory manager.  Note that bugs
-         in the client's code can cause this to fail, so we don't do
-         this check unless specially asked for.  And because it's
-         potentially very expensive. */
-      VG_(sanity_check_malloc_all)();
-      VGP_POPCC(VgpCoreExpensiveSanity);
-   }
-   VGP_POPCC(VgpCoreCheapSanity);
+   VG_(printf)("\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("--- END BB Profile                                      ---\n");
+   VG_(printf)("-----------------------------------------------------------\n");
+   VG_(printf)("\n");
 }
 
 
@@ -2486,90 +1945,100 @@ void VG_(sanity_check_general) ( Bool force_expensive )
 /*=== main()                                                       ===*/
 /*====================================================================*/
 
-/*
-  This code decides on the layout of the client and Valgrind address
-  spaces, loads valgrind.so and the tool.so into the valgrind part,
-  loads the client executable (and the dynamic linker, if necessary)
-  into the client part, and calls into Valgrind proper.
+/* When main() is entered, we should be on the following stack, not
+   the one the kernel gave us.  We will run on this stack until
+   simulation of the root thread is started, at which point a transfer
+   is made to a dynamically allocated stack.  This is for the sake of
+   uniform overflow detection for all Valgrind threads.  This is
+   marked global even though it isn't, because assembly code below
+   needs to reference the name. */
 
-  The code is careful not to allow spurious mappings to appear in the
-  wrong parts of the address space.  In particular, to make sure
-  dlopen puts things in the right place, it will pad out the forbidden
-  chunks of address space so that dlopen is forced to put things where
-  we want them.
+/*static*/ VgStack VG_(interim_stack);
 
-  The memory map it creates is:
+/* This should get some address inside the stack on which we gained
+   control (eg, it could be the SP at startup).  It doesn't matter
+   exactly where in the stack it is.  This value is passed to the
+   address space manager at startup, which uses it to identify the
+   initial stack segment and hence the upper end of the usable address
+   space. */
 
-  client_base    +-------------------------+
-                 | client address space    |
-	         :                         :
-	         :                         :
-		 | client stack            |
-  client_end     +-------------------------+
-                 | redzone                 |
-  shadow_base    +-------------------------+
-                 |                         |
-	         : shadow memory for tools :
-	         | (may be 0 sized)        |
-  shadow_end     +-------------------------+
-  valgrind_base  +-------------------------+
-                 | kickstart executable    |
-                 | valgrind heap  vvvvvvvvv| (barely used)
-                 -                         -
-                 | valgrind .so files      |
-		 | and mappings            |
-                 -                         -
-                 | valgrind stack ^^^^^^^^^|
-  valgrind_last  +-------------------------+
-		 : kernel                  :
+static Addr sp_at_startup = 0;
 
-  Nb: Before we can do general allocations with VG_(arena_malloc)() and
-  VG_(mmap)(), we need to build the segment skip-list, so we know where
-  we can put things.  However, building that structure requires
-  allocating memory.  So we need to a bootstrapping process.  It's done
-  by making VG_(arena_malloc)() have a special static superblock that's
-  used for the first 1MB's worth of allocations.  This is enough to
-  build the segment skip-list.
-*/
+/* --- Forwards decls to do with shutdown --- */
+
+static void final_tidyup(ThreadId tid); 
+
+/* Do everything which needs doing when the last thread exits */
+static 
+void shutdown_actions_NORETURN( ThreadId tid, 
+                                VgSchedReturnCode tids_schedretcode );
+
+/* --- end of Forwards decls to do with shutdown --- */
 
 
-/* This may be needed before m_mylibc is OK to run. */
-static Int local_strcmp ( const HChar* s1, const HChar* s2 )
+/* TODO: GIVE THIS A PROPER HOME
+   TODO: MERGE THIS WITH DUPLICATE IN mc_leakcheck.c and coredump-elf.c.
+   Extract from aspacem a vector of the current segment start
+   addresses.  The vector is dynamically allocated and should be freed
+   by the caller when done.  REQUIRES m_mallocfree to be running.
+   Writes the number of addresses required into *n_acquired. */
+
+static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 {
+   Addr* starts;
+   Int   n_starts, r = 0;
+
+   n_starts = 1;
    while (True) {
-      if (*s1 == 0 && *s2 == 0) return 0;
-      if (*s1 == 0) return -1;
-      if (*s2 == 0) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
-
-      s1++; s2++;
+      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      if (starts == NULL)
+         break;
+      r = VG_(am_get_segment_starts)( starts, n_starts );
+      if (r >= 0)
+         break;
+      VG_(free)(starts);
+      n_starts *= 2;
    }
+
+   if (starts == NULL) {
+     *n_acquired = 0;
+     return NULL;
+   }
+
+   *n_acquired = r;
+   return starts;
 }
 
 
-int main(int argc, char **argv, char **envp)
+
+Int main(Int argc, HChar **argv, HChar **envp)
 {
-   char **cl_argv;
-   const char *tool = "memcheck";   // default to Memcheck
-   const char *exec = NULL;
-   char *preload;          /* tool-specific LD_PRELOAD .so */
-   char **env;
-   Int need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
-   struct exeinfo info;
-   ToolInfo *toolinfo = NULL;
-   Addr client_eip;
-   Addr sp_at_startup;     /* client's SP at the point we gained control. */
-   UInt * client_auxv;
+   HChar*  toolname          = "memcheck";    // default to Memcheck
+   HChar** env               = NULL;
+   Int     need_help         = 0; // 0 = no, 1 = --help, 2 = --help-debug
+   Addr    initial_client_IP = 0;
+   Addr    initial_client_SP = 0;
+   Addr    clstack_top       = 0;
+   SizeT   clstack_max_size  = 0;
+   UInt*   client_auxv = NULL;
+   Int     loglevel, i;
+   Bool    logging_to_fd;
    struct vki_rlimit zero = { 0, 0 };
-   Int padfile, loglevel, i;
+   struct exeinfo info;
 
    //============================================================
-   // Nb: startup is complex.  Prerequisites are shown at every step.
    //
+   // Nb: startup is complex.  Prerequisites are shown at every step.
    // *** Be very careful when messing with the order ***
+   //
+   // The first order of business is to get debug logging, the address
+   // space manager and the dynamic memory manager up and running.
+   // Once that's done, we can relax a bit.
+   //
    //============================================================
+   
+   /* This is needed to make VG_(getenv) usable early. */
+   VG_(client_envp) = (Char**)envp;
 
    //--------------------------------------------------------------
    // Start up the logging mechanism
@@ -2577,21 +2046,136 @@ int main(int argc, char **argv, char **envp)
    //--------------------------------------------------------------
    /* Start the debugging-log system ASAP.  First find out how many 
       "-d"s were specified.  This is a pre-scan of the command line. */
-   printf("In stage 2 main!\n");
-   loglevel = 5;
+   loglevel = 0;
    for (i = 1; i < argc; i++) {
       if (argv[i][0] != '-')
          break;
-      if (0 == local_strcmp(argv[i], "--")) 
+      if (VG_STREQ(argv[i], "--")) 
          break;
-      if (0 == local_strcmp(argv[i], "-d")) 
+      if (VG_STREQ(argv[i], "-d")) 
          loglevel++;
    }
-   printf("dooing debuglog startup\n");
+
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
-   printf("after debuglog startup\n");
+   VG_(debugLog)(1, "main", "Welcome to Valgrind version " 
+                            VERSION " debug logging\n");
+
+   //--------------------------------------------------------------
+   // Ensure we're on a plausible stack.
+   //   p: logging
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
+   { HChar* limLo  = (HChar*)(&VG_(interim_stack).bytes[0]);
+     HChar* limHi  = limLo + sizeof(VG_(interim_stack));
+     HChar* aLocal = (HChar*)&zero; /* any auto local will do */
+     if (aLocal < limLo || aLocal >= limHi) {
+        /* something's wrong.  Stop. */
+        VG_(debugLog)(0, "main", "Root stack %p to %p, a local %p\n",
+                          limLo, limHi, aLocal );
+        VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                                 "Initial stack switched failed.\n");
+        VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
+        VG_(exit)(1);
+     }
+   }
+
+   //--------------------------------------------------------------
+   // Ensure we have a plausible pointer to the stack on which
+   // we gained control (not the current stack!)
+   //   p: logging
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Checking initial stack was noted\n");
+   if (sp_at_startup == 0) {
+      VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                               "Initial stack was not noted.\n");
+      VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
+      VG_(exit)(1);
+   }
+
+   //--------------------------------------------------------------
+   // Start up the address space manager, and determine the
+   // approximate location of the client's stack
+   //   p: logging, plausible-stack
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Starting the address space manager\n");
+   clstack_top = VG_(am_startup)( sp_at_startup );
+   VG_(debugLog)(1, "main", "Address space manager is running\n");
+
+   //--------------------------------------------------------------
+   // Start up the dynamic memory manager
+   //   p: address space management
+   //   In fact m_mallocfree is self-initialising, so there's no
+   //   initialisation call to do.  Instead, try a simple malloc/
+   //   free pair right now to check that nothing is broken.
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Starting the dynamic memory manager\n");
+   { void* p = VG_(malloc)( 12345 );
+     if (p) VG_(free)( p );
+   }
+   VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
+
+   //============================================================
+   //
+   // Dynamic memory management is now available.
+   //
+   //============================================================
+
+   //--------------------------------------------------------------
+   // Look for alternative libdir                                  
+   { HChar *cp = VG_(getenv)(VALGRIND_LIB);
+     if (cp != NULL)
+        VG_(libdir) = cp;
+   }
+
+   //--------------------------------------------------------------
+   // Extract the launcher name from the environment.
+   VG_(debugLog)(1, "main", "Getting stage1's name\n");
+#ifndef VGO_netbsdelf2
+   VG_(name_of_launcher) = VG_(getenv)(VALGRIND_LAUNCHER);
+   if (VG_(name_of_launcher) == NULL) {
+      VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
+      VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
+      VG_(exit)(1);
+   }
+#endif
+   //--------------------------------------------------------------
+   // Get the current process datasize rlimit, and set it to zero.
+   // This prevents any internal uses of brk() from having any effect.
+   // We remember the old value so we can restore it on exec, so that
+   // child processes will have a reasonable brk value.
+   VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
+   zero.rlim_max = VG_(client_rlimit_data).rlim_max;
+   //   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
+
+   // Get the current process stack rlimit.
+   VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));
+
+   //--------------------------------------------------------------
+   // Figure out what sort of CPU we're on, and whether it is 
+   // able to run V.
+   VG_(debugLog)(1, "main", "Get hardware capabilities ...\n");
+   { VexArch     vex_arch;
+     VexArchInfo vex_archinfo;
+     Bool ok = VG_(machine_get_hwcaps)();
+     if (!ok) {
+        VG_(printf)("\n");
+        VG_(printf)("valgrind: fatal error: unsupported CPU.\n");
+        VG_(printf)("   Supported CPUs are:\n");
+        VG_(printf)("   * x86 (practically any; Pentium-I or above), "
+                    "AMD Athlon or above)\n");
+        VG_(printf)("   * AMD Athlon64/Opteron\n");
+        VG_(printf)("   * PowerPC (most; ppc405 and above)\n");
+        VG_(printf)("\n");
+        VG_(exit)(1);
+     }
+     VG_(machine_get_VexArchInfo)( &vex_arch, &vex_archinfo );
+     VG_(debugLog)(1, "main", "... arch = %s, subarch = %s\n",
+                   LibVEX_ppVexArch   ( vex_arch ),
+                   LibVEX_ppVexSubArch( vex_archinfo.subarch ) );
+   }
+
    //============================================================
    // Command line argument handling order:
    // * If --help/--help-debug are present, show usage message 
@@ -2601,133 +2185,107 @@ int main(int argc, char **argv, char **envp)
    // * Then, if any cmdline args are bad, abort with error msg
    //============================================================
 
-   // Get the current process datasize rlimit, and set it to zero.
-   // This prevents any internal uses of brk() from having any effect.
-   // We remember the old value so we can restore it on exec, so that
-   // child processes will have a reasonable brk value.
-   VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
-   zero.rlim_max = VG_(client_rlimit_data).rlim_max;
-   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
-
-   // Get the current process stack rlimit.
-   VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));
-
    //--------------------------------------------------------------
-   // Check we were launched by stage1
-   //   p: none
+   // Split up argv into: C args, V args, V extra args, and exename.
+   //   p: dynamic memory allocation
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Doing scan_auxv()\n");
-   {
-   void* init_sp = argv - 1;
-   padfile = scan_auxv(init_sp);
+   VG_(debugLog)(1, "main", "Split up command line\n");
+   VG_(split_up_argv)( argc, argv );
+   if (0) {
+      for (i = 0; i < VG_(args_for_valgrind).used; i++)
+         VG_(printf)("varg %s\n", VG_(args_for_valgrind).strs[i]);
+      VG_(printf)(" exe %s\n", VG_(args_the_exename));
+      for (i = 0; i < VG_(args_for_client).used; i++)
+         VG_(printf)("carg %s\n", VG_(args_for_client).strs[i]);
    }
 
    //--------------------------------------------------------------
-   // Look for alternative libdir                                  
-   //   p: none
-   //--------------------------------------------------------------
-   {  HChar *cp = getenv(VALGRINDLIB);
-      if (cp != NULL)
-	 VG_(libdir) = cp;
-   }
-
-   //--------------------------------------------------------------
-   // Get valgrind args + client args (inc. from VALGRIND_OPTS/.valgrindrc).
-   // Pre-process the command line.
-   //   p: none
+   // Extract tool name and whether help has been requested.
+   // Note we can't print the help message yet, even if requested,
+   // because the tool has not been initialised.
+   //   p: split_up_argv [for VG_(args_for_valgrind)]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Preprocess command line opts\n");
-   get_command_line(argc, argv, &vg_argc, &vg_argv, &cl_argv);
-   pre_process_cmd_line_options(&need_help, &tool, &exec);
+   get_helprequest_and_toolname(&need_help, &toolname);
 
-   /* If this process was created by exec done by another Valgrind
-      process, the arguments will only show up at this point.  Hence
-      we need to also snoop around in vg_argv to see if anyone is
-      asking for debug logging. */
-   if (loglevel == 0) {
-      for (i = 1; i < vg_argc; i++) {
-         if (vg_argv[i][0] != '-')
-            break;
-         if (0 == local_strcmp(vg_argv[i], "--")) 
-            break;
-         if (0 == local_strcmp(vg_argv[i], "-d")) 
-            loglevel++;
-      }
-      VG_(debugLog_startup)(loglevel, "Stage 2 (second go)");
-   }
-
-   //==============================================================
-   // Nb: once a tool is specified, the tool.so must be loaded even if 
-   // they specified --help or didn't specify a client program.
-   //==============================================================
-
-   //--------------------------------------------------------------
-   // With client padded out, map in tool
-   //   p: set-libdir                     [for VG_(libdir)]
-   //   p: pre_process_cmd_line_options() [for 'tool']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading tool\n");
-   load_tool(tool, &toolinfo, &preload);
-
-   //==============================================================
-   // Can use VG_(malloc)() and VG_(arena_malloc)() only after load_tool()
-   // -- redzone size is now set.  This is checked by vg_malloc2.c.
-   //==============================================================
-   
-   //--------------------------------------------------------------
-   // Finalise address space layout
-   //   p: load_tool()  [for 'toolinfo']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Laying out remaining space\n");
-   layout_remaining_space( (Addr) & argc, toolinfo->shadow_ratio );
+   // Set default vex control params
+   LibVEX_default_VexControl(& VG_(clo_vex_control));
 
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary
-   //   p: pre_process_cmd_line_options()  [for 'exec', 'need_help']
+   //   p: get_helprequest_and_toolname()  [for 'exec', 'need_help']
    //   p: layout_remaining_space          [so there's space]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading client\n");
-   load_client(cl_argv, exec, need_help, &info, &client_eip);
+   if (!need_help) {
+      VG_(debugLog)(1, "main", "Loading client\n");
 
-   //--------------------------------------------------------------
-   // Everything in place, remove padding done by stage1
-   //   p: layout_remaining_space()  [everything must be mapped in before now]  
-   //   p: load_client()             [ditto] 
-   //--------------------------------------------------------------
-   as_unpad((void *)VG_(shadow_end), (void *)~0, padfile);
-   as_closepadfile(padfile);  // no more padding
+      if (VG_(args_the_exename) == NULL)
+         missing_prog();
+
+      load_client(&info, &initial_client_IP);
+   }
 
    //--------------------------------------------------------------
    // Set up client's environment
-   //   p: set-libdir  [for VG_(libdir)]
-   //   p: load_tool() [for 'preload']
+   //   p: set-libdir                   [for VG_(libdir)]
+   //   p: get_helprequest_and_toolname [for toolname]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Setup client env\n");
-   env = fix_environment(envp, preload);
+   if (!need_help) {
+      VG_(debugLog)(1, "main", "Setup client env\n");
+      env = setup_client_env(envp, toolname);
+   }
 
    //--------------------------------------------------------------
    // Setup client stack, eip, and VG_(client_arg[cv])
    //   p: load_client()     [for 'info']
    //   p: fix_environment() [for 'env']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Setup client stack\n");
-   { 
-   void* init_sp = argv - 1;
+   if (!need_help) {
+     void* init_sp = argv -1  ; /*  argv - 1; */ /*wtf */
+      SizeT m1  = 1024 * 1024;
+      SizeT m16 = 16 * m1;
+      VG_(debugLog)(1, "main", "Setup client stack\n");
+      clstack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
+      if (clstack_max_size < m1)  clstack_max_size = m1;
+      if (clstack_max_size > m16) clstack_max_size = m16;
+      clstack_max_size = VG_PGROUNDUP(clstack_max_size);
 
-   sp_at_startup = setup_client_stack(init_sp, cl_argv, env, &info,
-                                      &client_auxv);
-   free(env);
+      initial_client_SP
+         = setup_client_stack( init_sp, env, 
+                               &info, &client_auxv, 
+                               clstack_top, clstack_max_size );
+
+      VG_(free)(env);
+
+      VG_(debugLog)(2, "main",
+                       "Client info: "
+                       "initial_IP=%p initial_SP=%p brk_base=%p\n",
+                       (void*)initial_client_IP, 
+                       (void*)initial_client_SP,
+                       (void*)VG_(brk_base) );
    }
 
-   VG_(debugLog)(2, "main",
-                    "Client info: "
-                    "entry=%p client esp=%p vg_argc=%d brkbase=%p\n",
-                    (void*)client_eip, (void*)sp_at_startup, vg_argc, 
-                    (void*)VG_(brk_base) );
+   //--------------------------------------------------------------
+   // Setup client data (brk) segment.  Initially a 1-page segment
+   // which abuts a shrinkable reservation. 
+   //     p: load_client()     [for 'info' and hence VG_(brk_base)]
+   //--------------------------------------------------------------
+   if (!need_help) { 
+      SizeT m1 = 1024 * 1024;
+      SizeT m8 = 8 * m1;
+      SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
+      VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
+      if (dseg_max_size < m1) dseg_max_size = m1;
+      if (dseg_max_size > m8) dseg_max_size = m8;
+      dseg_max_size = VG_PGROUNDUP(dseg_max_size);
+
+      setup_client_dataseg( dseg_max_size );
+   }
 
    //==============================================================
-   // Finished setting up operating environment.  Now initialise
-   // Valgrind.  (This is where the old VG_(main)() started.)
+   //
+   // Finished loading/setting up the client address space.
+   //
    //==============================================================
 
    //--------------------------------------------------------------
@@ -2738,68 +2296,130 @@ int main(int argc, char **argv, char **envp)
    setup_file_descriptors();
 
    //--------------------------------------------------------------
-   // Build segment map (Valgrind segments only)
-   //   p: tl_pre_clo_init()  [to setup new_mem_startup tracker]
+   // create the fake /proc/<pid>/cmdline file and then unlink it,
+   // but hold onto the fd, so we can hand it out to the client
+   // when it tries to open /proc/<pid>/cmdline for itself.
+   //   p: setup file descriptors
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 1)\n");
-   VG_(parse_procselfmaps) ( build_valgrind_map_callback );
+   if (!need_help) {
+      HChar  buf[50], buf2[50+64];
+      HChar  nul[1];
+      Int    fd, r;
+      HChar* exename;
 
-   //==============================================================
-   // Can use VG_(arena_malloc)() with non-CORE arena after segments set up
-   //==============================================================
+      VG_(debugLog)(1, "main", "Create fake /proc/<pid>/cmdline\n");
+
+      VG_(sprintf)(buf, "proc_%d_cmdline", VG_(getpid)());
+      fd = VG_(mkstemp)( buf, buf2 );
+      if (fd == -1)
+         config_error("Can't create client cmdline file in /tmp.");
+
+      nul[0] = 0;
+      exename = VG_(args_the_exename) ? VG_(args_the_exename)
+                                      : "unknown_exename";
+
+      VG_(write)(fd, VG_(args_the_exename), 
+                     VG_(strlen)( VG_(args_the_exename) ));
+      VG_(write)(fd, nul, 1);
+
+      for (i = 0; i < VG_(args_for_client).used; i++) {
+         VG_(write)(fd, VG_(args_for_client).strs[i],
+                        VG_(strlen)( VG_(args_for_client).strs[i] ));
+         VG_(write)(fd, nul, 1);
+      }
+
+      /* Don't bother to seek the file back to the start; instead do
+	 it every time a copy of it is given out (by PRE(sys_open)). 
+	 That is probably more robust across fork() etc. */
+
+      /* Now delete it, but hang on to the fd. */
+      r = VG_(unlink)( buf2 );
+      if (r)
+         config_error("Can't delete client cmdline file in /tmp.");
+
+      VG_(cl_cmdline_fd) = fd;
+   }
 
    //--------------------------------------------------------------
-   // Init tool: pre_clo_init, process cmd line, post_clo_init
+   // Init tool part 1: pre_clo_init
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
-   //   p: load_tool()               [for 'toolinfo']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise the tool\n");
-   (*toolinfo->tl_pre_clo_init)();
-   VG_(sanity_check_needs)();
+   {
+      Char* s;
+      Bool  ok;
+      VG_(debugLog)(1, "main", "Initialise the tool part 1 (pre_clo_init)\n");
+      (VG_(tool_info).tl_pre_clo_init)();
+      ok = VG_(sanity_check_needs)( &s );
+      if (!ok) {
+         VG_(tool_panic)(s);
+      }
+   }
 
+   //--------------------------------------------------------------
    // If --tool and --help/--help-debug was given, now give the core+tool
    // help message
+   //   p: get_helprequest_and_toolname() [for 'need_help']
+   //   p: tl_pre_clo_init                [for 'VG_(tdict).usage']
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Print help and quit, if requested\n");
    if (need_help) {
-      usage(/*--help-debug?*/2 == need_help);
+      usage_NORETURN(/*--help-debug?*/2 == need_help);
    }
-   process_cmd_line_options(client_auxv, tool);
 
+   //--------------------------------------------------------------
+   // Process command line options to Valgrind + tool
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Process Valgrind's command line options, "
+                            "setup logging\n");
+   logging_to_fd = process_cmd_line_options(client_auxv, toolname);
+
+   //--------------------------------------------------------------
+   // Zeroise the millisecond counter by doing a first read of it.
+   //   p: none
+   //--------------------------------------------------------------
+   (void) VG_(read_millisecond_timer)();
+
+   //--------------------------------------------------------------
+   // Print the preamble
+   //   p: tl_pre_clo_init            [for 'VG_(details).name' and friends]
+   //   p: process_cmd_line_options() [for VG_(clo_verbosity), VG_(clo_xml),
+   //                                      VG_(clo_log_file_qualifier),
+   //                                      logging_to_fd]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Print the preamble...\n");
+   print_preamble(logging_to_fd, toolname);
+   VG_(debugLog)(1, "main", "...finished the preamble\n");
+
+   //--------------------------------------------------------------
+   // Init tool part 2: post_clo_init
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //   p: print_preamble()          [so any warnings printed in post_clo_init
+   //                                 are shown after the preamble]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
+   VG_(printf)("Post clo init!m_main\n");
    VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
-   // Build segment map (all segments)
-   //   p: shadow/redzone segments
-   //   p: setup_client_stack()  [for 'sp_at_startup']
-   //   p: init tool             [for 'new_mem_startup']
+   // Initialise translation table and translation cache
+   //   p: aspacem         [??]
+   //   p: tl_pre_clo_init [for 'VG_(details).avg_translation_sizeB']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n");
-   sp_at_startup___global_arg = sp_at_startup;
-   VG_(parse_procselfmaps) ( build_segment_map_callback );  /* everything */
-   sp_at_startup___global_arg = 0;
-   
-#if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
-   //--------------------------------------------------------------
-   // Protect client trampoline page (which is also sysinfo stuff)
-   //   p: segment stuff   [otherwise get seg faults...]
-   //--------------------------------------------------------------
-   {
-      Segment *seg;
-      VG_(mprotect)( (void *)VG_(client_trampoline_code),
-		     VG_(trampoline_code_length), VKI_PROT_READ|VKI_PROT_EXEC );
+   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+   VG_(printf)("init tt_cc\n");
+   VG_(init_tt_tc)();
 
-      /* Make sure this segment isn't treated as stack */
-      seg = VG_(find_segment)(VG_(client_trampoline_code));
-      if (seg)
-	 seg->flags &= ~(SF_STACK | SF_GROWDOWN);
-   }
-#endif
-
-   //==============================================================
-   // Can use VG_(map)() after segments set up
-   //==============================================================
+   //--------------------------------------------------------------
+   // Initialise the redirect table.
+   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
+   //   p: aspacem [so can change ownership of sysinfo pages]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise redirects\n");
+   VG_(setup_code_redirect_table)();
 
    //--------------------------------------------------------------
    // Allow GDB attach
@@ -2808,6 +2428,7 @@ int main(int argc, char **argv, char **envp)
    /* Hook to delay things long enough so we can get the pid and
       attach GDB in another shell. */
    if (VG_(clo_wait_for_gdb)) {
+      Long q, iters;
       VG_(debugLog)(1, "main", "Wait for GDB\n");
       VG_(printf)("pid=%d, entering delay loop\n", VG_(getpid)());
       /* jrs 20050206: I don't understand why this works on x86.  On
@@ -2815,7 +2436,20 @@ int main(int argc, char **argv, char **envp)
          work. */
       /* do "jump *$eip" to skip this in gdb (x86) */
       //VG_(do_syscall0)(__NR_pause);
-      { Long q; for (q = 0; q < 10ULL *1000*1000*1000; q++) ; }
+
+#     if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)
+      iters = 5;
+#     elif defined(VGP_amd64_linux) || defined(VGP_ppc64_linux)
+      iters = 10;
+#     elif defined(VGP_ppc32_linux)
+      iters = 5;
+#     else
+#     error "Unknown plat"
+#     endif
+
+      iters *= 1000*1000*1000;
+      for (q = 0; q < iters; q++) 
+         ;
    }
 
    //--------------------------------------------------------------
@@ -2828,11 +2462,120 @@ int main(int argc, char **argv, char **envp)
    }
 
    //--------------------------------------------------------------
+   // Load debug info for the existing segments.
+   //   p: setup_code_redirect_table [so that redirs can be recorded]
+   //   p: mallocfree
+   //   p: probably: setup fds and process CLOs, so that logging works
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Load initial debug info\n");
+   { Addr* seg_starts;
+     Int   n_seg_starts;
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
+     /* show them all to the debug info reader.  allow_SkFileV has to
+        be True here so that we read info from the valgrind executable
+        itself. */
+     for (i = 0; i < n_seg_starts; i++)
+        VG_(di_notify_mmap)( seg_starts[i], True/*allow_SkFileV*/ );
+
+     VG_(free)( seg_starts );
+   }
+
+   //--------------------------------------------------------------
+   // Tell aspacem of ownership change of the asm helpers, so that
+   // m_translate allows them to be translated.  However, only do this
+   // after the initial debug info read, since making a hole in the
+   // address range for the stage2 binary confuses the debug info reader.
+   //   p: aspacem
+   //--------------------------------------------------------------
+   { Bool change_ownership_v_c_OK;
+     Addr co_start   = VG_PGROUNDDN( (Addr)&VG_(trampoline_stuff_start) );
+     Addr co_endPlus = VG_PGROUNDUP( (Addr)&VG_(trampoline_stuff_end) );
+     VG_(debugLog)(1,"redir",
+                     "transfer ownership V -> C of 0x%llx .. 0x%llx\n",
+                     (ULong)co_start, (ULong)co_endPlus-1 );
+
+     change_ownership_v_c_OK 
+        = VG_(am_change_ownership_v_to_c)( co_start, co_endPlus - co_start );
+     vg_assert(change_ownership_v_c_OK);
+   }
+
+   //--------------------------------------------------------------
+   // Tell the tool about the initial client memory permissions
+   //   p: aspacem
+   //   p: mallocfree
+   //   p: setup_client_stack
+   //   p: setup_client_dataseg
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Tell tool about initial permissions\n");
+   { Addr*     seg_starts;
+     Int       n_seg_starts;
+     NSegment* seg;
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
+     /* show interesting ones to the tool */
+     for (i = 0; i < n_seg_starts; i++) {
+        seg = VG_(am_find_nsegment)( seg_starts[i] );
+        vg_assert(seg);
+        if (seg->kind == SkFileC || seg->kind == SkAnonC) {
+           VG_(debugLog)(2, "main", 
+                            "tell tool about %010lx-%010lx %c%c%c\n",
+                             seg->start, seg->end,
+                             seg->hasR ? 'r' : '-',
+                             seg->hasW ? 'w' : '-',
+                             seg->hasX ? 'x' : '-' );
+           VG_TRACK( new_mem_startup, seg->start, seg->end+1-seg->start, 
+                                      seg->hasR, seg->hasW, seg->hasX );
+        }
+     }
+
+     VG_(free)( seg_starts );
+
+     /* Also do the initial stack permissions. */
+     seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+
+     /* Stuff below the initial SP is unaddressable.  Take into
+	account any ABI-mandated space below the stack pointer that is
+	required (VG_STACK_REDZONE_SZB).  setup_client_stack() will
+	have allocated an extra page if a red zone is required, to be on 
+        the safe side. */
+     vg_assert(initial_client_SP - VG_STACK_REDZONE_SZB >= seg->start);
+     VG_TRACK( die_mem_stack, seg->start, initial_client_SP 
+                                          - VG_STACK_REDZONE_SZB - seg->start );
+     VG_(debugLog)(2, "main", "mark stack inaccessible %010lx-%010lx\n",
+                      seg->start, initial_client_SP-1 - VG_STACK_REDZONE_SZB);
+
+     /* Also the assembly helpers. */
+     VG_TRACK( new_mem_startup,
+               (Addr)&VG_(trampoline_stuff_start),
+               (Addr)&VG_(trampoline_stuff_end) 
+                  - (Addr)&VG_(trampoline_stuff_start),
+               False, /* readable? */
+               False, /* writable? */
+               True   /* executable? */ );
+   }
+
+   //--------------------------------------------------------------
    // Initialise the scheduler
    //   p: setup_file_descriptors() [else VG_(safe_fd)() breaks]
+   //   p: setup_client_stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise scheduler\n");
-   VG_(scheduler_init)();
+   { NSegment* seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+     VG_(scheduler_init)( seg->end, clstack_max_size );
+   }
 
    //--------------------------------------------------------------
    // Initialise the pthread model
@@ -2842,7 +2585,8 @@ int main(int argc, char **argv, char **envp)
    //      setup_scheduler()      [for the rest of state 1 stuff]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise thread 1's state\n");
-   init_thread1state(client_eip, sp_at_startup, &VG_(threads)[1].arch);
+   init_thread1state( initial_client_IP, initial_client_SP, 
+                      &VG_(threads)[1].arch);
 
    //--------------------------------------------------------------
    // Initialise the pthread model
@@ -2860,23 +2604,6 @@ int main(int argc, char **argv, char **envp)
    VG_(sigstartup_actions)();
 
    //--------------------------------------------------------------
-   // Perhaps we're profiling Valgrind?
-   //   p: process_cmd_line_options()  [for VG_(clo_profile)]
-   //   p: others?
-   //
-   // XXX: this seems to be broken?   It always says the tool wasn't built
-   // for profiling;  vg_profile.c's functions don't seem to be overriding
-   // vg_dummy_profile.c's?
-   //
-   // XXX: want this as early as possible.  Looking for --profile
-   // in pre_process_cmd_line_options() could get it earlier.
-   //--------------------------------------------------------------
-   if (VG_(clo_profile))
-      VG_(init_profiling)();
-
-   VGP_PUSHCC(VgpStartup);
-
-   //--------------------------------------------------------------
    // Read suppression file
    //   p: process_cmd_line_options()  [for VG_(clo_suppressions)]
    //--------------------------------------------------------------
@@ -2886,124 +2613,61 @@ int main(int argc, char **argv, char **envp)
    }
 
    //--------------------------------------------------------------
-   // Initialise translation table and translation cache
-   //   p: read_procselfmaps  [so the anonymous mmaps for the TT/TC
-   //         aren't identified as part of the client, which would waste
-   //         > 20M of virtual address space.]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
-   VG_(init_tt_tc)();
-
-   //--------------------------------------------------------------
-   // Read debug info to find glibc entry points to intercept
-   //   p: parse_procselfmaps? [XXX for debug info?]
-   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise redirects\n");
-   VG_(setup_code_redirect_table)();
-
-   //--------------------------------------------------------------
-   // Verbosity message
-   //   p: end_rdtsc_calibration [so startup message is printed first]
-   //--------------------------------------------------------------
-   if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "For more details, rerun with: -v");
-   if (VG_(clo_verbosity) > 0)
-      VG_(message)(Vg_UserMsg, "");
-
-   //--------------------------------------------------------------
-   // Setup pointercheck
-   //   p: layout_remaining_space() [for VG_(client_{base,end})]
-   //   p: process_cmd_line_options() [for VG_(clo_pointercheck)]
-   //--------------------------------------------------------------
-   if (VG_(clo_pointercheck))
-      VG_(clo_pointercheck) =
-         VGA_(setup_pointercheck)( VG_(client_base), VG_(client_end));
-
-   //--------------------------------------------------------------
    // register client stack
    //--------------------------------------------------------------
-   VG_(clstk_id) = VG_(handle_stack_register)(VG_(clstk_base), VG_(clstk_end));
+   VG_(clstk_id) = VG_(register_stack)(VG_(clstk_base), VG_(clstk_end));
+
+   //--------------------------------------------------------------
+   // Show the address space state so far
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(am_show_nsegments)(1,"Memory layout at client startup");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
 
    //--------------------------------------------------------------
    // Run!
    //--------------------------------------------------------------
-   VGP_POPCC(VgpStartup);
-
    if (VG_(clo_xml)) {
-      VG_(message)(Vg_UserMsg, "<status>RUNNING</status>");
+      HChar buf[50];
+      VG_(elapsed_wallclock_time)(buf);
+      VG_(message)(Vg_UserMsg, "<status>\n"
+                               "  <state>RUNNING</state>\n"
+                               "  <time>%t</time>\n"
+                               "</status>", 
+                               buf);
       VG_(message)(Vg_UserMsg, "");
    }
 
    VG_(debugLog)(1, "main", "Running thread 1\n");
+
    /* As a result of the following call, the last thread standing
-      eventually winds up running VG_(shutdown_actions_NORETURN) just
-      below. */
-   VGP_(main_thread_wrapper_NORETURN)(1);
+      eventually winds up running shutdown_actions_NORETURN
+      just below.  Unfortunately, simply exporting said function
+      causes m_main to be part of a module cycle, which is pretty
+      nonsensical.  So instead of doing that, the address of said
+      function is stored in a global variable 'owned' by m_syswrap,
+      and it uses that function pointer to get back here when it needs
+      to. */
+
+   /* Set continuation address. */
+   VG_(address_of_m_main_shutdown_actions_NORETURN)
+      = & shutdown_actions_NORETURN;
+
+   /* Run the first thread, eventually ending up at the continuation
+      address. */
+   VG_(main_thread_wrapper_NORETURN)(1);
 
    /*NOTREACHED*/
    vg_assert(0);
 }
 
+/* Do everything which needs doing when the last thread exits. */
 
-/* The we need to know the address of it so it can be
-   called at program exit. */
-static Addr __libc_freeres_wrapper;
-
-void VG_(set_libc_freeres_wrapper_addr)(Addr addr)
-{
-   __libc_freeres_wrapper = addr;
-}
-
-/* Final clean-up before terminating the process.  
-   Clean up the client by calling __libc_freeres() (if requested) 
-   This is Linux-specific?
-*/
-static void final_tidyup(ThreadId tid)
-{
-   vg_assert(VG_(is_running_thread)(tid));
-   
-   if (!VG_(needs).libc_freeres ||
-       !VG_(clo_run_libc_freeres) ||
-       __libc_freeres_wrapper == 0)
-      return;			/* can't/won't do it */
-
-   if (VG_(clo_verbosity) > 2  ||
-       VG_(clo_trace_syscalls) ||
-       VG_(clo_trace_sched))
-      VG_(message)(Vg_DebugMsg, 
-		   "Caught __NR_exit; running __libc_freeres()");
-      
-   /* point thread context to point to libc_freeres_wrapper */
-   VG_(set_IP)(tid, __libc_freeres_wrapper);
-   // XXX should we use a special stack?
-
-   /* Block all blockable signals by copying the real block state into
-      the thread's block state*/
-   VG_(sigprocmask)(VKI_SIG_BLOCK, NULL, &VG_(threads)[tid].sig_mask);
-   VG_(threads)[tid].tmp_sig_mask = VG_(threads)[tid].sig_mask;
-
-   /* and restore handlers to default */
-   VG_(set_default_handler)(VKI_SIGSEGV);
-   VG_(set_default_handler)(VKI_SIGBUS);
-   VG_(set_default_handler)(VKI_SIGILL);
-   VG_(set_default_handler)(VKI_SIGFPE);
-
-   // We were exiting, so assert that...
-   vg_assert(VG_(is_exiting)(tid));
-   // ...but now we're not again
-   VG_(threads)[tid].exitreason = VgSrc_None;
-
-   // run until client thread exits - ideally with LIBC_FREERES_DONE,
-   // but exit/exitgroup/signal will do
-   VG_(scheduler)(tid);
-
-   vg_assert(VG_(is_exiting)(tid));
-}
-
-/* Do everything which needs doing when the last thread exits */
-void VG_(shutdown_actions_NORETURN) ( ThreadId tid, 
-                                      VgSchedReturnCode tids_schedretcode )
+static 
+void shutdown_actions_NORETURN( ThreadId tid, 
+                                VgSchedReturnCode tids_schedretcode )
 {
    VG_(debugLog)(1, "main", "entering VG_(shutdown_actions_NORETURN)\n");
 
@@ -3033,11 +2697,17 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
       VG_(message)(Vg_UserMsg, "");
 
    if (VG_(clo_xml)) {
+      HChar buf[50];
       if (VG_(needs).core_errors || VG_(needs).tool_errors) {
          VG_(show_error_counts_as_XML)();
          VG_(message)(Vg_UserMsg, "");
       }
-      VG_(message)(Vg_UserMsg, "<status>FINISHED</status>");
+      VG_(elapsed_wallclock_time)(buf);
+      VG_(message)(Vg_UserMsg, "<status>\n"
+                               "  <state>FINISHED</state>\n"
+                               "  <time>%t</time>\n"
+                               "</status>", 
+                               buf);
       VG_(message)(Vg_UserMsg, "");
    }
 
@@ -3061,10 +2731,12 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
    if (VG_(clo_verbosity) > 1)
       print_all_stats();
 
-   if (VG_(clo_profile))
-      VG_(done_profiling)();
-   if (VG_(clo_profile_flags) > 0)
-      VG_(show_BB_profile)();
+   if (VG_(clo_profile_flags) > 0) {
+      #define N_MAX 100
+      BBProfEntry tops[N_MAX];
+      ULong score_total = VG_(get_BB_profile) (tops, N_MAX);
+      show_BB_profile(tops, N_MAX, score_total);
+   }
 
    /* Print Vex storage stats */
    if (0)
@@ -3096,6 +2768,265 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
    default:
       VG_(core_panic)("main(): unexpected scheduler return code");
    }
+}
+
+/* -------------------- */
+
+/* Final clean-up before terminating the process.  
+   Clean up the client by calling __libc_freeres() (if requested) 
+   This is Linux-specific?
+*/
+static void final_tidyup(ThreadId tid)
+{
+#  if defined(VGP_ppc64_linux)
+   Addr r2;
+#  endif
+   Addr __libc_freeres_wrapper = VG_(client___libc_freeres_wrapper);
+
+   vg_assert(VG_(is_running_thread)(tid));
+   
+   if ( !VG_(needs).libc_freeres ||
+        !VG_(clo_run_libc_freeres) ||
+        0 == __libc_freeres_wrapper )
+      return;			/* can't/won't do it */
+
+#  if defined(VGP_ppc64_linux)
+   r2 = VG_(get_tocptr)( __libc_freeres_wrapper );
+   if (r2 == 0) {
+      VG_(message)(Vg_UserMsg, 
+                   "Caught __NR_exit, but can't run __libc_freeres()");
+      VG_(message)(Vg_UserMsg, 
+                   "   since cannot establish TOC pointer for it.");
+      return;
+   }
+#  endif
+
+   if (VG_(clo_verbosity) > 2  ||
+       VG_(clo_trace_syscalls) ||
+       VG_(clo_trace_sched))
+      VG_(message)(Vg_DebugMsg, 
+		   "Caught __NR_exit; running __libc_freeres()");
+      
+   /* set thread context to point to libc_freeres_wrapper */
+   /* ppc64-linux note: __libc_freeres_wrapper gives us the real
+      function entry point, not a fn descriptor, so can use it
+      directly.  However, we need to set R2 (the toc pointer)
+      appropriately. */
+   VG_(set_IP)(tid, __libc_freeres_wrapper);
+#  if defined(VGP_ppc64_linux)
+   VG_(threads)[tid].arch.vex.guest_GPR2 = r2;
+#  endif
+
+   /* Block all blockable signals by copying the real block state into
+      the thread's block state*/
+   VG_(sigprocmask)(VKI_SIG_BLOCK, NULL, &VG_(threads)[tid].sig_mask);
+   VG_(threads)[tid].tmp_sig_mask = VG_(threads)[tid].sig_mask;
+
+   /* and restore handlers to default */
+   VG_(set_default_handler)(VKI_SIGSEGV);
+   VG_(set_default_handler)(VKI_SIGBUS);
+   VG_(set_default_handler)(VKI_SIGILL);
+   VG_(set_default_handler)(VKI_SIGFPE);
+
+
+   // We were exiting, so assert that...
+   vg_assert(VG_(is_exiting)(tid));
+   // ...but now we're not again
+   VG_(threads)[tid].exitreason = VgSrc_None;
+
+   // run until client thread exits - ideally with LIBC_FREERES_DONE,
+   // but exit/exitgroup/signal will do
+   VG_(scheduler)(tid);
+
+   vg_assert(VG_(is_exiting)(tid));
+}
+
+
+/*====================================================================*/
+/*=== Getting to main() alive                                      ===*/
+/*====================================================================*/
+
+/* If linking of the final executables is done with glibc present,
+   then Valgrind starts at main() above as usual, and all of the
+   following code is irrelevant.
+
+   However, this is not the intended mode of use.  The plan is to
+   avoid linking against glibc, by giving gcc the flags 
+   -nodefaultlibs -lgcc -nostartfiles at startup.
+
+   From this derive two requirements:
+
+   1. gcc may emit calls to memcpy and memset to deal with structure
+      assignments etc.  Since we have chosen to ignore all the
+      "normal" supporting libraries, we have to provide our own
+      implementations of them.  No problem.
+
+   2. We have to provide a symbol "_start", to which the kernel
+      hands control at startup.  Hence the code below.
+*/
+
+/* ---------------- Requirement 1 ---------------- */
+
+void* memcpy(void *dest, const void *src, size_t n);
+void* memcpy(void *dest, const void *src, size_t n) {
+   return VG_(memcpy)(dest,src,n);
+}
+void* memset(void *s, int c, size_t n);
+void* memset(void *s, int c, size_t n) {
+  return VG_(memset)(s,c,n);
+}
+
+/* ---------------- Requirement 2 ---------------- */
+
+/* Glibc's sysdeps/i386/elf/start.S has the following gem of a
+   comment, which explains how the stack looks right at process start
+   (when _start is jumped to).  Hence _start passes %esp to
+   _start_in_C, which extracts argc/argv/envp and starts up
+   correctly. */
+
+/* This is the canonical entry point, usually the first thing in the text
+   segment.  The SVR4/i386 ABI (pages 3-31, 3-32) says that when the entry
+   point runs, most registers' values are unspecified, except for:
+
+   %edx         Contains a function pointer to be registered with `atexit'.
+                This is how the dynamic linker arranges to have DT_FINI
+                functions called for shared libraries that have been loaded
+                before this code runs.
+
+   %esp         The stack contains the arguments and environment:
+                0(%esp)                 argc
+                4(%esp)                 argv[0]
+                ...
+                (4*argc)(%esp)          NULL
+                (4*(argc+1))(%esp)      envp[0]
+                ...
+                                        NULL
+*/
+
+/* The kernel hands control to _start, which extracts the initial
+   stack pointer and calls onwards to _start_in_C.  This also switches
+   the new stack.  */
+#if defined(VGP_x86_linux) || defined(VGP_x86_netbsdelf2)  /* XXX correct?! */
+asm("\n"
+    ".text\n"
+    "\t.globl _start\n" 
+    "\t.globl __start\n" 
+    "\t.type _start,@function\n"
+    "_start:\n" 
+    "__start:\n" 
+    /* set up the new stack in %eax */
+    "\tmovl  $vgPlain_interim_stack, %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %eax\n"
+    "\tsubl  $16, %eax\n"
+    "\tandl  $~15, %eax\n"
+    /* install it, and collect the original one */
+    "\txchgl %eax, %esp\n"
+    /* call _start_in_C, passing it the startup %esp */
+    "\tpushl %eax\n"
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+    ".previous\n"
+);
+#elif defined(VGP_amd64_linux)
+asm("\n"
+    ".text\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    /* set up the new stack in %rdi */
+    "\tmovq  $vgPlain_interim_stack, %rdi\n"
+    "\taddq  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %rdi\n"
+    "\taddq  $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %rdi\n"
+    "\tandq  $~15, %rdi\n"
+    /* install it, and collect the original one */
+    "\txchgq %rdi, %rsp\n"
+    /* call _start_in_C, passing it the startup %rsp */
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+    ".previous\n"
+);
+#elif defined(VGP_ppc32_linux)
+asm("\n"
+    ".text\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    /* set up the new stack in r16 */
+    "\tlis 16,vgPlain_interim_stack@ha\n"
+    "\tla  16,vgPlain_interim_stack@l(16)\n"
+    "\tlis    17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" >> 16)\n"
+    "\tori 17,17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" & 0xFFFF)\n"
+    "\tlis    18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" >> 16)\n"
+    "\tori 18,18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" & 0xFFFF)\n"
+    "\tadd 16,17,16\n"
+    "\tadd 16,18,16\n"
+    "\trlwinm 16,16,0,0,27\n"
+    /* now r16 = &vgPlain_interim_stack + VG_STACK_GUARD_SZB +
+       VG_STACK_ACTIVE_SZB rounded down to the nearest 16-byte
+       boundary.  And r1 is the original SP.  Set the SP to r16 and
+       call _start_in_C, passing it the initial SP. */
+    "\tmr 3,1\n"
+    "\tmr 1,16\n"
+    "\tbl _start_in_C\n"
+    "\ttrap\n"
+    ".previous\n"
+);
+#elif defined(VGP_ppc64_linux)
+asm("\n"
+    /* PPC64 ELF ABI says '_start' points to a function descriptor.
+       So we must have one, and that is what goes into the .opd section. */
+    "\t.align 2\n"
+    "\t.global _start\n"
+    "\t.section \".opd\",\"aw\"\n"
+    "\t.align 3\n"
+    "_start:\n"
+    "\t.quad ._start,.TOC.@tocbase,0\n"
+    "\t.previous\n"
+    "\t.type ._start,@function\n"
+    "\t.global  ._start\n"
+    "._start:\n"
+    /* set up the new stack in r16 */
+    "\tlis  16,   vgPlain_interim_stack@highest\n"
+    "\tori  16,16,vgPlain_interim_stack@higher\n"
+    "\tsldi 16,16,32\n"
+    "\toris 16,16,vgPlain_interim_stack@h\n"
+    "\tori  16,16,vgPlain_interim_stack@l\n"
+    "\txor  17,17,17\n"
+    "\tlis    17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" >> 16)\n"
+    "\tori 17,17,("VG_STRINGIFY(VG_STACK_GUARD_SZB)" & 0xFFFF)\n"
+    "\txor 18,18,18\n"
+    "\tlis    18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" >> 16)\n"
+    "\tori 18,18,("VG_STRINGIFY(VG_STACK_ACTIVE_SZB)" & 0xFFFF)\n"
+    "\tadd 16,17,16\n"
+    "\tadd 16,18,16\n"
+    "\trldicr 16,16,0,59\n"
+    /* now r16 = &vgPlain_interim_stack + VG_STACK_GUARD_SZB +
+       VG_STACK_ACTIVE_SZB rounded down to the nearest 16-byte
+       boundary.  And r1 is the original SP.  Set the SP to r16 and
+       call _start_in_C, passing it the initial SP. */
+    "\tmr 3,1\n"
+    "\tmr 1,16\n"
+    "\tbl ._start_in_C\n"
+    "\tnop\n"
+    "\ttrap\n"
+);
+#else
+#error "_start: needs implementation on this platform"
+#endif
+
+/* Avoid compiler warnings: this fn _is_ used, but labelling it
+   'static' causes gcc to complain it isn't. */
+void _start_in_C ( UWord* pArgc );
+void _start_in_C ( UWord* pArgc )
+{
+   Int     r;
+   Word    argc = pArgc[0];
+   HChar** argv = (HChar**)&pArgc[1];
+   HChar** envp = (HChar**)&pArgc[1+argc+1];
+   sp_at_startup = (Addr)pArgc;
+   r = main( (Int)argc, argv, envp );
+   VG_(exit)(r);
 }
 
 /*--------------------------------------------------------------------*/

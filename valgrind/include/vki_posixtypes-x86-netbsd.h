@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
-/*--- x86/Linux-specific kernel interface: posix types.            ---*/
-/*---                                   vki_posixtypes-x86-linux.h ---*/
+/*--- x86/NetBSD-specific kernel interface: posix types.           ---*/
+/*---                                  vki_posixtypes-x86-netbsd.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*

@@ -1,18 +1,35 @@
-SUBDIRS = xml lib images
 
-EXTRA_DIST = README porting-HOWTO
+##-------------------------------------------------------------
+## HACK: stuff to avoid making the print docs if installing the
+## tools to do so is impractical / too difficult
+##-------------------------------------------------------------
 
-dist_man_MANS = valgrind.1	# Unsure about this --njn
+# Comment out the next line to skip building print docs.  The default
+# is not to skip building print docs.  Note, after changing it
+# you of course need to re-run configure to make it take effect.
+BUILD_ALL_DOCS=yes
+
+##-------------------------------------------------------------
+## END OF HACK
+##-------------------------------------------------------------
+
+
+SUBDIRS = xml lib images internals
+
+EXTRA_DIST = README
+
+dist_man_MANS = valgrind.1
+
 
 ##-------------------------------------------------------------------
 ## Below here is more ordinary make stuff...
 ##-------------------------------------------------------------------
-docdir   = ./
-xmldir   = $(docdir)xml
-imgdir   = $(docdir)images
-libdir   = $(docdir)lib
-htmldir  = $(docdir)html
-printdir = $(docdir)print
+myxmldir   = $(top_srcdir)/docs/xml
+myimgdir   = $(top_srcdir)/docs/images
+mylibdir   = $(top_srcdir)/docs/lib
+
+myhtmldir  = $(top_builddir)/docs/html
+myprintdir = $(top_builddir)/docs/print
 
 XML_CATALOG_FILES = /etc/xml/catalog
 
@@ -30,54 +47,89 @@ XSLTPROC       = xsltproc
 XSLTPROC_FLAGS = --nonet --xinclude 
 
 # stylesheets
-XSL_HTML_CHUNK_STYLE  = $(libdir)/vg-html-chunk.xsl
-XSL_HTML_SINGLE_STYLE = $(libdir)/vg-html-single.xsl
-XSL_FO_STYLE          = $(libdir)/vg-fo.xsl
+XSL_HTML_CHUNK_STYLE  = $(mylibdir)/vg-html-chunk.xsl
+XSL_HTML_SINGLE_STYLE = $(mylibdir)/vg-html-single.xsl
+XSL_FO_STYLE          = $(mylibdir)/vg-fo.xsl
 
-all-docs: html-docs print-docs
+all-docs: FAQ.txt html-docs print-docs
 
 valid:
-	$(XMLLINT) $(XMLLINT_FLAGS) $(xmldir)/index.xml
+	$(XMLLINT) $(XMLLINT_FLAGS) $(myxmldir)/index.xml
+
+# The text version of the FAQ.
+FAQ.txt: $(myxmldir)/FAQ.xml $(myxmldir)/vg-entities.xml $(mylibdir)/*.xslt
+	$(XSLTPROC) $(XSLTPROC_FLAGS) $(mylibdir)/untag-inline.xslt $(myxmldir)/FAQ.xml | \
+	$(XSLTPROC) $(XSLTPROC_FLAGS) $(mylibdir)/docbook2text.xslt - > FAQ.txt
+
 
 # chunked html
 html-docs:
 	@echo "Generating html files..."
-	export XML_CATALOG_FILES=$(XML_CATALOG_FILES)
-	mkdir -p $(htmldir)
-	/bin/rm -fr $(htmldir)/
-	mkdir -p $(htmldir)/
-	mkdir -p $(htmldir)/images
-	cp $(libdir)/vg_basic.css $(htmldir)/
-	cp $(imgdir)/*.png $(htmldir)/images
-	$(XSLTPROC) $(XSLTPROC_FLAGS) -o $(htmldir)/ $(XSL_HTML_CHUNK_STYLE) $(xmldir)/index.xml
+	export XML_CATALOG_FILES=$(XML_CATALOG_FILES) && \
+	mkdir -p $(myhtmldir) && \
+	/bin/rm -fr $(myhtmldir)/ && \
+	mkdir -p $(myhtmldir)/ && \
+	mkdir -p $(myhtmldir)/images && \
+	cp $(mylibdir)/vg_basic.css $(myhtmldir)/ && \
+	cp $(myimgdir)/*.png $(myhtmldir)/images && \
+	$(XSLTPROC) $(XSLTPROC_FLAGS) -o $(myhtmldir)/ $(XSL_HTML_CHUNK_STYLE) $(myxmldir)/index.xml
 
 # pdf and postscript
 print-docs:
-	@echo "Generating PDF file: $(printdir)/index.pdf (please be patient)...";
-	export XML_CATALOG_FILES=$(XML_CATALOG_FILES);
-	mkdir -p $(printdir);
-	mkdir -p $(printdir)/images;
-	cp $(imgdir)/massif-graph-sm.png $(printdir)/images;
-	$(XSLTPROC) $(XSLTPROC_FLAGS) -o $(printdir)/index.fo $(XSL_FO_STYLE) $(xmldir)/index.xml;
-	(cd $(printdir); \
-	 pdfxmltex index.fo &> $(LOGFILE); \
-	 pdfxmltex index.fo &> $(LOGFILE); \
-	 pdfxmltex index.fo &> $(LOGFILE); \
-	 echo "Generating PS file: $(printdir)/index.ps ..."; \
-	 pdftops index.pdf; \
-	 rm *.log *.aux *.fo *.out)
+	@echo "Generating PDF file: $(myprintdir)/index.pdf (please be patient)...";
+	export XML_CATALOG_FILES=$(XML_CATALOG_FILES) && \
+	mkdir -p $(myprintdir) && \
+	mkdir -p $(myprintdir)/images && \
+	cp $(myimgdir)/massif-graph-sm.png $(myprintdir)/images && \
+	$(XSLTPROC) $(XSLTPROC_FLAGS) -o $(myprintdir)/index.fo $(XSL_FO_STYLE) $(myxmldir)/index.xml && \
+	(cd $(myprintdir) && \
+         ( pdfxmltex index.fo && \
+	   pdfxmltex index.fo && \
+	   pdfxmltex index.fo ) &> $(LOGFILE) < /dev/null && \
+	 echo "Generating PS file: $(myprintdir)/index.ps ..." && \
+	 pdftops index.pdf && \
+	 rm -f *.log *.aux *.fo *.out)
 
 # If the docs have been built, install them.  But don't worry if they have 
 # not -- developers do 'make install' not from a 'make dist'-ified distro all
 # the time.
+#
+# Note: this is done at 'make install' time.
+# Note 2: the ifeq/else/endif have to be indented one space 
+# because otherwise it seems that automake thinks it should
+# be the one to handle the else/endif parts, not GNU make
+# as we intend.
 install-data-hook:
 	if test -r html ; then \
-		mkdir -p $(datadir)/doc/valgrind/; \
-		cp -r html $(datadir)/doc/valgrind/; \
+		mkdir -p $(DESTDIR)$(datadir)/doc/valgrind/; \
+		cp -r html $(DESTDIR)$(datadir)/doc/valgrind/; \
 	fi
+ ifeq ($(BUILD_ALL_DOCS),yes)
+	if test -r index.pdf ; then \
+		mkdir -p $(DESTDIR)$(datadir)/doc/valgrind/; \
+		cp index.pdf $(DESTDIR)$(datadir)/doc/valgrind/valgrind_manual.pdf; \
+	fi
+	if test -r index.ps ; then \
+		mkdir -p $(DESTDIR)$(datadir)/doc/valgrind/; \
+		cp index.ps $(DESTDIR)$(datadir)/doc/valgrind/valgrind_manual.ps; \
+	fi
+ endif
 
-dist-hook: html-docs
-	cp -r html $(distdir)	
+
+# This is done at 'make dist' time.  It builds the html and print docs
+# and copies them into the docs/ directory in the tarball.
+ ifeq ($(BUILD_ALL_DOCS),yes)
+dist-hook: FAQ.txt html-docs print-docs
+	cp -r html $(distdir)
+	cp FAQ.txt $(distdir)/..
+	cp print/index.pdf $(distdir)
+	cp print/index.ps $(distdir)
+ else
+dist-hook: FAQ.txt html-docs
+	cp FAQ.txt $(distdir)/..
+	cp -r html $(distdir)
+ endif
 
 distclean-local:
 	rm -rf html print
+	rm -f $(top_builddir)/FAQ.txt

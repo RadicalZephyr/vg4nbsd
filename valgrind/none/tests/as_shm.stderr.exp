@@ -1,0 +1,4 @@
+
+Warning: client syscall shmat tried to modify addresses 0x........-0x........
+shmat @ top: Invalid argument
+

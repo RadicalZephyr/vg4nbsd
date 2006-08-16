@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- x86/Linux-specific kernel interface.         vki-x86-linux.h ---*/
+/*--- x86/NetBSD-specific kernel interface.       vki-x86-netbsd.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -43,6 +43,7 @@ typedef unsigned char __vki_u8;
 typedef __signed__ short __vki_s16;
 typedef unsigned short __vki_u16;
 
+typedef __signed__ int __vki_s32;
 typedef unsigned int __vki_u32;
 
 typedef __signed__ long long __vki_s64;
@@ -80,15 +81,14 @@ typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 #define VKI_SIG_DFL	((__vki_sighandler_t)0)	/* default signal handling */
 #define VKI_SIG_IGN	((__vki_sighandler_t)1)	/* ignore signal */
 
-
-#define _VKI_NSIG       64  /* true for linux 2.2.X and 2.4.X */
-#define _VKI_NSIG_BPW   32  /* since we're using UInts */
-#define _VKI_NSIG_WORDS 4
+#define _VKI_NSIG	64
+#define _VKI_NSIG_BPW	32
+#define _VKI_NSIG_WORDS	(_VKI_NSIG / _VKI_NSIG_BPW)
 
 typedef unsigned long vki_old_sigset_t;		/* at least 32 bits */
 
 typedef struct {
-	unsigned long sig[_VKI_NSIG_WORDS];
+	unsigned long sig[4];
 } vki_sigset_t;
 
 #define VKI_SIGHUP		 1
@@ -250,49 +250,15 @@ typedef struct vki_sigcontext {
 #define VKI_PROT_READ	0x1		/* page can be read */
 #define VKI_PROT_WRITE	0x2		/* page can be written */
 #define VKI_PROT_EXEC	0x4		/* page can be executed */
+//#define VKI_PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
+//#define VKI_PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
 
 #define VKI_MAP_SHARED	0x01		/* Share changes */
 #define VKI_MAP_PRIVATE	0x02		/* Changes are private */
 //#define VKI_MAP_TYPE	0x0f		/* Mask for type of mapping */
 #define VKI_MAP_FIXED	0x10		/* Interpret addr exactly */
-#define VKI_MAP_ANONYMOUS	0x20	/* don't use a file */
-#define VKI_MAP_NORESERVE	0x4000		/* don't check for reservations */
-
-//----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/fcntl.h
-//----------------------------------------------------------------------
-
-#define VKI_O_RDONLY	     00
-#define VKI_O_WRONLY	     01
-#define VKI_O_RDWR	     02
-#define VKI_O_CREAT	   0100	/* not fcntl */
-#define VKI_O_EXCL	   0200	/* not fcntl */
-#define VKI_O_TRUNC	  01000	/* not fcntl */
-#define VKI_O_APPEND	  02000
-#define VKI_O_NONBLOCK	  04000
-
-#define VKI_F_DUPFD		0	/* dup */
-#define VKI_F_GETFD		1	/* get close_on_exec */
-#define VKI_F_SETFD		2	/* set/clear close_on_exec */
-#define VKI_F_GETFL		3	/* get file->f_flags */
-#define VKI_F_SETFL		4	/* set file->f_flags */
-#define VKI_F_GETLK		5
-#define VKI_F_SETLK		6
-#define VKI_F_SETLKW		7
-
-#define VKI_F_SETOWN		8	/*  for sockets. */
-#define VKI_F_GETOWN		9	/*  for sockets. */
-#define VKI_F_SETSIG		10	/*  for sockets. */
-#define VKI_F_GETSIG		11	/*  for sockets. */
-
-#define VKI_F_GETLK64		12	/*  using 'struct flock64' */
-#define VKI_F_SETLK64		13
-#define VKI_F_SETLKW64		14
-
-/* for F_[GET|SET]FL */
-#define VKI_FD_CLOEXEC	1	/* actually anything with low bit set goes */
-
-#define VKI_F_LINUX_SPECIFIC_BASE	1024
+#define VKI_MAP_ANONYMOUS	0x1000	/* don't use a file */
+#define VKI_MAP_NORESERVE	0x40		/* don't check for reservations */
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/resource.h
@@ -301,7 +267,7 @@ typedef struct vki_sigcontext {
 #define VKI_RLIMIT_DATA		2	/* max data size */
 #define VKI_RLIMIT_STACK	3	/* max stack size */
 #define VKI_RLIMIT_CORE		4	/* max core file size */
-#define VKI_RLIMIT_NOFILE	7	/* max number of open files */
+#define VKI_RLIMIT_NOFILE	8	/* max number of open files */
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/socket.h
@@ -320,47 +286,30 @@ typedef struct vki_sigcontext {
 #define VKI_SIOCGSTAMP	0x8906		/* Get stamp */
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/stat.h
+// From /usr/include/sys/stat.h
 //----------------------------------------------------------------------
 
-#define VKI_S_IFMT  00170000
-#define VKI_S_IFSOCK 0140000
-#define VKI_S_IFLNK	 0120000
-#define VKI_S_IFREG  0100000
-#define VKI_S_IFBLK  0060000
-#define VKI_S_IFDIR  0040000
-#define VKI_S_IFCHR  0020000
-#define VKI_S_IFIFO  0010000
-#define VKI_S_ISUID  0004000
-#define VKI_S_ISGID  0002000
-#define VKI_S_ISVTX  0001000
-
-#define VKI_S_ISLNK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFLNK)
-#define VKI_S_ISREG(m)	(((m) & VKI_S_IFMT) == VKI_S_IFREG)
-#define VKI_S_ISDIR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFDIR)
-#define VKI_S_ISCHR(m)	(((m) & VKI_S_IFMT) == VKI_S_IFCHR)
-#define VKI_S_ISBLK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFBLK)
-#define VKI_S_ISFIFO(m)	(((m) & VKI_S_IFMT) == VKI_S_IFIFO)
-#define VKI_S_ISSOCK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFSOCK)
-
 struct vki_stat {
-	unsigned int	  st_dev;
-	unsigned int 	  st_ino;
-	unsigned short	  st_mode;
-	unsigned short st_nlink;
-	unsigned int 	  st_uid;
-	unsigned int	  st_gid;
-	unsigned int  st_rdev;
-	struct vki_timespec  st_atimespec;
-	struct vki_timespec	  st_mtimespec;
-	struct vki_timespec st_ctimespec;
-        long long        st_size;
-	long long st_blocks;
-	unsigned int  st_blksize;
-	unsigned int st_flags;
-	unsigned int st_gen;
-	unsigned int st_spare0;
+	vki_u32	  st_dev;		/* inode's device */
+	vki_u32	  st_ino;		/* inode's number */
+	vki_u32	  st_mode;		/* inode protection mode */
+	vki_u32	  st_nlink;		/* number of hard links */
+	vki_u32	  st_uid;		/* user ID of the file's owner */
+	vki_u32	  st_gid;		/* group ID of the file's group */
+	vki_u32	  st_rdev;		/* device type */
+	struct	  vki_timespec st_atimespec;/* time of last access */
+	struct	  vki_timespec st_mtimespec;/* time of last data modification */
+	struct	  vki_timespec st_ctimespec;/* time of last file status change */
+	__vki_u64	  st_size;		/* file size, in bytes */
+	__vki_s64   st_blocks;		/* blocks allocated for file */
+	vki_u32   st_blksize;		/* optimal blocksize for I/O */
+	vki_u32   st_flags;		/* user defined flags for file */
+	vki_u32   st_gen;		/* file generation number */
+	vki_u32   st_spare0;
 	struct vki_timespec st_birthtimespec;
+#if !defined(_LP64)
+	int	__pad5;
+#endif
 };
 
 /* struct vki_stat64 { */
@@ -524,6 +473,7 @@ extern unsigned int __vki_invalid_size_argument_for_IOC;
 #define VKI_TIOCOUTQ	0x5411
 #define VKI_TIOCGWINSZ	0x5413
 #define VKI_TIOCSWINSZ	0x5414
+#define VKI_TIOCMGET	0x5415
 #define VKI_TIOCMBIS	0x5416
 #define VKI_TIOCMBIC	0x5417
 #define VKI_TIOCMSET	0x5418
@@ -672,7 +622,6 @@ struct vki_ucontext {
 	long		__uc_pad[5]; 
 };
 
-
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/segment.h
 //----------------------------------------------------------------------
@@ -786,6 +735,7 @@ struct vki_ipc_kludge {
 #define VKI_SHMDT		22
 #define VKI_SHMGET		23
 #define VKI_SHMCTL		24
+#define VKI_SHM_RDONLY         010000
 
 
 //----------------------------------------------------------------------

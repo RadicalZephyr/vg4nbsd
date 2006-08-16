@@ -30,11 +30,6 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_aspacemgr.h"
-#include "pub_core_libcbase.h"
-#include "pub_core_libcassert.h"
-#include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_tooliface.h"
 
 // The core/tool dictionary of functions (initially zeroed, as we want it)
@@ -45,7 +40,8 @@ VgToolInterface VG_(tdict);
 
 void VG_(basic_tool_funcs)(
    void(*post_clo_init)(void),
-   IRBB*(*instrument)(IRBB*, VexGuestLayout*, IRType, IRType ),
+   IRBB*(*instrument)(IRBB*, VexGuestLayout*, 
+                      Addr64, VexGuestExtents*, IRType, IRType ),
    void(*fini)(Int)
 )
 {
@@ -91,23 +87,21 @@ VgNeeds VG_(needs) = {
    .tool_errors          = False,
    .libc_freeres         = False,
    .basic_block_discards = False,
-   .no_longer_used_1     = False,
    .command_line_options = False,
    .client_requests      = False,
-   .no_longer_used_0     = False,
    .syscall_wrapper      = False,
    .sanity_checks        = False,
    .data_syms	         = False,
-   .shadow_memory        = False,
+   .malloc_replacement   = False,
 };
 
 /* static */
-void VG_(sanity_check_needs) ( void)
+Bool VG_(sanity_check_needs)(Char** failmsg)
 {
-#define CHECK_NOT(var, value)                                   \
-   if ((var)==(value)) {                                        \
-      VG_(printf)("\nTool error: '%s' not initialised\n", #var);\
-      VG_(tool_panic)("Uninitialised details field\n");         \
+#define CHECK_NOT(var, value)                                  \
+   if ((var)==(value)) {                                       \
+      *failmsg = "Tool error: '" #var "' not initialised\n"; \
+      return False;                                            \
    }
    
    /* Ones that must be set */
@@ -124,9 +118,10 @@ void VG_(sanity_check_needs) ( void)
          VG_(tdict).track_new_mem_stack_32 ) &&
        ! VG_(tdict).track_new_mem_stack) 
    {
-      VG_(printf)("\nTool error: one of the specialised 'new_mem_stack_n'\n"
-                  "events tracked, but not the generic 'new_mem_stack' one.\n");
-      VG_(tool_panic)("'new_mem_stack' should be defined\n");
+      *failmsg = "Tool error: one of the specialised 'new_mem_stack_n'\n"
+                 "   events tracked, but not the generic 'new_mem_stack' one.\n"
+                 "   'new_mem_stack' should be defined\n";
+      return False;
    }
 
    if ( (VG_(tdict).track_die_mem_stack_4  ||
@@ -136,20 +131,13 @@ void VG_(sanity_check_needs) ( void)
          VG_(tdict).track_die_mem_stack_32 ) &&
        ! VG_(tdict).track_die_mem_stack) 
    {
-      VG_(printf)("\nTool error: one of the specialised 'die_mem_stack_n'\n"
-                  "events tracked, but not the generic 'die_mem_stack' one.\n");
-      VG_(tool_panic)("'die_mem_stack' should be defined\n");
+      *failmsg = "Tool error: one of the specialised 'die_mem_stack_n'\n"
+                 "   events tracked, but not the generic 'die_mem_stack' one.\n"
+                 "   'die_mem_stack' should be defined\n";
+      return False;
    }
 
-   if (VG_(needs).shadow_memory != (VG_(get_shadow_size)() != 0)) {
-      if (VG_(get_shadow_size)() != 0)
-	 VG_(printf)("\nTool error: tool allocated shadow memory, but apparently doesn't "
-		     "need it.\n");
-      else
-	 VG_(printf)("\nTool error: tool didn't allocate shadow memory, but apparently "
-		     "needs it.\n");
-      VG_(tool_panic)("VG_(needs).shadow_memory need should be set to match 'shadow_ratio'\n");
-   }
+   return True;
 
 #undef CHECK_NOT
 }
@@ -165,10 +153,9 @@ void VG_(sanity_check_needs) ( void)
 NEEDS(libc_freeres)
 NEEDS(core_errors)
 NEEDS(data_syms)
-NEEDS(shadow_memory)
 
 void VG_(needs_basic_block_discards)(
-   void (*discard)(Addr, SizeT)
+   void (*discard)(Addr64, VexGuestExtents)
 )
 {
    VG_(needs).basic_block_discards = True;
@@ -237,11 +224,7 @@ void VG_(needs_sanity_checks)(
    VG_(tdict).tool_expensive_sanity_check = expen;
 }
 
-
-/*--------------------------------------------------------------------*/
-/* Replacing malloc() */
-
-extern void VG_(malloc_funcs)(
+void VG_(needs_malloc_replacement)(
    void* (*malloc)               ( ThreadId, SizeT ),
    void* (*__builtin_new)        ( ThreadId, SizeT ),
    void* (*__builtin_vec_new)    ( ThreadId, SizeT ),
@@ -254,17 +237,17 @@ extern void VG_(malloc_funcs)(
    SizeT client_malloc_redzone_szB
 )
 {
-   VG_(tdict).malloc_malloc               = malloc;
-   VG_(tdict).malloc___builtin_new        = __builtin_new;
-   VG_(tdict).malloc___builtin_vec_new    = __builtin_vec_new;
-   VG_(tdict).malloc_memalign             = memalign;
-   VG_(tdict).malloc_calloc               = calloc;
-   VG_(tdict).malloc_free                 = free;
-   VG_(tdict).malloc___builtin_delete     = __builtin_delete;
-   VG_(tdict).malloc___builtin_vec_delete = __builtin_vec_delete;
-   VG_(tdict).malloc_realloc              = realloc;
-
-   VG_(set_client_malloc_redzone_szB)( client_malloc_redzone_szB );
+   VG_(needs).malloc_replacement        = True;
+   VG_(tdict).tool_malloc               = malloc;
+   VG_(tdict).tool___builtin_new        = __builtin_new;
+   VG_(tdict).tool___builtin_vec_new    = __builtin_vec_new;
+   VG_(tdict).tool_memalign             = memalign;
+   VG_(tdict).tool_calloc               = calloc;
+   VG_(tdict).tool_free                 = free;
+   VG_(tdict).tool___builtin_delete     = __builtin_delete;
+   VG_(tdict).tool___builtin_vec_delete = __builtin_vec_delete;
+   VG_(tdict).tool_realloc              = realloc;
+   VG_(tdict).tool_client_redzone_szB   = client_malloc_redzone_szB;
 }
 
 
@@ -278,7 +261,7 @@ void VG_(fn)(void(*f)(args)) \
 }
 
 #define DEF2(fn, args...) \
-void VG_(fn)(VGA_REGPARM(1) void(*f)(args)) \
+void VG_(fn)(VG_REGPARM(1) void(*f)(args)) \
 { \
    VG_(tdict).fn = f; \
 }
@@ -332,10 +315,6 @@ DEF(track_post_mutex_unlock,     ThreadId, void*)
 DEF(track_pre_deliver_signal,    ThreadId, Int sigNo, Bool)
 DEF(track_post_deliver_signal,   ThreadId, Int sigNo)
 
-DEF(track_init_shadow_page,      Addr)
-
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-
-

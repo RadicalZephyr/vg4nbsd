@@ -48,6 +48,7 @@
 
 #include "pub_core_basics.h"     /* basic types */
 #include "pub_core_debuglog.h"   /* our own iface */
+#include "valgrind.h"            /* for RUNNING_ON_VALGRIND */
 
 /*------------------------------------------------------------*/
 /*--- Stuff to make us completely independent.             ---*/
@@ -55,21 +56,20 @@
 
 /* ----- x86-linux specifics ----- */
 
-#if defined(VGP_x86_linux) 
+#if defined(VGP_x86_linux)
 
 static UInt local_sys_write_stderr ( HChar* buf, Int n )
 {
    UInt __res;
    __asm__ volatile (
+      "pushl %%ebx\n"        // ebx is callee-save
       "movl  $4, %%eax\n"    /* %eax = __NR_write */
-      "movl  $2, %%edi\n"    /* %edi = stderr */
+      "movl  $1, %%ebx\n"    /* %ebx = stderr */
       "movl  %1, %%ecx\n"    /* %ecx = buf */
       "movl  %2, %%edx\n"    /* %edx = n */
-      "pushl %%ebx\n"
-      "movl  %%edi, %%ebx\n"
       "int   $0x80\n"        /* write(stderr, buf, n) */
-      "popl  %%ebx\n"
       "movl  %%eax, %0\n"    /* __res = eax */
+      "popl  %%ebx\n"        // restore ebx
       : "=mr" (__res)
       : "g" (buf), "g" (n)
       : "eax", "edi", "ecx", "edx"
@@ -90,43 +90,6 @@ static UInt local_sys_getpid ( void )
       :
       : "eax" );
    return __res;
-}
-#elif defined (VGP_x86_netbsdelf2)
-static UInt local_sys_write_stderr (HChar * buf, Int n)
-{
-   UInt __res;
-   __asm__ volatile (
-      "movl  $4, %%eax\n"	/* %eax = __NR_write */
-      "pushl %2\n"		/* Third arg  = n */
-      "pushl %1\n"		/* Second arg = buf */
-      "pushl $2\n"		/* First arg  = stderr */
-      "pushl local_sys_write_stderr_ret\n"   /* Push return value */
-      "int   $0x80\n"		/* write(stderr, buf, n) */
-      "local_sys_write_stderr_ret:\n"
-      "addl  $16, %%esp\n"	/* Clean up stack (3 args + retval) */
-      "movl  %%eax, %0\n"	/* __res = eax */
-      : "=mr" (__res)
-      : "g" (buf), "g" (n)
-      : "eax"
-   );
-   if (__res < 0) 
-      __res = -1;
-   return __res;
-
-
-}
-static UInt local_sys_getpid(void)
-{
-   UInt __res;
-   __asm__ volatile (
-      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
-      "int  $0x80\n"       /* getpid() */
-      "movl %%eax, %0\n"   /* set __res = eax */
-      : "=mr" (__res)
-      :
-      : "eax" );
-   return __res;
-
 }
 
 #elif defined(VGP_amd64_linux)
@@ -162,6 +125,76 @@ static UInt local_sys_getpid ( void )
    return __res;
 }
 
+#elif defined(VGP_ppc32_linux)
+
+static UInt local_sys_write_stderr ( HChar* buf, Int n )
+{
+   UInt __res;
+   __asm__ volatile (
+      "li %%r0,4\n\t"      /* set %r0 = __NR_write */
+      "li %%r3,2\n\t"      /* set %r3 = stderr */
+      "mr %%r4,%1\n\t"     /* set %r4 = buf */
+      "mr %%r5,%2\n\t"     /* set %r5 = n */
+      "sc\n\t"             /* write(stderr, buf, n) */
+      "mr %0,%%r3\n"       /* set __res = r3 */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "r0", "r3", "r4", "r5" );
+   if (__res < 0)
+      __res = -1;
+   return __res;
+}
+
+static UInt local_sys_getpid ( void )
+{
+   UInt __res;
+   __asm__ volatile (
+      "li %%r0,20\n"       /* set %r0 = __NR_getpid */
+      "\tsc\n"             /* getpid() */
+      "\tmr %0,%%r3\n"     /* set __res = r3 */
+      : "=mr" (__res)
+      :
+      : "r0" );
+   return __res;
+}
+
+#elif defined (VGP_x86_netbsdelf2)
+
+static UInt local_sys_write_stderr (HChar * buf, Int n)
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl  $4, %%eax\n"	/* %eax = __NR_write */
+      "pushl %2\n"		/* Third arg  = n */
+      "pushl %1\n"		/* Second arg = buf */
+      "pushl $2\n"		/* First arg  = stderr */
+      "pushl local_sys_write_stderr_ret\n"   /* Push return value */
+      "int   $0x80\n"		/* write(stderr, buf, n) */
+      "local_sys_write_stderr_ret:\n"
+      "addl  $16, %%esp\n"	/* Clean up stack (3 args + retval) */
+      "movl  %%eax, %0\n"	/* __res = eax */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "eax"
+   );
+   if (__res < 0) 
+      __res = -1;
+   return __res;
+}
+
+static UInt local_sys_getpid(void)
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
+      "int  $0x80\n"       /* getpid() */
+      "movl %%eax, %0\n"   /* set __res = eax */
+      : "=mr" (__res)
+      :
+      : "eax" );
+   return __res;
+
+}
 #else
 # error Unknown platform
 #endif
@@ -265,6 +298,41 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
 }
 
 
+/* Copy a string into the buffer, escaping bad XML chars. */
+static 
+UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
+                                    void* send_arg2,
+                                    HChar* str )
+{
+   UInt   ret = 0;
+   Int    i;
+   Int    len = local_strlen(str);
+   HChar* alt;
+
+   for (i = 0; i < len; i++) {
+      switch (str[i]) {
+         case '&': alt = "&amp;"; break;
+         case '<': alt = "&lt;"; break;
+         case '>': alt = "&gt;"; break;
+         default:  alt = NULL;
+      }
+
+      if (alt) {
+         while (*alt) {
+            send(*alt, send_arg2);
+            ret++;
+            alt++;
+         }
+      } else {
+         send(str[i], send_arg2);
+         ret++;
+      }
+   }
+
+   return ret;
+}
+
+
 /* Write P into the buffer according to these args:
  *  If SIGN is true, p is a signed.
  *  BASE is the base.
@@ -353,6 +421,7 @@ VG_(debugLog_vprintf) (
    Int  i;
    Int  flags;
    Int  width;
+   Int  n_ls = 0;
    Bool is_long;
 
    /* We assume that vargs has already been initialised by the 
@@ -377,7 +446,7 @@ VG_(debugLog_vprintf) (
          continue;
       }
       flags = 0;
-      is_long = False;
+      n_ls  = 0;
       width = 0; /* length of the field. */
       if (format[i] == '(') {
          flags |= VG_MSG_PAREN;
@@ -405,8 +474,15 @@ VG_(debugLog_vprintf) (
       }
       while (format[i] == 'l') {
          i++;
-         is_long = True;
+         n_ls++;
       }
+
+      //   %d means print a 32-bit integer.
+      //  %ld means print a word-size integer.
+      // %lld means print a 64-bit integer.
+      if      (0 == n_ls) { is_long = False; }
+      else if (1 == n_ls) { is_long = ( sizeof(void*) == sizeof(Long) ); }
+      else                { is_long = True; }
 
       switch (format[i]) {
          case 'd': /* %d */
@@ -452,6 +528,14 @@ VG_(debugLog_vprintf) (
                                  flags, width, str, format[i]=='S');
             break;
          }
+         case 't': { /* %t, like %s but escaping chars for XML safety */
+            /* Note: simplistic; ignores field width and flags */
+            char *str = va_arg (vargs, char *);
+            if (str == (char*) 0) str = "(null)";
+            ret += myvprintf_str_XML_simplistic(send, send_arg2, str);
+            break;
+         }
+
 //         case 'y': { /* %y - print symbol */
 //            Char buf[100];
 //            Char *cp = buf;
@@ -539,11 +623,10 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
                                 const HChar* format, ... )
 {
    UInt ret, pid;
-   Int indent;
+   Int indent, depth, i;
    va_list vargs;
    printf_buf buf;
 
-   
    if (level > loglevel)
       return;
 
@@ -552,7 +635,15 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
 
    buf.n = 0;
    buf.buf[0] = 0;
-   pid = local_sys_getpid();
+   pid = 0;//local_sys_getpid();
+
+   // Print one '>' in front of the messages for each level of self-hosting
+   // being performed.
+   depth = RUNNING_ON_VALGRIND;
+   for (i = 0; i < depth; i++) {
+      (void)myvprintf_str ( add_to_buf, &buf, 0, 1, ">", False );
+   }
+   
    (void)myvprintf_str ( add_to_buf, &buf, 0, 2, "--", False );
    (void)myvprintf_int64 ( add_to_buf, &buf, 0, 10, 1, (ULong)pid );
    (void)myvprintf_str ( add_to_buf, &buf, 0, 1, ":", False );

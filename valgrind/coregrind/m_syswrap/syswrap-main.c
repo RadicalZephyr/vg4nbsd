@@ -449,7 +449,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
    }
 #elif defined (VGP_x86_netbsdelf2)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
-   LibVEX_GuestX86_put_eflag_c(canonical->what == SsFailure ? 1 : 0, gst);
+     LibVEX_GuestX86_put_eflag_c(canonical->what == SsFailure ? 1 : 0, gst);
    gst->guest_EAX = canonical->val;
    
 #elif defined(VGP_amd64_linux)

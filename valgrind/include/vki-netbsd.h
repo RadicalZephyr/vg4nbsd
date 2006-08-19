@@ -2043,6 +2043,33 @@ struct vki_kbd_repeat {
 typedef __vki_kernel_uid32_t vki_qid_t; /* Type in which we store ids in memory */
 
 //----------------------------------------------------------------------
+// From /include/sys/mman.h
+//----------------------------------------------------------------------
+
+#define VKI_PROT_NONE		0x00	/* no permissions */
+#define VKI_PROT_READ		0x01	/* pages can be read */
+#define VKI_PROT_WRITE		0x02	/* pages can be written */
+#define VKI_PROT_EXEC		0x04	/* pages can be executed */
+
+#define VKI_MAP_SHARED		0x0001	/* Share changes */
+#define VKI_MAP_PRIVATE		0x0002	/* Changes are private */
+#define VKI_MAP_COPY    	0x0004	/* deprecated; treated as 0x0002 */
+
+#define VKI_MAP_FIXED		0x0010	/* Interpret addr exactly */
+#define VKI_MAP_RENAME		0x0020	/* Sun: rename private pages to file */
+#define VKI_MAP_NORESERVE	0x0040	/* Sun: don't reserve needed swap area */
+#define VKI_MAP_INHERIT		0x0080	/* Region is retained after exec */
+#define VKI_MAP_HASSEMAPHORE	0x0200	/* Region may contain semaphores */
+#define VKI_MAP_TRYFIXED	0x0400	/* Attempt hint address, even within break */
+#define VKI_MAP_WIRED		0x0800	/* mlock() mapping when established */
+
+/* Mapping type */
+#define	VKI_MAP_FILE		0x0000	/* Map from a file (default) */
+#define VKI_MAP_ANON		0x1000	/* don't use a file */
+/* Alias, for Valgrind compat */
+#define VKI_MAP_ANONYMOUS	VKI_MAP_ANON
+
+//----------------------------------------------------------------------
 // From linux-2.6.9/include/linux/ptrace.h
 //----------------------------------------------------------------------
 

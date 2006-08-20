@@ -942,7 +942,7 @@ static void load_client ( /*OUT*/struct exeinfo* info,
    VG_(debugLog)(1, "load_client", "after open\n"); 
    /* Copy necessary bits of 'info' that were filled in */
    *client_eip  = info->init_eip;
-   VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase);
+   VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase );
    VG_(debugLog)(1, "load_client", "finished load_client\n"); 
 }
 
@@ -2147,7 +2147,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // child processes will have a reasonable brk value.
    VG_(getrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
    zero.rlim_max = VG_(client_rlimit_data).rlim_max;
-   //   VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
+   //  VG_(setrlimit)(VKI_RLIMIT_DATA, &zero);
 
    // Get the current process stack rlimit.
    VG_(getrlimit)(VKI_RLIMIT_STACK, &VG_(client_rlimit_stack));

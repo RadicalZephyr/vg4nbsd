@@ -1548,8 +1548,9 @@ static Bool is_valid_for_valgrind( Addr start, SizeT len )
 static Bool any_Ts_in_range ( Addr start, SizeT len )
 {
    Int iLo, iHi, i;
-   aspacem_assert(len > 0);
+   aspacem_assert(len > 0); /* XXX NETBSD */
    aspacem_assert(start + len > start);
+
    iLo = find_nsegment_idx(start);
    iHi = find_nsegment_idx(start + len - 1);
    for (i = iLo; i <= iHi; i++) {
@@ -1941,13 +1942,13 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
       VG_(debugLog)(0,"aspacem", "getAdvisory 0x%llx %lld\n", 
                       (ULong)req->start, (ULong)req->len);
    }
-
+#ifndef VGO_netbsdelf2
    /* Reject zero-length requests */
    if (req->len == 0) {
       *ok = False;
       return 0;
    }
-
+#endif
    /* Reject wraparounds */
    if ((req->rkind==MFixed || req->rkind==MHint)
        && req->start + req->len < req->start) {
@@ -2128,8 +2129,11 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    UInt     mode;
    NSegment seg;
    Bool     needDiscard;
-
-   aspacem_assert(len > 0);
+#ifdef VGO_netbsdelf2
+   if(len <= 0) return False;
+#else
+   aspacem_assert(len > 0); /* XXX NETBSD */
+#endif
    aspacem_assert(VG_IS_PAGE_ALIGNED(a));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
    aspacem_assert(VG_IS_PAGE_ALIGNED(offset));

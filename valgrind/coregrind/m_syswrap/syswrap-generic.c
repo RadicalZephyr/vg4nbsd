@@ -1848,7 +1848,9 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    MapRequest mreq;
    Bool       mreq_ok;
 
-   if (arg2 == 0) {
+
+   if (arg2 < 0 ) {
+
       /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
          shall be established. */
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
@@ -1858,6 +1860,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
       /* zap any misaligned addresses. */
       /* SuSV3 says misaligned addresses only cause the MAP_FIXED case
          to fail.   Here, we catch them all. */
+     VG_(printf)("page not aligned pre-fail \n");
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -1866,6 +1869,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
       /* SuSV3 says: The off argument is constrained to be aligned and
          sized according to the value returned by sysconf() when
          passed _SC_PAGESIZE or _SC_PAGE_SIZE. */
+     VG_(printf)("arg6 is wank\n");
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -1886,7 +1890,8 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    advised = VG_(am_get_advisory)( &mreq, True/*client*/, &mreq_ok );
    if (!mreq_ok) {
       /* Our request was bounced, so we'd better fail. */
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+     VG_(printf)("Mreq is not ok omg!\n");
+           return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
    /* Otherwise we're OK (so far).  Install aspacem's choice of
@@ -1909,8 +1914,9 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    }
 
    /* Stay sane */
+   VG_(printf)("sres.val = %d, arg1 = %d\n",sres.val , arg1);
    if (!sres.isError && (arg4 & VKI_MAP_FIXED))
-      vg_assert(sres.val == arg1);
+          vg_assert(sres.val == arg1);
 
    return sres;
 }

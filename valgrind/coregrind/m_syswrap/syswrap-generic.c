@@ -1849,11 +1849,18 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    Bool       mreq_ok;
 
 
-   if (arg2 < 0 ) {
-
+   if (arg2 == 0) {
       /* SuSV3 says: If len is zero, mmap() shall fail and no mapping
          shall be established. */
+     /* short circuit in netbsd's case */
+
+#ifdef VGO_netbsdelf2
+     sres.isError = False;
+     sres.val = arg1;
+     return sres
+#else
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
+#endif
    }
 
    if (!VG_IS_PAGE_ALIGNED(arg1)) {

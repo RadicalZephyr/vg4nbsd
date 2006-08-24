@@ -152,6 +152,9 @@ struct vki_timespec {
 #  error Unknown platform
 #endif
 
+typedef __vki_u64		vki_u_quad_t;
+typedef __vki_s64		vki_quad_t;
+
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/limits.h
 //----------------------------------------------------------------------
@@ -820,6 +823,21 @@ struct vki_rlimit {
 	long long int rlim_cur;
 	long long int	rlim_max;
 };
+
+#define VKI_RLIMIT_DATA		2	/* max data size */
+#define VKI_RLIMIT_STACK	3	/* max stack size */
+#define VKI_RLIMIT_CORE		4	/* max core file size */
+#define VKI_RLIMIT_RSS		5	/* resident set size */
+#define VKI_RLIMIT_MEMLOCK	6	/* locked-in-memory address space */
+#define VKI_RLIMIT_NPROC	7	/* number of processes */
+#define VKI_RLIMIT_NOFILE	8	/* max number of open files */
+#define VKI_RLIMIT_SBSIZE	9	/* maximum size of all socket buffers */
+#define VKI_RLIMIT_NLIMITS	10	/* number of resource limits */
+
+#define VKI_RLIM_INFINITY	(~((vki_u_quad_t)1 << 63)) /* no limit */
+#define VKI_RLIM_SAVED_MAX	VKI_RLIM_INFINITY /* unrepresentable hard limit */
+#define VKI_RLIM_SAVED_CURX	VKI_RLIM_INFINITY /* unrepresentable soft limit */
+
 
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/linux/elfcore.h

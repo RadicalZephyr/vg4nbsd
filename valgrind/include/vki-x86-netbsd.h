@@ -242,15 +242,6 @@ typedef struct vki_sigcontext {
 }vki_sigcontext_t;
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/resource.h
-//----------------------------------------------------------------------
-
-#define VKI_RLIMIT_DATA		2	/* max data size */
-#define VKI_RLIMIT_STACK	3	/* max stack size */
-#define VKI_RLIMIT_CORE		4	/* max core file size */
-#define VKI_RLIMIT_NOFILE	8	/* max number of open files */
-
-//----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/socket.h
 //----------------------------------------------------------------------
 

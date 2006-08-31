@@ -1736,6 +1736,7 @@ static void read_maps_callback ( Addr addr, SizeT len, UInt prot,
       seg.kind  = SkFileV;
       seg.fnIdx = allocate_segname( filename );
    }
+   /* this is a wtf */
 #if defined (VGO_netbsdelf2)
    if(seg.ino) {
 	   seg.kind = SkFileV;
@@ -3327,7 +3328,7 @@ static void parse_procselfmaps (
 
    aspacem_assert('\0' != procmap_buf[0] && 0 != buf_n_tot);
 
-   if (0)
+   if (1)
       VG_(debugLog)(0, "procselfmaps", "raw:\n%s\n", procmap_buf);
 
    /* Ok, it's safely aboard.  Parse the entries. */

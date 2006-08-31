@@ -180,6 +180,8 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (!filename)
       return;
 
+   VG_(printf)("DI_NOTIFY_MMAP filename = %s\n", filename);
+   
    filename = VG_(arena_strdup)( VG_AR_SYMTAB, filename );
 
    ok = (seg->kind == SkFileC || (seg->kind == SkFileV && allow_SkFileV))

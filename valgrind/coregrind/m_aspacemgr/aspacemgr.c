@@ -679,13 +679,17 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
 /*  else { */
 /*    if( */
 /* try returning the fd name as the result XXXXXXXXX these can be reused*/
+   int file;
    if(nbuf < 64){
      return False; 
    }
    else { /* lol wtf!? there is no snprintf ? */
-     aspacem_sprintf(buf, "/proc/self/fd/%d", fd);
-     
-   return True;
+/*     aspacem_sprintf(buf, "/proc/self/fd/%d", fd);*/
+       file = am_lookup_recorded_fd(fd);
+       if (file == -1)
+	   return False;
+       VG_(memcpy)(buf, filenames[file].fname, VG_(strlen)(filenames[file].fname));
+       return True;
    }
 #endif
 

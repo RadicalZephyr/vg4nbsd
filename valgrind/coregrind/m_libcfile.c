@@ -85,12 +85,15 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 {  
    SysRes res = VG_(do_syscall3)(__NR_open, (UWord)pathname, flags, mode);
+   if (!res.isError)
+	   VG_(am_record_open_fd)(res.val, pathname);
    return res;
 }
 
 void VG_(close) ( Int fd )
 {
    (void)VG_(do_syscall1)(__NR_close, fd);
+	VG_(remove_recorded_fd)(fd);
 }
 
 Int VG_(read) ( Int fd, void* buf, Int count)

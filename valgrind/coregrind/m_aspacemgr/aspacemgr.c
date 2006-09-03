@@ -465,14 +465,14 @@ void VG_(am_record_open_fd)(int fd, Char * filename){
       if(filenames[i].inUse == False)
 	break;
     }
-  if((i == filenames_used) && filenames_used < VG_N_FILENAMES)
-    {
-    filenames_used++; /* no free slots so advance mark  */
-    }
-  else 
-    { aspacem_barf_toolow("VG_N_FILENAMES");
-    return; /* cant allocate anymore!  */
-    }
+  if(i == filenames_used) {
+	  if (filenames_used < VG_N_FILENAMES) {
+		  filenames_used++; /* no free slots so advance mark  */
+	  } else {
+		  aspacem_barf_toolow("VG_N_FILENAMES");
+		  return; /* cant allocate anymore!  */
+	  }
+  }
   filenames[i].inUse = True;
   filenames[i].fd = fd;
   VG_(memcpy)(filenames[i].fname,filename,VG_(strlen)(filename));
@@ -607,11 +607,14 @@ static void aspacem_exit( Int status )
 static SysRes aspacem_open ( const Char* pathname, Int flags, Int mode )
 {  
    SysRes res = VG_(do_syscall3)(__NR_open, (UWord)pathname, flags, mode);
+   if (!res.isError)
+	   VG_(am_record_open_fd)(res.val, pathname);
    return res;
 }
 
 static void aspacem_close ( Int fd )
 {
+	VG_(remove_recorded_fd)(fd);
    (void)VG_(do_syscall1)(__NR_close, fd);
 }
 

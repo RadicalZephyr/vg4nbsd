@@ -475,7 +475,7 @@ void VG_(am_record_open_fd)(int fd, Char * filename){
     }
   filenames[i].inUse = True;
   filenames[i].fd = fd;
-  VG_(memcpy)(filenames[i].fname,filename,VG_strlen(filename));
+  VG_(memcpy)(filenames[i].fname,filename,VG_(strlen)(filename));
   return;
 }
 /* return a pointer to the index of the recored fd , taking the fd as input */

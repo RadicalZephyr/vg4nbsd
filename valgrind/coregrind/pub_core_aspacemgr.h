@@ -322,6 +322,9 @@ extern VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp );
 
 extern Int VG_(am_get_VgStack_unused_szB)( VgStack* stack ); 
 
+/* TRACKING OF FDs */
+void VG_(am_record_open_fd)(int fd, Char * filename);
+void VG_(remove_recorded_fd)(Int fd);
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 

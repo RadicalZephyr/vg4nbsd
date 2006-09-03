@@ -179,8 +179,8 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    filename = VG_(am_get_filename)( seg );
 /*    if (!filename) */
 /*       return; */
-   VG_(printf)("Filename =%s\n",filename);
-   VG_(printf)("DI_NOTIFY_MMAP filename = %s\n", filename);
+   VG_(debugLog)(1,"symtab.c","Filename =%s\n",filename);
+   VG_(debugLog)(1,"symtab.c","DI_NOTIFY_MMAP filename = %s\n", filename);
    
    filename = VG_(arena_strdup)( VG_AR_SYMTAB, filename );
 
@@ -1437,7 +1437,7 @@ Bool read_lib_symbols ( SegInfo* si )
    oimage = sres.val;
 #else /* VGO_netbsdelf2 */
    oimage = si->start;
-   n_oimage = si->size;
+   n_oimage = si->size ;
 #endif
    /* Ok, the object image is safely in oimage[0 .. n_oimage-1]. 
       Now verify that it is a valid ELF .so or executable image.

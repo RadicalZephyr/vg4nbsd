@@ -4856,6 +4856,7 @@ POST(sys_open)
       VG_(close)(RES);
       SET_STATUS_Failure( VKI_EMFILE );
    } else {
+     VG_(am_record_open_fd)(RES,(Char *)ARG1);
       if (VG_(clo_track_fds))
          ML_(record_fd_open_with_given_name)(tid, RES, (Char*)ARG1);
    }

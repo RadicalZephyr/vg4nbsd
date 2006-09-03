@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- The address space manager: segment initialisation and        ---*/
 /*--- tracking, stack operations                                   ---*/
@@ -302,7 +301,19 @@ typedef
 */
 static SegName segnames[VG_N_SEGNAMES];
 static Int     segnames_used = 0;
+#ifdef VGO_netbsdelf2
+#define VG_MAX_FILENAMELEN 1000
+#define VG_N_FILENAMES 400
+typedef 
+struct {
+  Bool inUse;
+  int fd;
+  HChar fname[VG_MAX_SEGNAMELEN];
+}FileName;
+static Int filenames_used = 0;
+static FileName filenames[VG_N_FILENAMES];
 
+#endif /* for filenames trapped via sys_open() , we use it in fd-> filename conversion */
 
 /* Array [0 .. nsegments_used-1] of all mappings. */
 /* Sorted by .addr field. */
@@ -440,6 +451,52 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 // Direct access to a handful of syscalls.  This avoids dependence on
 // m_libc*.  THESE DO NOT UPDATE THE SEGMENT LIST.  DO NOT USE THEM
 // UNLESS YOU KNOW WHAT YOU ARE DOING.
+
+void VG_(am_record_open_fd)(int fd, Char * filename){
+  Int i;
+  if(VG_(strlen)(filename)==0 ){
+    /* special file so forget it */
+    return;
+  }
+
+  /* grab the free slot */
+  for(i = 0 ; i < filenames_used; i++)
+    {
+      if(filenames[i].inUse == False)
+	break;
+    }
+  if((i == filenames_used) && filenames_used < VG_N_FILENAMES)
+    {
+    filenames_used++; /* no free slots so advance mark  */
+    }
+  else 
+    { aspacem_barf_toolow("VG_N_FILENAMES");
+    return; /* cant allocate anymore!  */
+    }
+  filenames[i].inUse = True;
+  filenames[i].fd = fd;
+  VG_(memcpy)(filenames[i].fname,filename,VG_strlen(filename));
+  return;
+}
+/* return a pointer to the index of the recored fd , taking the fd as input */
+static int am_lookup_recorded_fd(Int fd ){
+  Int i ; 
+  for(i = 0 ; i < filenames_used; i ++ ){
+    if(filenames[i].fd == fd )
+      return i;
+  }
+  /* cant find fd return -1 */
+  return -1;
+}
+void VG_(remove_recorded_fd)(Int fd){
+  Int i; 
+  i = am_lookup_recorded_fd(fd);
+  if(i == -1 )
+    return;
+    /* it wasnt recorded so reutrn */
+  filenames[i].inUse = False;
+  return;
+}
 
 SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
                                   UInt flags, UInt fd, Off64T offset)

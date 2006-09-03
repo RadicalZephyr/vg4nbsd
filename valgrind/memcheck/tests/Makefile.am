@@ -116,9 +116,9 @@ check_PROGRAMS = \
 	doublefree error_counts errs1 exitprog execve execve2 erringfds \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-tree leak-regroot leakotron \
-	malloc_usable malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
+	malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
 	match-overrun \
-	memalign_test memalign2 memcmptest mempool mmaptest \
+	memalign_test memcmptest mempool mmaptest \
 	nanoleak new_nothrow \
 	null_socket oset_test overlap \
 	partiallydefinedeq \
@@ -134,6 +134,8 @@ check_PROGRAMS = \
 	xml1 \
 	writev zeropage
 
+#check_PROGRAMS += \
+#	memalign2 malloc_usable 
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_srcdir)/coregrind -I$(top_builddir)/include -I@VEX_DIR@/pub
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g 

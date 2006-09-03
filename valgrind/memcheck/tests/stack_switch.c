@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE 600
 #define _BSD_SOURCE
+#define _NETBSD_SOURCE
 
 #include <sched.h>
 #include <stdio.h>
@@ -9,6 +10,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include "valgrind.h"
 
@@ -33,7 +35,7 @@ int main(int argc, char **argv)
    int stackid;
    pid_t pid;
 
-   if ( ( stack = mmap( NULL, STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 ) ) == MAP_FAILED )
+   if ( ( stack = mmap( NULL, STACK_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0 ) ) == MAP_FAILED )
    {
       perror( "mmap" );
       exit( 1 );

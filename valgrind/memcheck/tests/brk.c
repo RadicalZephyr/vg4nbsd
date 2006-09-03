@@ -13,6 +13,7 @@ int main(void)
    void* ds = orig_ds;
    void* vals[10];
    void* res;
+   void *prev;
 #define EOL ((void*)( ~(long)0 ))
    vals[0] = (void*)0;
    vals[1] = (void*)1;
@@ -27,7 +28,7 @@ int main(void)
    vals[8] = EOL;
 
    for (i = 0; EOL != vals[i]; i++) {
-      res = (void*)syscall(__NR_brk, vals[i]);
+      res = brk(vals[i]);
    }
 
    assert( 0 == brk(orig_ds) );  // libc brk()

@@ -10,10 +10,10 @@
 // This test is checking the libc context calls (setcontext, etc.) and
 // checks that Valgrind notices their stack changes properly.
 
-struct ucontext ctx1, ctx2, oldc;
+ucontext_t ctx1, ctx2, oldc;
 int count;
 
-void hello(struct ucontext *newc)
+void hello(ucontext_t *newc)
 {
     printf("hello, world: %d\n", count);
     if (count++ == 2)
@@ -21,7 +21,7 @@ void hello(struct ucontext *newc)
     setcontext(newc);
 }
 
-int init_context(struct ucontext *uc)
+int init_context(ucontext_t *uc)
 {
     void *stack;
     int ret;

@@ -41,6 +41,10 @@
 
 #define	STREQ(a, b)	(strcmp((a), (b)) == 0)
 
+#ifndef VGO_linux
+#define strdupa strdup
+#endif
+
 const char *it = "<UNSET>";	/* Routine name for message routines. */
 size_t errors = 0;
 
@@ -182,6 +186,7 @@ test_strcpy (void)
   }
 }
 
+#ifdef VGO_linux
 static void
 test_stpcpy (void)
 {
@@ -278,6 +283,7 @@ test_stpncpy (void)
   check (stpncpy (one, "abcd", 6) == one + 4, 7);
   check (one[4] == '\0' && one[5] == '\0' && one[6] == 'x', 8);
 }
+#endif
 
 static void
 test_strcat (void)
@@ -463,6 +469,7 @@ test_strchr (void)
    }
 }
 
+#ifdef VGO_linux
 static void
 test_strchrnul (void)
 {
@@ -523,6 +530,7 @@ test_rawmemchr (void)
       }
    }
 }
+#endif
 
 static void
 test_index (void)
@@ -570,6 +578,7 @@ test_strrchr (void)
    }
 }
 
+#ifdef VGO_linux
 static void
 test_memrchr (void)
 {
@@ -615,6 +624,7 @@ test_memrchr (void)
     }
   }
 }
+#endif
 
 static void
 test_rindex (void)
@@ -1049,6 +1059,7 @@ test_memcpy (void)
     }
 }
 
+#ifdef VGO_linux
 static void
 test_mempcpy (void)
 {
@@ -1085,6 +1096,7 @@ test_mempcpy (void)
       equal (two, "hi there", 12 + (i * 6));
     }
 }
+#endif
 
 static void
 test_memmove (void)
@@ -1263,6 +1275,7 @@ test_bzero (void)
   equal(one, "abcdef", 4);		/* Zero-length copy. */
 }
 
+#ifdef VGO_linux
 static void
 test_strndup (void)
 {
@@ -1286,6 +1299,7 @@ test_strndup (void)
     equal(p, "abc", 6);
   free (p);
 }
+#endif
 
 static void
 test_bcmp (void)
@@ -1366,11 +1380,13 @@ main (void)
   /* Test strcpy next because we need it to set up other tests.  */
   test_strcpy ();
 
+#ifdef VGO_linux
   /* A closely related function is stpcpy.  */
   test_stpcpy ();
 
   /* stpncpy.  */
   test_stpncpy ();
+#endif
 
   /* strcat.  */
   test_strcat ();
@@ -1390,11 +1406,13 @@ main (void)
   /* strchr.  */
   test_strchr ();
 
+#ifdef VGO_linux
   /* strchrnul.  */
   test_strchrnul ();
 
   /* rawmemchr.  */
   test_rawmemchr ();
+#endif
 
   /* index - just like strchr.  */
   test_index ();
@@ -1402,8 +1420,10 @@ main (void)
   /* strrchr.  */
   test_strrchr ();
 
+#ifdef VGO_linux
   /* memrchr.  */
   test_memrchr ();
+#endif
 
   /* rindex - just like strrchr.  */
   test_rindex ();
@@ -1441,8 +1461,10 @@ main (void)
   /* memmove - must work on overlap.  */
   test_memmove ();
 
+#ifdef VGO_linux
   /* mempcpy */
   test_mempcpy ();
+#endif
 
   /* memccpy.  */
   test_memccpy ();
@@ -1459,8 +1481,10 @@ main (void)
   /* bcmp - somewhat like memcmp.  */
   test_bcmp ();
 
+#ifdef VGO_linux
   /* strndup.  */
   test_strndup ();
+#endif
 
   /* strerror - VERY system-dependent.  */
   test_strerror ();

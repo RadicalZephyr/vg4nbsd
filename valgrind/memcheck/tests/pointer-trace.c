@@ -26,11 +26,11 @@ int main()
 		ptrs[i] = (char *)(i << stepbits);
 
 	/* lay some traps */
-	map = mmap(0, stepsize * 2, PROT_NONE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANONYMOUS, -1, 0);
+	map = mmap(0, stepsize * 2, PROT_NONE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANON, -1, 0);
 	if (map == (char *)-1)
 		perror("trap 1 failed");
 
-	map = mmap(0, stepsize * 2, PROT_WRITE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANONYMOUS, -1, 0);
+	map = mmap(0, stepsize * 2, PROT_WRITE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANON, -1, 0);
 	if (map == (char *)-1)
 		perror("trap 2 failed");
 
@@ -43,7 +43,7 @@ int main()
 		perror("trap 3 failed");
 	//printf("trap 3 = %p-%p\n", map, map+stepsize*2);
 
-	map = mmap(0, 256*1024, PROT_NONE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANONYMOUS, -1, 0);
+	map = mmap(0, 256*1024, PROT_NONE, MAP_PRIVATE|MAP_NORESERVE|MAP_ANON, -1, 0);
 	if (map == (char *)-1)
 		perror("trap 4 failed");
 	else {

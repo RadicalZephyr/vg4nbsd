@@ -1400,6 +1400,7 @@ Bool read_lib_symbols ( SegInfo* si )
    UInt          n_dimage = 0;
    struct vki_stat stat_buf;
 
+#ifndef VGO_netbsdelf2
    oimage = (Addr)NULL;
    if (VG_(clo_verbosity) > 1)
       VG_(message)(Vg_DebugMsg, "Reading syms from %s (%p)", 
@@ -1434,7 +1435,10 @@ Bool read_lib_symbols ( SegInfo* si )
    }
 
    oimage = sres.val;
-
+#else /* VGO_netbsdelf2 */
+   oimage = si->start;
+   n_oimage = si->size;
+#endif
    /* Ok, the object image is safely in oimage[0 .. n_oimage-1]. 
       Now verify that it is a valid ELF .so or executable image.
    */
@@ -1744,6 +1748,7 @@ Bool read_lib_symbols ( SegInfo* si )
    res = True;
 
   out: {
+#ifndef VGO_netbsdelf2
    SysRes m_res;
    /* Last, but not least, heave the image(s) back overboard. */
    if (dimage) {
@@ -1752,6 +1757,7 @@ Bool read_lib_symbols ( SegInfo* si )
    }
    m_res = VG_(am_munmap_valgrind) ( oimage, n_oimage );
    vg_assert(!m_res.isError);
+#endif
    return res;
   } 
 }

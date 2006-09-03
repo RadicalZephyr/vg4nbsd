@@ -691,7 +691,7 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
        file = am_lookup_recorded_fd(fd);
        if (file == -1)
 	   return False;
-       VG_(memcpy)(buf, filenames[file].fname, VG_(strlen)(filenames[file].fname));
+       VG_(memcpy)(buf, filenames[file].fname, VG_(strlen)(filenames[file].fname) + 1);
        return True;
    }
 #endif

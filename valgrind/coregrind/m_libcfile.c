@@ -37,6 +37,7 @@
 #include "pub_core_clientstate.h"   // VG_(fd_hard_limit)
 #include "pub_core_syscall.h"
 #include "vki_unistd.h"
+#include "pub_core_aspacemgr.h"
 
 /* ---------------------------------------------------------------------
    File stuff
@@ -73,6 +74,14 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 {
    HChar tmp[64];
 
+#ifdef VGO_netbsdelf2
+   FileName *fn;
+   fn = VG_(am_lookup_recorded_fd)(fd);
+       if (fn == NULL)
+	   return False;
+       VG_(memcpy)(buf, fn->fname, VG_(strlen)(fn->fname) + 1);
+       return True;
+#else
    VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
    VG_(memset)(buf, 0, n_buf);
 
@@ -80,6 +89,7 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
       return True;
    else
       return False;
+#endif
 }
 
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )

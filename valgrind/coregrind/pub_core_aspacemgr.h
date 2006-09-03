@@ -322,9 +322,23 @@ extern VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp );
 
 extern Int VG_(am_get_VgStack_unused_szB)( VgStack* stack ); 
 
+#ifdef VGO_netbsdelf2
+
+#define VG_MAX_FILENAMELEN 1000
+
+typedef 
+struct {
+  Bool inUse;
+  int fd;
+  HChar fname[VG_MAX_FILENAMELEN];
+}FileName;
+
 /* TRACKING OF FDs */
-void VG_(am_record_open_fd)(int fd, Char * filename);
+void VG_(am_record_open_fd)(int fd, const Char * filename);
+FileName *VG_(am_lookup_recorded_fd)(Int fd );
 void VG_(remove_recorded_fd)(Int fd);
+
+#endif /* VGO_netbsdelf2 */
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 

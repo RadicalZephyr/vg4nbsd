@@ -302,14 +302,7 @@ typedef
 static SegName segnames[VG_N_SEGNAMES];
 static Int     segnames_used = 0;
 #ifdef VGO_netbsdelf2
-#define VG_MAX_FILENAMELEN 1000
 #define VG_N_FILENAMES 400
-typedef 
-struct {
-  Bool inUse;
-  int fd;
-  HChar fname[VG_MAX_SEGNAMELEN];
-}FileName;
 static Int filenames_used = 0;
 static FileName filenames[VG_N_FILENAMES];
 
@@ -452,7 +445,7 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 // m_libc*.  THESE DO NOT UPDATE THE SEGMENT LIST.  DO NOT USE THEM
 // UNLESS YOU KNOW WHAT YOU ARE DOING.
 
-void VG_(am_record_open_fd)(int fd, Char * filename){
+void VG_(am_record_open_fd)(int fd, const Char * filename){
   Int i;
   if(VG_(strlen)(filename)==0 ){
     /* special file so forget it */
@@ -479,22 +472,22 @@ void VG_(am_record_open_fd)(int fd, Char * filename){
   return;
 }
 /* return a pointer to the index of the recored fd , taking the fd as input */
-static int am_lookup_recorded_fd(Int fd ){
+FileName *VG_(am_lookup_recorded_fd)(Int fd ){
   Int i ; 
   for(i = 0 ; i < filenames_used; i ++ ){
     if(filenames[i].fd == fd )
-      return i;
+      return &filenames[i];
   }
   /* cant find fd return -1 */
-  return -1;
+  return NULL;
 }
 void VG_(remove_recorded_fd)(Int fd){
-  Int i; 
-  i = am_lookup_recorded_fd(fd);
-  if(i == -1 )
+	FileName *fn;
+  fn = VG_(am_lookup_recorded_fd)(fd);
+  if(fn == NULL )
     return;
     /* it wasnt recorded so reutrn */
-  filenames[i].inUse = False;
+  fn->inUse = False;
   return;
 }
 
@@ -682,16 +675,16 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
 /*  else { */
 /*    if( */
 /* try returning the fd name as the result XXXXXXXXX these can be reused*/
-   int file;
+   FileName *fn;
    if(nbuf < 64){
      return False; 
    }
    else { /* lol wtf!? there is no snprintf ? */
 /*     aspacem_sprintf(buf, "/proc/self/fd/%d", fd);*/
-       file = am_lookup_recorded_fd(fd);
-       if (file == -1)
+       fn = VG_(am_lookup_recorded_fd)(fd);
+       if (fn == NULL)
 	   return False;
-       VG_(memcpy)(buf, filenames[file].fname, VG_(strlen)(filenames[file].fname) + 1);
+       VG_(memcpy)(buf, fn->fname, VG_(strlen)(fn->fname) + 1);
        return True;
    }
 #endif

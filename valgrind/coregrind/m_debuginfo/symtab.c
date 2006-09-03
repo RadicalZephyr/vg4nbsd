@@ -177,9 +177,9 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    vg_assert(seg);
 
    filename = VG_(am_get_filename)( seg );
-   if (!filename)
-      return;
-
+/*    if (!filename) */
+/*       return; */
+   VG_(printf)("Filename =%s\n",filename);
    VG_(printf)("DI_NOTIFY_MMAP filename = %s\n", filename);
    
    filename = VG_(arena_strdup)( VG_AR_SYMTAB, filename );

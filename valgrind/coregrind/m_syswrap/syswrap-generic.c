@@ -1857,7 +1857,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
      sres.isError = False;
      sres.val = arg1;
      return sres;
-#else
+#else /* short circuit in netbsd's case */
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 #endif
    }
@@ -1920,7 +1920,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    }
 
    /* Stay sane */
-   VG_(printf)("sres.val = %d, arg1 = %d\n",sres.val , arg1);
+/*    VG_(printf)("sres.val = %d, arg1 = %d\n",sres.val , arg1); */
    if (!sres.isError && (arg4 & VKI_MAP_FIXED))
           vg_assert(sres.val == arg1);
 
@@ -2873,7 +2873,7 @@ POST(sys_fcntl64)
 PRE(sys_newfstat)
 {
    PRINT("sys_newfstat ( %d, %p )", ARG1,ARG2);
-   PRE_REG_READ2(long, "fstat", unsigned int, fd, struct stat *, buf);
+   PRE_REG_READ2(long, "fstat", unsigned int, fd, struct vki_stat *, buf);
    PRE_MEM_WRITE( "fstat(buf)", ARG2, sizeof(struct vki_stat) );
 }
 

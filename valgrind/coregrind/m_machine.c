@@ -99,7 +99,7 @@ void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
      VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
    }
    else {
-	   VG_(printf)("In messing up shadow state (Get)\n");
+/* 	   VG_(printf)("In messing up shadow state (Get)\n"); */
 	   //	   vg_assert(size == 1); 
 	   offset -= 1000;  /* Or offset %= 1000 ? */
 	   VG_(memcpy)(area,(void *)((Addr)(&(tst)->arch.vex_shadow.guest_ESP)+offset ), size);
@@ -127,7 +127,7 @@ void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
     }
     else { 
 
-      VG_(printf)("In messing up shadow state offset = %d (Set) \n",offset);
+/*       VG_(printf)("In messing up shadow state offset = %d (Set) \n",offset); */
       // vg_assert(size == 1); 
       offset -= 1000;  /* Or offset %= 1000 ? */
       

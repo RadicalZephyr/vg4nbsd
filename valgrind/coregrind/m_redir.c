@@ -352,6 +352,7 @@ static void symtab_free(void* p)
 
 void VG_(setup_code_redirect_table) ( void )
 {
+
    // Initialise resolved_redirs list.
    resolved_redirs = VG_(OSet_Create)(offsetof(CodeRedirect, from_addr),
                                       NULL,     // Use fast comparison
@@ -381,7 +382,7 @@ void VG_(setup_code_redirect_table) ( void )
    add_redirect_addr_to_addr(
       0xFFFFFFFFFF600000ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vgettimeofday) 
-   );
+      );
    add_redirect_addr_to_addr( 
       0xFFFFFFFFFF600400ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vtime) 
@@ -403,6 +404,22 @@ void VG_(setup_code_redirect_table) ( void )
       );
 
 #elif defined(VGP_x86_netbsdelf2)
+
+   /* Redirect _dl_sysinfo_int80, which is glibc's default system call
+      routine, to our copy so that the special sysinfo unwind hack in
+      m_stacktrace.c will kick in.  */
+/*    add_redirect_sym_to_addr( */
+/*       "soname:ld-linux.so.2", "_dl_sysinfo_int80", */
+/*       (Addr)&VG_(x86_netbsd_REDIR_FOR__dl_sysinfo_int80) */
+/*    ); */
+   /* If we're using memcheck, use this intercept right from the
+      start, otherwise ld.so (glibc-2.3.5) makes a lot of noise. */
+/*    if (0==VG_(strcmp)("Memcheck", VG_(details).name)) { */
+/*       add_redirect_sym_to_addr( */
+/*          "soname:ld.elf_so", "index", */
+/*          (Addr)&VG_(x86_linux_REDIR_FOR_index) */
+/*       );    */
+/*    } */
    // NetBSD: TODO - XXXX 
 /*  add_redirect_sym_to_addr( */
 /*       "soname:ld.elf_so", "_dl_sysinfo_int80", */

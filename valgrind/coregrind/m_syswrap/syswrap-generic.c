@@ -2680,6 +2680,7 @@ PRE(sys_close)
 
 POST(sys_close)
 {
+	VG_(remove_recorded_fd)(ARG1);
    if (VG_(clo_track_fds)) record_fd_close(tid, ARG1);
 }
 

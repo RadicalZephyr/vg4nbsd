@@ -659,35 +659,18 @@ Bool get_inode_for_fd ( Int fd, /*OUT*/UWord* dev,
 static
 Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
 {
-   Int   i;
-   HChar tmp[64];
 
 #ifdef VGO_netbsdelf2
-   /* we use fstat in this case */
-   /* see sys_newfstat */
-/*    int retval ; */
-/*    struct vki_stat sb; */
-/*  retval =   aspacemf_fstat(fd,&sb); /\* use existing code to avoid duplication *\/ */
-/*  if(retval != 0 ) {  */
-/*    VG_(printf)("aspacemgr.c: get_name_for_fd: error in fstat!!\n") */
-/*    return False; */
-/*  } */
-/*  else { */
-/*    if( */
 /* try returning the fd name as the result XXXXXXXXX these can be reused*/
    FileName *fn;
-   if(nbuf < 64){
-     return False; 
-   }
-   else { /* lol wtf!? there is no snprintf ? */
-/*     aspacem_sprintf(buf, "/proc/self/fd/%d", fd);*/
        fn = VG_(am_lookup_recorded_fd)(fd);
        if (fn == NULL)
 	   return False;
        VG_(memcpy)(buf, fn->fname, VG_(strlen)(fn->fname) + 1);
        return True;
-   }
-#endif
+#else
+   Int   i;
+   HChar tmp[64];
 
    aspacem_sprintf(tmp, "/proc/self/fd/%d", fd);
    for (i = 0; i < nbuf; i++) buf[i] = 0;
@@ -695,6 +678,7 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
       return True;
    else
       return False;
+#endif
 }
 
 

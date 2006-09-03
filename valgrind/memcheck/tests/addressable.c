@@ -9,12 +9,13 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 
 static int pgsz;
 
 static char *mm(char *addr, int size, int prot)
 {
-	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+	int flags = MAP_PRIVATE | MAP_ANON;
 	char *ret;
 
 	if (addr)

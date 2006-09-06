@@ -43,7 +43,7 @@ add_includes_x86_netbsdelf2 = -I$(top_srcdir)/coregrind \
 		-I$(top_srcdir)/coregrind/x86-netbsdelf2 \
 		-I$(top_srcdir)/include \
 		-I@VEX_DIR@/pub \
-		-DVG_PLATFORM="\"x86-netbsdelf2\"" \
+		-DVG_PLATFORM="\"x86-netbsd\"" \
 		-DVGA_x86=1 \
 		-DVGO_netbsdelf2=1 \
 		-DVGP_x86_netbsdelf2=1

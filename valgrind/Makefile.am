@@ -202,15 +202,12 @@ VEX_PRIMARY_SOURCES = \
 #		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
 #	|| rm -f $@
 #
-# XXX VG4NBSD project: GNU sed has an extension where a regex is accepted
-#  as an address too.  NetBSD sed only accepts line numbers.  FIXME (write a
-#  portable sed script)
-#
 valt_load_address_x86_netbsd.lds: Makefile
-	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | gsed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/d' \
-		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/valt_load_address/g' > $@ \
+	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | awk \
+        '!skipped && $0 !~ /^=====+$/ { next }
+	/^=====+$/ { skipped = 1; next }
+	/\. = 0x[0-9A-Fa-f]+ \+ SIZEOF_HEADERS/ { gsub(/0x[0-9A-Fa-f]+/, "valt_load_address"); }
+	{ print }' > $@ \
 	|| rm -f $@
 
 #valt_load_address_x86_netbsd.lds: Makefile

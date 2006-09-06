@@ -204,9 +204,9 @@ VEX_PRIMARY_SOURCES = \
 #
 valt_load_address_x86_netbsd.lds: Makefile
 	$(CC) @FLAG_M32@ -Wl,--verbose -nostdlib 2>&1 | awk \
-        '!skipped && $0 !~ /^=====+$/ { next }
-	/^=====+$/ { skipped = 1; next }
-	/\. = 0x[0-9A-Fa-f]+ \+ SIZEOF_HEADERS/ { gsub(/0x[0-9A-Fa-f]+/, "valt_load_address"); }
+        '!skipped && $$0 !~ /^=====+$$/ { next } \
+	/^=====+$$/ { skipped = 1; next } \
+	/\. = 0x[0-9A-Fa-f]+ \+ SIZEOF_HEADERS/ { gsub(/0x[0-9A-Fa-f]+/, "valt_load_address"); } \
 	{ print }' > $@ \
 	|| rm -f $@
 

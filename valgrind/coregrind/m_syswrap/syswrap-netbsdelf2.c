@@ -1491,13 +1491,28 @@ POST(sys_uuidgen)
    I_die_here;
 }
 
+/* PRE(sys_fstatvfs1) */
+/* { */
+/*   I_die_here; */
+/* } */
+/* POST(sys_fstatvfs1) */
+/* { */
+/*   I_die_here; */
+/* } */
 PRE(sys_fstatvfs1)
 {
-  I_die_here;
+   PRINT("sys_fstatvfs ( %d, %p )",ARG1,ARG2, ARG3);
+   PRE_REG_READ3(long, "fstatfs",
+                 unsigned int, fd, struct vki_statvfs *, buf, int, flags);
+   /* all this is read */
+   PRE_MEM_WRITE( "fstatfs(buf)", ARG2, sizeof(struct vki_statfs) );
+   /* going to be written into? */
 }
+
 POST(sys_fstatvfs1)
 {
-  I_die_here;
+   POST_MEM_WRITE( ARG2, sizeof(struct vki_statvfs) );
+   /* data written intoa rg2 of that size */
 }
 #undef PRE
 #undef POST

@@ -337,6 +337,39 @@ struct vki_statfs {
 	__vki_u32 f_spare[5];
 };
 
+/* /usr/include/sys/statvfs.h */
+typedef struct { int __fsid_val[2]; } vki_fsid_t; /* file system id type */ 
+#define VKI_VFS_NAMELEN    32      
+#define VKI_VFS_MNAMELEN   1024                                    
+
+struct vki_statvfs {                                                               
+  unsigned long   f_flag;         /* copy of mount exported flags */        
+  unsigned long   f_bsize;        /* file system block size */              
+  unsigned long   f_frsize;       /* fundamental file system block size */  
+  unsigned long   f_iosize;       /* optimal file system block size */      
+  __vki_u64      f_blocks;       /* number of blocks in file system, */    
+  /*   (in units of f_frsize) */            
+  __vki_u64      f_bfree;        /* free blocks avail in file system */    
+  __vki_u64      f_bavail;       /* free blocks avail to non-root */       
+  __vki_u64      f_bresvd;       /* blocks reserved for root */            
+  __vki_u64      f_files;        /* total file nodes in file system */     
+  __vki_u64      f_ffree;        /* free file nodes in file system */      
+  __vki_u64      f_favail;       /* free file nodes avail to non-root */   
+  __vki_u64      f_fresvd;       /* file nodes reserved for root */        
+  __vki_u64        f_syncreads;    /* count of sync reads since mount */     
+  __vki_u64       f_syncwrites;   /* count of sync writes since mount */    
+  __vki_u64        f_asyncreads;   /* count of async reads since mount */    
+  __vki_u64        f_asyncwrites;  /* count of async writes since mount */   
+  vki_fsid_t         f_fsidx;        /* NetBSD compatible fsid */              
+  unsigned long   f_fsid;         /* Posix compatible fsid */               
+  unsigned long   f_namemax;      /* maximum filename length */             
+  __vki_u32           f_owner;        /* user that mounted the file system */  
+  __vki_u32        f_spare[4];     /* spare space */                         
+  char    f_fstypename[VKI_VFS_NAMELEN]; /* fs type name */                    
+  char    f_mntonname[VKI_VFS_MNAMELEN];  /* directory on which mounted */
+  char    f_mntfromname[VKI_VFS_MNAMELEN];  /* mounted file system */          
+}; 
+
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/termios.h
 //----------------------------------------------------------------------

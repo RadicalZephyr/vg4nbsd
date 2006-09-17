@@ -1582,6 +1582,7 @@ void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
+  VG_(printf)("W00000))!!!\n");
 #if defined (VGO_netbsdelf2)
 	I_die_here;
 #else

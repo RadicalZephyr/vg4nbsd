@@ -427,7 +427,7 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
          intfd = sres.val; 
 
 	 interp = readelf(intfd, buf); 
-	 VG_(debugLog)(2, "interp = %p \t info->entry = %p \t interp->e.e_entry = %p\n", interp, info->entry, interp->e.e_entry); 
+	 //	 VG_(debugLog)(2, "interp = %p \t info->entry = %p \t interp->e.e_entry = %p\n", interp, info->entry, interp->e.e_entry); 
 	 //info->entry = interp->e.e_entry;
 	 /* it has its own program header etc does ld.elf_so have? , yes */
 	 if (interp == NULL) {
@@ -449,8 +449,6 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	       interp_align = iph->p_align;
 	       baseaddr_set = 1;
 	    }
-	    VG_(debugLog)(2, "interp_addr = %d\n",interp_addr);
-
 	    /* assumes that all segments in the interp are close */
 	    end = (iph->p_vaddr - interp_addr) + iph->p_memsz; /* is this valid for netbsd */
 
@@ -467,7 +465,6 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    }
 
    /* XXX */
-   VG_(debugLog)(2, "interp_addr = %p\n", interp_addr); /* why is this 0 */
    if (info->phdr == 0) // it will be 
      info->phdr = minaddr + ebase + e->e.e_phoff;  
    VG_(debugLog)(3, "info->phdr = %p phoff = %p\n",info->phdr, e->e.e_phoff);

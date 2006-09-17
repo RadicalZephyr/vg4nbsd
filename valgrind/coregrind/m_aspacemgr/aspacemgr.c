@@ -641,8 +641,6 @@ Bool get_inode_for_fd ( Int fd, /*OUT*/UWord* dev,
       return True;
    }
 #endif
- VG_(debugLog)(0,"aspacem","fstat on fd %d\n", fd);
-
    r = aspacem_fstat(fd, &buf);
    if (r == 0) {
       *dev = buf.st_dev;
@@ -2457,7 +2455,6 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
 #ifdef VGO_netbsdelf2
-   VG_(printf)("In am_anon_fixed_client\n");
   sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
@@ -3390,7 +3387,7 @@ static void parse_procselfmaps (
 
    aspacem_assert('\0' != procmap_buf[0] && 0 != buf_n_tot);
 
-   if (1)
+   if (0)
       VG_(debugLog)(0, "procselfmaps", "raw:\n%s\n", procmap_buf);
 
    /* Ok, it's safely aboard.  Parse the entries. */

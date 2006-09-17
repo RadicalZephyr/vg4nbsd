@@ -69,7 +69,7 @@ static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
    /* make sure we get the CPU lock before doing anything significant */
    VG_(set_running)(tid);
 
-   if (1)
+   if (0)
       VG_(printf)("thread tid %d started: stack = %p\n",
 		  tid, &tid);
 
@@ -98,7 +98,6 @@ static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
 
 static void run_a_thread_NORETURN ( Word tidW )
 {
-	VG_(printf)("in run a thread_noreturn\n");
    ThreadId tid = (ThreadId)tidW;
    VgSchedReturnCode src;
 Int c;

@@ -676,7 +676,6 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
    UInt     trc;
    ThreadState *tst = VG_(get_ThreadState)(tid);
 
-   VG_(printf)("entering VG_scheduler\n");
    if (VG_(clo_trace_sched))
       print_sched_event(tid, "entering VG_(scheduler)");      
 
@@ -689,7 +688,6 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
    VG_(dispatch_ctr) = SCHEDULING_QUANTUM + 1;
 
-   VG_(printf)("dispatch ctr = %d\n",VG_(dispatch_ctr));
    while(!VG_(is_exiting)(tid)) {
 	   VG_(debugLog)(4,"scheduler","scheduler: in while loop\n");
       if (VG_(dispatch_ctr) == 1) {

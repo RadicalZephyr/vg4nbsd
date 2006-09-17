@@ -142,9 +142,6 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
 Int VG_(pipe) ( Int fd[2])
 { int ret;
 	ret =   do_pipe_inner(__NR_pipe, fd);
-VG_(printf)("fd 1 is %d\n",fd[0]);
-VG_(printf)("fd 2 is %d\n",fd[1]);
-
 	return ret;
 }
 

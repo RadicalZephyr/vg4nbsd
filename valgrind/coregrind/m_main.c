@@ -394,7 +394,7 @@ Addr setup_client_stack( void*  init_sp,
       auxsize +                               /* auxv */
       VG_ROUNDUP(stringsize, sizeof(Word));   /* strings (aligned) */
 
-   if (1) VG_(printf)("stacksize = %d\n", stacksize);
+   if (0) VG_(printf)("stacksize = %d\n", stacksize);
 
    /* client_SP is the client's stack pointer */
    client_SP = clstack_end - stacksize;
@@ -413,7 +413,7 @@ Addr setup_client_stack( void*  init_sp,
    VG_(clstk_base) = clstack_start;
    VG_(clstk_end)  = clstack_end;
 
-   if (1)
+   if (0)
       VG_(printf)("stringsize=%d auxsize=%d stacksize=%d maxsize=0x%x\n"
                   "clstack_start %p\n"
                   "clstack_end   %p\n",
@@ -462,7 +462,7 @@ Addr setup_client_stack( void*  init_sp,
 #    ifdef ENABLE_INNER
      inner_HACK = 1024*1024; // create 1M non-fault-extending stack
 #    endif
-     if (1)
+     if (0)
        VG_(printf)("%p 0x%x  %p 0x%x\n", 
 		   resvn_start, resvn_size, anon_start, anon_size);
      
@@ -559,7 +559,6 @@ Addr setup_client_stack( void*  init_sp,
 /*      auxv[5].a_type = AT_PHNUM; */
 /*      auxv[6].a_type = AT_BASE; */
 /*      auxv[7].a_type = AT_NULL; */
-       VG_(printf)("switching auxv %d\n", auxv->a_type);
 #ifdef VGO_netbsdelf2
      for (; auxv->a_type != AT_NULL; auxv++) {
 #else
@@ -571,7 +570,6 @@ Addr setup_client_stack( void*  init_sp,
        /* fill up auxvs ourselves */
        
        /* ...and fix up / examine the copy */
-       VG_(printf)("switching auxv %d\n", auxv->a_type);
 	 switch(auxv->a_type) {
 
          case AT_IGNORE:
@@ -613,9 +611,7 @@ Addr setup_client_stack( void*  init_sp,
             break;
 
          case AT_BASE:
-	   VG_(printf)("At base auxv->u.a_val = %p\n",auxv->u.a_val);
             auxv->u.a_val = info->interp_base;
-	    VG_(printf)("At base auxv->u.a_val = %p after assign\n",auxv->u.a_val);
             break;
 
 #if defined(VGO_linux)
@@ -626,7 +622,6 @@ Addr setup_client_stack( void*  init_sp,
 #endif
 
          case AT_ENTRY:
-	   VG_(printf) ("info -entry in m_main = %p\n", info->entry);
             auxv->u.a_val = info->entry;
             break;
 
@@ -698,7 +693,7 @@ Addr setup_client_stack( void*  init_sp,
 
    /* client_SP is pointing at client's argc/argv */
 
-   if (1) VG_(printf)("startup SP = %p\n", client_SP);
+   if (0) VG_(printf)("startup SP = %p\n", client_SP);
    return client_SP;
 }
 
@@ -2401,7 +2396,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //                                 are shown after the preamble]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
-   VG_(printf)("Post clo init!m_main\n");
    VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
@@ -2410,7 +2404,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: tl_pre_clo_init [for 'VG_(details).avg_translation_sizeB']
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise TT/TC\n");
-   VG_(printf)("init tt_cc\n");
    VG_(init_tt_tc)();
 
    //--------------------------------------------------------------
@@ -2478,7 +2471,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
         be True here so that we read info from the valgrind executable
         itself. */
      for (i = 0; i < n_seg_starts; i++){
-       VG_(printf)("m_main.c: notify mmap\n");
         VG_(di_notify_mmap)( seg_starts[i], True/*allow_SkFileV*/ );
      }
      VG_(free)( seg_starts );

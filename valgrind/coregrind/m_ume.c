@@ -88,7 +88,6 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
 	const char ** argu;
 	long argc = 0;
 	argu = ( const char **) &sp[1];
-	VG_(printf)("The argu is %s\n",argu[0]);
 	argc = *(long *)sp;
 	sp+=2+argc ; /* skip over argc arguments and null terminator */
         while(*sp++!=0) { } /* skip over environment and null
@@ -254,7 +253,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       //
       // The condition handles the case of a zero-length segment.
       if (VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr) > 0) {
-         if (1) VG_(debugLog)(0,"ume","mmap_file_fixed_client i is %d #1\n",i);
+         if (0) VG_(debugLog)(0,"ume","mmap_file_fixed_client i is %d #1\n",i);
          res = VG_(am_mmap_file_fixed_client)(
                   VG_PGROUNDDN(addr),
                   VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
@@ -262,7 +261,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
                   prot , /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
                   e->fd,   VG_PGROUNDDN(off)  
                );
-         if (1) VG_(am_show_nsegments)(0,"after #1");
+         if (0) VG_(am_show_nsegments)(0,"after #1");
          check_mmap(res, VG_PGROUNDDN(addr),
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
@@ -273,7 +272,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
-            if (1) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
+            if (0) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
 	    res = VG_(am_mmap_anon_fixed_client)(
                      VG_PGROUNDUP(bss), bytes,
 		     prot
@@ -383,21 +382,18 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
    info->phnum = e->e.e_phnum;
    info->entry = e->e.e_entry + ebase;
    info->phdr = 0; 
-   if(1){
+   if(0){
 	   VG_(printf)("info->phnum:%d\n , info->entry:%p\n",info->phnum, info->entry); 
    }
    for(i = 0; i < e->e.e_phnum; i++) { 
      ESZ(Phdr) *ph = &e->p[i]; /* e->p[i] e->p is array of phdr [i] is to deref that & of that is the address of phdr there */
-     VG_(printf)("p_type = %p\n",ph->p_type);
      switch(ph->p_type) {
       case PT_PHDR:
-     VG_(printf)("in pt_hdr\n");
 	 info->phdr = ph->p_vaddr + ebase;
-	 VG_(printf)("info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
+	 VG_(debugLog)(3, "info->phdr = ph->p_vaddr + ebase; (%p + %p = %p)\n", ph->p_vaddr, ebase, info->phdr);
 	 break;
 
       case PT_LOAD:
-	 VG_(printf) ("in pt_load\n");
 	 if (ph->p_vaddr < minaddr)
 	    minaddr = ph->p_vaddr;
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
@@ -405,17 +401,15 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 break;
 
       case PT_DYNAMIC:
-         VG_(printf) ("in pt_dynamic\n");
 	 if (ph->p_vaddr < minaddr)
 	    minaddr = ph->p_vaddr;
 	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
 	    maxaddr = ph->p_vaddr+ph->p_memsz;
-	 VG_(printf)("pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
+	 VG_(debugLog)(4, "pt_dynamic_addr = %p [this must match obj->dynamic in ld.so_elf]\n", ph->p_vaddr);
 	 break;
 			
       case PT_INTERP:
 	{
-         VG_(printf) ("in pt_interp\n");
 	 char *buf = VG_(malloc)(ph->p_filesz+1);
 	 Int j;
 	 Int intfd;
@@ -426,19 +420,16 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	 buf[ph->p_filesz] = '\0';
 
 	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
-	 VG_(printf)("Managed to open interp %s\n",buf);
          if (sres.isError) {
 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
 	    VG_(exit)(1);
 	 }
          intfd = sres.val; 
-	 VG_(printf)("intfd = %d\n",intfd);
 
 	 interp = readelf(intfd, buf); 
-	 VG_(printf)("interp = %p \t info->entry = %p \t interp->e.e_entry = %p\n", interp, info->entry, interp->e.e_entry); 
+	 VG_(debugLog)(2, "interp = %p \t info->entry = %p \t interp->e.e_entry = %p\n", interp, info->entry, interp->e.e_entry); 
 	 //info->entry = interp->e.e_entry;
 	 /* it has its own program header etc does ld.elf_so have? , yes */
-	 VG_(printf)("Reading the interpreter\n");
 	 if (interp == NULL) {
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
 	    return 1;
@@ -451,16 +442,14 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
 	    ESZ(Addr) end;
 
 	    if (iph->p_type != PT_LOAD) {
-	      VG_(printf)("iph->p_type = %d\n", iph->p_type);
 	      continue; /* why? there must be 4 here  */
 	    }
-	    VG_(printf)("in m_ume.c:load_ELF PT_INTERP switch case, type is PT_LOAD baseaddr_set =%d\n",baseaddr_set);
-	    	    if (!baseaddr_set) {
+	    if (!baseaddr_set) {
 	       interp_addr  = iph->p_vaddr; 
 	       interp_align = iph->p_align;
 	       baseaddr_set = 1;
-	           }
-	    VG_(printf)("interp_addr = %d\n",interp_addr);
+	    }
+	    VG_(debugLog)(2, "interp_addr = %d\n",interp_addr);
 
 	    /* assumes that all segments in the interp are close */
 	    end = (iph->p_vaddr - interp_addr) + iph->p_memsz; /* is this valid for netbsd */
@@ -477,10 +466,11 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       }
    }
 
-   VG_( printf)("interp_addr = %p\n", interp_addr); /* why is this 0 */
+   /* XXX */
+   VG_(debugLog)(2, "interp_addr = %p\n", interp_addr); /* why is this 0 */
    if (info->phdr == 0) // it will be 
      info->phdr = minaddr + ebase + e->e.e_phoff;  
-   VG_(printf)("info->phdr = %p phoff = %p\n",info->phdr, e->e.e_phoff);
+   VG_(debugLog)(3, "info->phdr = %p phoff = %p\n",info->phdr, e->e.e_phoff);
 
    if (info->exe_base != info->exe_end) {
       if (minaddr >= maxaddr ||
@@ -552,7 +542,6 @@ static Int load_ELF(Int fd, const char *name, /*MOD*/struct exeinfo *info)
       VG_(close)(interp->fd);
 
       entry = (void *)(advised - interp_addr + interp->e.e_entry);
-      VG_(printf)( "readelf entry = (%p - %p + %p) = %p\n", advised, interp_addr, interp->e.e_entry,entry);
       info->interp_base = (ESZ(Addr))advised;
       interp_offset = advised - interp_addr;
       
@@ -621,7 +610,6 @@ static Int load_script(Int fd, const char *name, struct exeinfo *info)
    Char* arg = NULL;
    SysRes res;
 
-   VG_(printf)("load_script\n");
    // Read the first part of the file.
    res = VG_(pread)(fd, hdr, len, 0);
    if (res.isError) {
@@ -670,7 +658,7 @@ static Int load_script(Int fd, const char *name, struct exeinfo *info)
    if (info->argv && info->argv[0] != NULL)
       info->argv[0] = (char *)name;
 
-   if (1)
+   if (0)
       VG_(printf)("#! script: interp_name=\"%s\" interp_args=\"%s\"\n",
                   info->interp_name, info->interp_args);
 

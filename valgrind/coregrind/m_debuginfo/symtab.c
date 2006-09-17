@@ -30,6 +30,7 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_threadstate.h"
 #include "pub_core_debuginfo.h"
 #include "pub_core_demangle.h"
@@ -1408,7 +1409,7 @@ Bool read_lib_symbols ( SegInfo* si )
    /* mmap the object image aboard, so that we can read symbols and
       line number info out of it.  It will be munmapped immediately
       thereafter; it is only aboard transiently. */
-   VG_(printf)("doing stat on %s\n",si->filename);
+   VG_(debugLog)(3, "doing stat on %s\n",si->filename);
    fd = VG_(stat)(si->filename, &stat_buf);
    if (fd.isError) {
       ML_(symerr)("Can't stat .so/.exe (to determine its size)?!");
@@ -1421,7 +1422,7 @@ Bool read_lib_symbols ( SegInfo* si )
       ML_(symerr)("Can't open .so/.exe to read symbols?!");
       return False;
    }
-   VG_(printf)("reading symtab, symbol is si->filename %s\n",si->filename);
+   VG_(debugLog)(3, "reading symtab, symbol is si->filename %s\n",si->filename);
    sres = VG_(am_mmap_file_float_valgrind)
              ( n_oimage, VKI_PROT_READ, fd.val, 0 );
 

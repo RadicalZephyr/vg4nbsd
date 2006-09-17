@@ -58,11 +58,9 @@ static void nl_fini(Int exitcode)
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2005, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
-   VG_(printf)("\nHello world!\n");
    VG_(basic_tool_funcs)        (nl_post_clo_init,
                                  nl_instrument,
                                  nl_fini);
-   VG_(printf)("\nGoodbye world!\n");
 
    /* No needs, no core events to track */
 }

@@ -2057,7 +2057,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    PLAX_(__NR_compat_10_omsgsys, sys_compat_omsgsys), // 170  XXX What's this?
    PLAX_(__NR_compat_10_oshmsys, sys_compat_oshmsys), // 171  XXX What's this?
    GENX_(172,                    sys_ni_syscall),     // 172
-   NBSDXY(__NR_pread,            sys_pread),          // 173
+   NBSDXY(__NR_pread,            sys_pread),          // 173 same as pread64
    NBSDX_(__NR_pwrite,           sys_pwrite),         // 174
 
    NBSDXY(__NR_ntp_gettime,      sys_ntp_gettime),    // 175

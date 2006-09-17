@@ -1268,16 +1268,32 @@ POST(sys_sysarch)
    I_die_here;
 }
 
+/* PRE(sys_pread) */
+/* { */
+/*    I_die_here; */
+/* } */
+
+/* POST(sys_pread) */
+/* { */
+/*    I_die_here; */
+/* } */
 PRE(sys_pread)
 {
-   I_die_here;
+   *flags |= SfMayBlock;
+   PRINT("sys_pread ( %d, %p, %llu,,%llu,, %lld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4,ARG5);
+   PRE_REG_READ5(ssize_t, "pread",
+                 unsigned int, fd, char *, buf, vki_size_t, count,
+                 vki_u32, pad, __vki_u32, offset); /* its ok its a pointer */
+   PRE_MEM_WRITE( "pread(buf)", ARG2, ARG3 );
 }
-
 POST(sys_pread)
 {
-   I_die_here;
+   vg_assert(SUCCESS);
+   if (RES > 0) {
+      POST_MEM_WRITE( ARG2, RES );
+   }
 }
-
 PRE(sys_pwrite)
 {
    I_die_here;

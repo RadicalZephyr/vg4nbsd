@@ -1825,13 +1825,13 @@ PRE(sys_munlockall)
 // AMD64.
 PRE(sys_pipe)
 {
-   PRINT("sys_pipe ( %p )", ARG1);
+  PRINT("sys_pipe ( %p )", ARG1);
    PRE_REG_READ1(int, "pipe", int *, filedes);
    PRE_MEM_WRITE( "pipe(filedes)", ARG1, 2*sizeof(int) );
 }
 POST(sys_pipe)
 {
-   Int *p = (Int *)ARG1;
+  Int *p = (Int *)ARG1;
 
    if (!ML_(fd_allowed)(p[0], "pipe", tid, True) ||
        !ML_(fd_allowed)(p[1], "pipe", tid, True)) {

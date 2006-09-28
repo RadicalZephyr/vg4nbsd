@@ -275,6 +275,7 @@ PRE(sys_ni_syscall)
 {
    PRINT("non-existent syscall! (ni_syscall)");
    PRE_REG_READ0(long, "ni_syscall");
+   I_die_here;
    SET_STATUS_Failure( VKI_ENOSYS );
 }
 
@@ -1520,7 +1521,7 @@ PRE(sys_fstatvfs1)
    PRE_REG_READ3(long, "fstatfs",
                  unsigned int, fd, struct vki_statvfs *, buf, int, flags);
    /* all this is read */
-   PRE_MEM_WRITE( "fstatfs(buf)", ARG2, sizeof(struct vki_statfs) );
+   PRE_MEM_WRITE( "fstatfs(buf)", ARG3, sizeof(struct vki_statfs) );
    /* going to be written into? */
 }
 
@@ -1528,6 +1529,38 @@ POST(sys_fstatvfs1)
 {
    POST_MEM_WRITE( ARG2, sizeof(struct vki_statvfs) );
    /* data written intoa rg2 of that size */
+}
+PRE(sys_pipe)
+{
+  I_die_here;
+   PRINT("sys_pipe ( %p )", ARG1);
+   PRE_REG_READ1(int, "pipe", int *, filedes);
+   PRE_MEM_WRITE( "pipe(filedes)", ARG1, 2*sizeof(int) );
+}
+POST(sys_pipe)
+{
+   I_die_here;
+   Int *p = (Int *)ARG1;
+
+   if (!ML_(fd_allowed)(p[0], "pipe", tid, True) ||
+       !ML_(fd_allowed)(p[1], "pipe", tid, True)) {
+      VG_(close)(p[0]);
+      VG_(close)(p[1]);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      POST_MEM_WRITE( ARG1, 2*sizeof(int) );
+      if (VG_(clo_track_fds)) {
+         ML_(record_fd_open_nameless)(tid, p[0]);
+         ML_(record_fd_open_nameless)(tid, p[1]);
+      }
+   }
+}
+
+PRE(sys_lseek)
+{
+   PRINT("sys_lseek ( %d, %d, %d,%d )", ARG1,ARG2,ARG3,ARG4);
+   PRE_REG_READ4(vki_off_t, "lseek",
+                 unsigned int, fd, unsigned int, pad, vki_off_t, offset, unsigned int, whence);
 }
 #undef PRE
 #undef POST

@@ -905,11 +905,12 @@
 /* syscall: "fstatvfs1" ret: "int" args: "int" "struct statvfs *" "int" */
 #define __NR_fstatvfs1   358
 
-
+#define __NR___stat30 387
 /* syscall: "__fstat30" ret: "int" args: "int" "struct stat *" */
 #define __NR___fstat30   388
 
 /* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
 #define __NR___lstat30   389
+#define __NR___getdents30   390
 
 #endif /* _VG_ASM_I386_UNISTD_H_ */

@@ -1890,8 +1890,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    NBSDXY(__NR_compat_43_lstat43,sys_compat_lstat),   // 40
    GENXY(__NR_dup,               sys_dup),            // 41
-   GENX_(__NR_pipe,              sys_ni_syscall),           // 42
-/*    GENX_(__NR_pipe,              sys_pipe),           // 42 */
+/*    GENX_(__NR_pipe,              sys_ni_syscall),           // 42 */
+   NBSDXY(__NR_pipe,              sys_pipe),           // 42
    GENX_(__NR_getegid,           sys_getegid),      // 43
    GENX_(__NR_profil,            sys_ni_syscall),     // 44
 
@@ -2088,8 +2088,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDXY(__NR_compat_12_getdirentries, sys_compat_getdirentries), // 196
    PLAX_(__NR_mmap,              old_mmap),           // 197
    PLAXY(__NR___syscall,         sys_syscall),        // 198
-   GENX_(__NR_lseek,             sys_ni_syscall),          // 199
-/*    GENX_(__NR_lseek,             sys_lseek),          // 199 */
+/*    GENX_(__NR_lseek,             sys_ni_syscall),          // 199 */
+   NBSDX_(__NR_lseek,             sys_lseek),          // 199
 
    GENX_(__NR_truncate,          sys_truncate),       // 200
    GENX_(__NR_ftruncate,         sys_ftruncate),      // 201
@@ -2343,12 +2343,13 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(384,                    sys_ni_syscall),     // 381
    GENX_(385,                    sys_ni_syscall),     // 382
    GENX_(386,                    sys_ni_syscall),     // 383
-   GENX_(387,                    sys_ni_syscall),     // 384
+   GENXY(__NR___stat30,                    sys_newstat),     // 384 does this work?
    GENXY(__NR___fstat30,         sys_newfstat),       // 388
-   GENXY(__NR___lstat30,         sys_newlstat)       // 279
+   GENXY(__NR___lstat30,         sys_newlstat),       // 279
 
    /* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
 #define SYS___lstat30   389  
+   GENXY(__NR___getdents30,         sys_getdents)       // 279
 };
 
 const UInt ML_(syscall_table_size) = 

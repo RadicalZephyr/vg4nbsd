@@ -161,6 +161,7 @@ DECL_TEMPLATE(netbsdelf2, sys_uuidgen);
 DECL_TEMPLATE(netbsdelf2, sys_fstatvfs1);
 DECL_TEMPLATE(netbsdelf2, sys_pipe);
 DECL_TEMPLATE(netbsdelf2, sys_lseek);
+DECL_TEMPLATE(netbsdelf2, sys_ioctl);
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 
 /*--------------------------------------------------------------------*/

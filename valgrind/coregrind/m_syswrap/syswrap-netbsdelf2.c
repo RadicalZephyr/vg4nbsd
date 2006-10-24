@@ -521,9 +521,9 @@ PRE(sys_vfork)
 { 
 	I_die_here;
 }
-PRE(sys_mprotect){
-	I_die_here;
-}
+/* PRE(sys_mprotect){ */
+/* 	I_die_here; */
+/* } */
 PRE(sys_madvise){
 	I_die_here;
 }
@@ -642,13 +642,25 @@ POST(sys_compat_orecv)
 /* From sys_socketcall */
 PRE(sys_socket)
 {
-   I_die_here;
+   PRINT("sys_socket ( %d, %d, %d )",ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "socket", int, domain, int, type, int, protocol);
 }
-
 POST(sys_socket)
 {
-   I_die_here;
+   SysRes r;
+   vg_assert(SUCCESS);
+   r = ML_(generic_POST_sys_socket)(tid, VG_(mk_SysRes_Success)(RES));
+   SET_STATUS_from_SysRes(r);
 }
+/* PRE(sys_socket) */
+/* { */
+/*    I_die_here; */
+/* } */
+
+/* POST(sys_socket) */
+/* { */
+/*    I_die_here; */
+/* } */
 
 /* From sys_socketcall */
 PRE(sys_connect)
@@ -1172,6 +1184,7 @@ PRE(sys_socketpair)
    I_die_here;
 }
 
+
 POST(sys_socketpair)
 {
    I_die_here;
@@ -1561,6 +1574,73 @@ PRE(sys_lseek)
    PRINT("sys_lseek ( %d, %d, %d,%d )", ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(vki_off_t, "lseek",
                  unsigned int, fd, unsigned int, pad, vki_off_t, offset, unsigned int, whence);
+}
+
+PRE(sys_ioctl)
+{
+  *flags |= SfMayBlock;
+  PRINT("sys_ioctl ( %d, 0x%x, %p )",ARG1,ARG2,ARG3);
+  VG_(printf)("Arg 2 is %lx\n",ARG2);
+  if (ARG2 & VKI_IOC_VOID) { /* no argument so screw that */
+    PRE_REG_READ2(long, "ioctl",
+		  int, fd, unsigned long, request);
+  }
+  else 
+    {
+      PRE_REG_READ3(long, "ioctl",
+		    int, fd, unsigned long, request, void *, arg);
+      /* if its an out parameter, we write into ARG3 , if so, extract the size */ 
+      if(ARG2 & VKI_IOC_OUT){
+	PRE_MEM_WRITE("ioctl(generic)",ARG3, VKI_IOCPARM_LEN(ARG2));
+      }
+    }
+}
+
+/*    if (VG_(strstr)(VG_(clo_sim_hints), "lax-ioctls") != NULL) { */
+/* 	 /\*  */
+/* 	  * Be very lax about ioctl handling; the only */
+/* 	  * assumption is that the size is correct. Doesn't */
+/* 	  * require the full buffer to be initialized when */
+/* 	  * writing.  Without this, using some device */
+/* 	  * drivers with a large number of strange ioctl */
+/* 	  * commands becomes very tiresome. */
+/* 	  *\/ */
+/*    } else if (/\* size == 0 || *\/ dir == _VKI_IOC_NONE) { */
+/*      static Int moans = 3; */
+/* 	 if (moans > 0 && !VG_(clo_xml)) { */
+/* 	    moans--; */
+/* 	    VG_(message)(Vg_UserMsg,  */
+/* 			 "Warning: noted but unhandled ioctl 0x%x" */
+/* 			 " with no size/direction hints", */
+/* 			 ARG2);  */
+/* 	    VG_(message)(Vg_UserMsg,  */
+/* 			 "   This could cause spurious value errors" */
+/* 			 " to appear."); */
+/* 	    VG_(message)(Vg_UserMsg,  */
+/* 			 "   See README_MISSING_SYSCALL_OR_IOCTL for " */
+/* 			 "guidance on writing a proper wrapper." ); */
+/* 	 } */
+/*       } else { */
+/* 	 if ((dir & _VKI_IOC_WRITE) && size > 0) */
+/* 	    PRE_MEM_READ( "ioctl(generic)", ARG3, size); */
+/* 	 if ((dir & _VKI_IOC_READ) && size > 0) */
+/* 	    PRE_MEM_WRITE( "ioctl(generic)", ARG3, size); */
+/*       } */
+
+POST(sys_ioctl)
+{
+/* /\*       UInt dir  = _VKI_IOC_DIR(ARG2); *\/ */
+/* /\*       UInt size = _VKI_IOC_SIZE(ARG2); *\/ */
+  vg_assert(SUCCESS);
+// can I confirm that this is being written 
+VG_(printf)("Arg 2 is %lx,%d\n",ARG2,RES);
+  if(ARG2 & VKI_IOC_IN && RES == 0 ){
+    PRE_MEM_WRITE("ioctl(generic)",ARG3, VKI_IOCPARM_LEN(ARG2));
+        }
+/*       if (size > 0 && (dir & _VKI_IOC_READ) */
+/* 	  && RES == 0  */
+/* 	  && ARG3 != (Addr)NULL) */
+/* 	 POST_MEM_WRITE(ARG3, size); */
 }
 #undef PRE
 #undef POST

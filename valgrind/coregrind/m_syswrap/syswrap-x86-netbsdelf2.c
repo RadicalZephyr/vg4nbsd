@@ -1905,7 +1905,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_acct,              sys_acct),           // 51
    NBSDXY(__NR_compat_13_sigpending13, sys_compat_sigpending),   // 52
    NBSDXY(__NR_compat_13_sigaltstack13, sys_compat_sigaltstack), // 53
-   GENXY(__NR_ioctl,             sys_ioctl),          // 54
+   NBSDXY(__NR_ioctl,             sys_ioctl),          // 54
 
    // Might as well , this sounds silly to implement in vgrind:
    GENX_(__NR_compat_12_oreboot, sys_ni_syscall),     // 55
@@ -1930,7 +1930,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    NBSDX_(__NR_compat_43_ommap,  sys_ni_syscall),     // 71 XXX
    NBSDX_(__NR_vadvise,          sys_ni_syscall),     // 72 Whats this? investigate
    GENX_(__NR_munmap,           sys_munmap),         // 73
-   NBSDX_(__NR_mprotect,         sys_mprotect),       // 74
+   GENXY(__NR_mprotect,         sys_mprotect),       // 74
 
    NBSDX_(__NR_madvise,          sys_madvise),        // 75
 // (__NR_vhangup,   sys_vhangup),                     // 76 obsolete

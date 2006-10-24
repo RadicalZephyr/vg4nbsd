@@ -2,7 +2,7 @@
 # quick gdb script launching valgrind 
 #
 
-VG_ROOT=/home/sjamaan/valgrind
+VG_ROOT=/home/hsaliak/srcs/valgrind
 VG_ROOT_LIB=$VG_ROOT/.in_place/
 #VG_TOOL=memcheck
 VG_TOOL=none

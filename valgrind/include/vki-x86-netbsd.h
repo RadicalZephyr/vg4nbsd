@@ -409,6 +409,13 @@ struct vki_termios {
 	vki_cc_t c_cc[VKI_NCCS];	/* control characters */
 };
 
+// From sys/ioccom.h - netbsd  //
+#define VKI_IOCPARM_MASK    0x1fff /* parameter length, at most 13 bits */
+#define VKI_IOCPARM_LEN(x)  (((x) >> 16) & VKI_IOCPARM_MASK)                   
+#define VKI_IOC_VOID         (unsigned long)0x20000000                          
+#define VKI_IOC_OUT         (unsigned long)0x40000000                          
+#define VKI_IOC_IN          (unsigned long)0x80000000    
+#define VKI_IOC_INOUT       ( VKI_IOC_OUT | VKI_IOC_IN )
 //----------------------------------------------------------------------
 // From linux-2.6.8.1/include/asm-i386/ioctl.h
 //----------------------------------------------------------------------

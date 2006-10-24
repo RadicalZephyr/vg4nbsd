@@ -4682,6 +4682,7 @@ PRE(sys_mprotect)
 #ifndef VGO_netbsdelf2
    else 
    if (ARG3 & (VKI_PROT_GROWSDOWN|VKI_PROT_GROWSUP)) {
+     {
       /* Deal with mprotects on growable stack areas.
 
          The critical files to understand all this are mm/mprotect.c
@@ -4699,9 +4700,7 @@ PRE(sys_mprotect)
       UInt grows = ARG3 & (VKI_PROT_GROWSDOWN|VKI_PROT_GROWSUP);
       NSegment *aseg = VG_(am_find_nsegment)(ARG1);
       NSegment *rseg;
-
       vg_assert(aseg);
-
       if (grows == VKI_PROT_GROWSDOWN) {
          rseg = VG_(am_next_nsegment)( aseg, False/*backwards*/ );
          if (rseg &&
@@ -4716,6 +4715,7 @@ PRE(sys_mprotect)
             SET_STATUS_Failure( VKI_EINVAL );
          }
       } else if (grows == VKI_PROT_GROWSUP) {
+
          rseg = VG_(am_next_nsegment)( aseg, True/*forwards*/ );
          if (rseg &&
              rseg->kind == SkResvn &&
@@ -4731,6 +4731,19 @@ PRE(sys_mprotect)
          SET_STATUS_Failure( VKI_EINVAL );
       }
    }
+#else /* our stack should grow up , default. */
+     NSegment *aseg = VG_(am_find_nsegment)(ARG1);
+      NSegment *rseg;
+      vg_assert(aseg);
+      rseg = VG_(am_next_nsegment)( aseg, False/*backwards*/ );
+         if (rseg &&
+             rseg->kind == SkResvn &&
+             rseg->smode == SmUpper &&
+             rseg->end+1 == aseg->start) {
+            Addr end = ARG1 + ARG2;
+            ARG1 = aseg->start;
+            ARG2 = end - aseg->start;
+	 }
 #endif
 }
 
@@ -4865,7 +4878,7 @@ POST(sys_open)
 
 PRE(sys_read)
 {
-   *flags |= SfMayBlock;
+  *flags |= SfMayBlock;
    PRINT("sys_read ( %d, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "read",
                  unsigned int, fd, char *, buf, vki_size_t, count);

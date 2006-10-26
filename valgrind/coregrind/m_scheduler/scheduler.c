@@ -96,7 +96,7 @@
 /* Defines the thread-scheduling timeslice, in terms of the number of
    basic blocks we attempt to run each thread for.  Smaller values
    give finer interleaving but much increased scheduling overheads. */
-#define SCHEDULING_QUANTUM   5000000000
+#define SCHEDULING_QUANTUM   500000
 /* #define SCHEDULING_QUANTUM   50 */
 
 /* If true, a fault is Valgrind-internal (ie, a bug) */
@@ -295,7 +295,7 @@ void VG_(vg_yield)(void)
 
    VG_(set_sleeping)(tid, VgTs_Yielding);
 
-   //VG_(printf)("tid %d yielding EIP=%p\n", tid, VG_(threads)[tid].arch.m_eip);
+   //   VG_(printf)("tid %d yielding EIP=%p\n", tid, VG_(threads)[tid].arch.m_eip);
 
    /* 
       Tell the kernel we're yielding.
@@ -429,8 +429,8 @@ UInt run_thread_for_a_while ( ThreadId tid )
 #  endif   
 
    /* there should be no undealt-with signals */
-   //vg_assert(VG_(threads)[tid].siginfo.si_signo == 0);
-
+   //   vg_assert(VG_(threads)[tid].siginfo.si_signo == 0);
+   /* Assert commented out in original valgrind as well - kailash */
    //VG_(printf)("running EIP = %p ESP=%p\n", VG_(threads)[tid].arch.m_eip, VG_(threads)[tid].arch.m_esp);
 
    vg_assert(VG_(my_fault));
@@ -706,7 +706,8 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
-	 VG_(debugLog)(1,"scheduler","poll signals");
+	 VG_(debugLog)(1,"scheduler","poll signals\n");
+	 VG_(printf)("scheduler poll signals\n");
 	 VG_(poll_signals)(tid);
 
 	 if (VG_(is_exiting)(tid))

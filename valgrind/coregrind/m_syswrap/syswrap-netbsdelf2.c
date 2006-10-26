@@ -273,10 +273,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 
 PRE(sys_ni_syscall)
 {
-   PRINT("non-existent syscall! (ni_syscall)");
-   PRE_REG_READ0(long, "ni_syscall");
    I_die_here;
-   SET_STATUS_Failure( VKI_ENOSYS );
 }
 
 PRE(sys_set_tid_address)

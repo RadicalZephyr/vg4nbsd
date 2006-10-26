@@ -164,6 +164,7 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 /* #endif  */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
+  VG_(printf)("In sigprocmask!!\n");
 #  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 
@@ -248,6 +249,7 @@ Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info,
  
 Int VG_(signal)(Int signum, void (*sighandler)(Int))
 {
+  I_die_here;
 #  if !defined(VGP_x86_netbsdelf2)
    SysRes res;
    Int    n;

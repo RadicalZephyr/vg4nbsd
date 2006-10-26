@@ -88,7 +88,7 @@ typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 typedef unsigned long vki_old_sigset_t;		/* at least 32 bits */
 
 typedef struct {
-	unsigned long sig[4];
+	unsigned int sig[4];
 } vki_sigset_t;
 
 #define VKI_SIGHUP		 1
@@ -130,22 +130,22 @@ typedef struct {
 // [[This was (_NSIG-1) in 2.4.X... not sure if it matters.]]
 #define VKI_SIGRTMAX	_VKI_NSIG
 
-#define VKI_SA_NOCLDSTOP	0x00000001u
-#define VKI_SA_NOCLDWAIT	0x00000002u
-#define VKI_SA_SIGINFO		0x00000004u
-#define VKI_SA_ONSTACK		0x08000000u
-#define VKI_SA_RESTART		0x10000000u
-#define VKI_SA_NODEFER		0x40000000u
-#define VKI_SA_RESETHAND	0x80000000u
+#define VKI_SA_NOCLDSTOP	0x0008 
+#define VKI_SA_NOCLDWAIT	0x0020
+#define VKI_SA_SIGINFO		0x0040
+#define VKI_SA_ONSTACK		0x0001
+#define VKI_SA_RESTART		0x0002
+#define VKI_SA_NODEFER		0x0010
+#define VKI_SA_RESETHAND	0x0004
 
 #define VKI_SA_NOMASK		VKI_SA_NODEFER
 #define VKI_SA_ONESHOT		VKI_SA_RESETHAND
 //#define VKI_SA_INTERRUPT	0x20000000 /* dummy -- ignored */
 
-#define VKI_SA_RESTORER		0x04000000
+//#define VKI_SA_RESTORER		0x04000000 -- whats equivalent for netbsd
 
-#define VKI_SS_ONSTACK	1
-#define VKI_SS_DISABLE	2
+#define VKI_SS_ONSTACK	0x0001
+#define VKI_SS_DISABLE	0x0004
 
 struct vki_old_sigaction {
         // [[Nb: a 'k' prefix is added to "sa_handler" because

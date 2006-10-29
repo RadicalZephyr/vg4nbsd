@@ -2292,9 +2292,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(337,                    sys_ni_syscall),     // 337
    GENX_(338,                    sys_ni_syscall),     // 338
    GENX_(339,                    sys_ni_syscall),     // 339
-
-// XXX: What to do with the trampoline stuff?
-   GENX_(__NR___sigaction_sigtramp, sys_ni_syscall),  // 340
+   // XXX: What to do with the trampoline stuff? - Initial try just X_ 
+   NBSDX_(__NR___sigaction_sigtramp, sys_sigaction_sigtramp),  // 340
    PLAXY(__NR_pmc_get_info,      sys_pmc_get_info),   // 341
 // XXX: Looks like this can just be a PLAX_ instead
    PLAXY(__NR_pmc_control,       sys_pmc_control),    // 342

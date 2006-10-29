@@ -196,13 +196,14 @@ case "${host_os}" in
         VG_OS="freebsd"
         ;;
 
-     *netbsdelf2*)
+     *netbsdelf3*)
         AC_MSG_RESULT([ok (${host_os})])
         VG_OS="netbsdelf2"
         ;;
-     # XXX sjamaan WTF is this?
-     *netbsdelf3*)
-        AC_MSG_RESULT([ok (${host_os})])
+     # XXX sjamaan WTF is this? 
+     # Remove support for 2.x , really..  make it compile in 4.x
+     *netbsdelf4*)
+      AC_MSG_RESULT([ok (${host_os})])
         VG_OS="netbsdelf2"
         ;;
 

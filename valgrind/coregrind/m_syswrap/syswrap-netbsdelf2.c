@@ -1640,6 +1640,16 @@ VG_(printf)("Arg 2 is %lx,%d\n",ARG2,RES);
 /* 	  && ARG3 != (Addr)NULL) */
 /* 	 POST_MEM_WRITE(ARG3, size); */
 }
+
+
+PRE(sys_sigaction_sigtramp)
+{
+  PRINT("sigaction_sigtramp ( %d,%p,%p,%p,%d",ARG1,ARG2,ARG3,ARG4,ARG5);
+  /*retval type , function name, argument type , argument name .. */
+  PRE_REG_READ5("int","sigation_sigtramp",int, signum,struct  vki_sigaction * , nsa ,struct vki_sigaction * , osa , 
+		void *, tramp , int , vers );
+  /* What is going to be written , is a post wrapper required XXXX FIxME !!! */
+}
 #undef PRE
 #undef POST
 

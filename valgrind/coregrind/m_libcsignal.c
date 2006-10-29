@@ -85,6 +85,51 @@ Bool VG_(iseqsigset)( const vki_sigset_t* set1, const vki_sigset_t* set2 )
    return True;
 }
 
+/* The functions above should be ok. however a seperate implementation
+for some of the below functions is provided as netbsd seems to do them
+differnetly. see /usr/include/sys/sigtypes.h */
+
+#ifdef VGO_netbsdelf2 
+#define __sigmask(n)		(1 << (((unsigned int)(n) - 1) & 31))
+#define	__sigword(n)		(((unsigned int)(n) - 1) >> 5)
+
+Int VG_(sigaddset)( vki_sigset_t* set, Int signum )
+{
+
+   if (set == NULL)
+      return -1;
+   if (signum < 1 || signum > _VKI_NSIG)
+      return -1;
+   // signum--; /* required? */
+   set->sig[__sigword(signum)] |= __sigmask(signum) ;
+   //   set->sig[signum / _VKI_NSIG_BPW] |= (1UL << (signum % _VKI_NSIG_BPW));
+   return 0;
+}
+
+Int VG_(sigdelset)( vki_sigset_t* set, Int signum )
+{
+   if (set == NULL)
+      return -1;
+   if (signum < 1 || signum > _VKI_NSIG)
+      return -1;
+   // signum--;
+   set->sig[__sigword(signum)] &= ~__sigmask(signum) ;      
+   //set->sig[signum / _VKI_NSIG_BPW] &= ~(1UL << (signum % _VKI_NSIG_BPW));
+   return 0;
+}
+
+Int VG_(sigismember) ( const vki_sigset_t* set, Int signum )
+{
+   if (set == NULL)
+      return 0;
+   if (signum < 1 || signum > _VKI_NSIG)
+      return 0;
+   //signum--;
+   return    ((set->sig[__sigword(signum)] & __sigmask(signum)) != 0);
+
+}
+
+#else  
 
 Int VG_(sigaddset)( vki_sigset_t* set, Int signum )
 {
@@ -104,7 +149,7 @@ Int VG_(sigdelset)( vki_sigset_t* set, Int signum )
    if (signum < 1 || signum > _VKI_NSIG)
       return -1;
    signum--;
-   set->sig[signum / _VKI_NSIG_BPW] &= ~(1UL << (signum % _VKI_NSIG_BPW));
+    set->sig[signum / _VKI_NSIG_BPW] &= ~(1UL << (signum % _VKI_NSIG_BPW));
    return 0;
 }
 
@@ -121,7 +166,7 @@ Int VG_(sigismember) ( const vki_sigset_t* set, Int signum )
       return 0;
 }
 
-
+#endif /* Sigaddset etc functions */ 
 /* Add all signals in src to dst. */
 void VG_(sigaddset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 {
@@ -164,14 +209,14 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 /* #endif  */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
-  VG_(printf)("In sigprocmask!!\n");
+  VG_(printf)("In sigprocmask how = %d\n",how);
 #  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
    return res.isError ? -1 : 0;
 #else
-   SysRes res = VG_(do_syscall3)(__NR___sigprocmask14, how,(UWord)set,(UWord)oldset);
+   SysRes res = VG_(do_syscall3)(__NR___sigprocmask14, how,set,oldset);
 /*    return do_sigprocmask_inner(how,set,oldset); */
    return res.isError ? -1 : 0;
 #endif
@@ -249,7 +294,6 @@ Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info,
  
 Int VG_(signal)(Int signum, void (*sighandler)(Int))
 {
-  I_die_here;
 #  if !defined(VGP_x86_netbsdelf2)
    SysRes res;
    Int    n;

@@ -308,7 +308,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    Int   sig;
    UInt  scss_flags;
    UInt  skss_flags;
-
+   VG_(printf)("Calculating SKSS\n");
    for (sig = 1; sig <= _VKI_NSIG; sig++) {
       void *skss_handler;
       void *scss_handler;
@@ -400,8 +400,8 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-   if (1)
-      pp_SKSS();
+/*    if (1) */
+/*       pp_SKSS(); */
 }
 
 
@@ -919,7 +919,6 @@ static const Char *signame(Int sigNo)
       S(SIGPIPE);
       S(SIGALRM);
       S(SIGTERM);
-      S(SIGSTKFLT);
       S(SIGCHLD);
       S(SIGCONT);
       S(SIGSTOP);
@@ -934,7 +933,9 @@ static const Char *signame(Int sigNo)
       S(SIGWINCH);
       S(SIGIO);
       S(SIGPWR);
+#ifndef VGO_netbsdelf2
       S(SIGUNUSED);
+#endif
 #undef S
 
    case VKI_SIGRTMIN ... VKI_SIGRTMAX:
@@ -962,6 +963,7 @@ void VG_(kill_self)(Int sigNo)
 
    VG_(sigemptyset)(&mask);
    VG_(sigaddset)(&mask, sigNo);
+   VG_(printf)("Calling sigprocmask with unblock\n ");
    VG_(sigprocmask)(VKI_SIG_UNBLOCK, &mask, &origmask);
 
    VG_(kill)(VG_(getpid)(), sigNo);
@@ -1639,11 +1641,12 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	    client's signal mask was applied, so we can't get here
 	    unless the client wants this signal right now.  This means
 	    we can simply use the async_signalhandler. */
+	VG_(printf)("Calling async handler!\n");
 	 async_signalhandler(sigNo, info, uc);
 	 VG_(core_panic)("async_signalhandler returned!?\n");
       }
       /* netbsd doesnt have this union XXX - examine equivalent union  */ 
-     /*  if (info->_sifields._kill._pid == 0) {  */
+/*       if (info->_sifields._kill._pid == 0) { */
 /* 	 /\* There's a per-user limit of pending siginfo signals.  If */
 /* 	    you exceed this, by having more than that number of */
 /* 	    pending signals with siginfo, then new signals are */
@@ -1676,6 +1679,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 /* 	 resume_scheduler(tid); */
 /* 	 VG_(exit)(99);		/\* If we can't resume, then just exit *\/ */
 /*       } */
+      VG_(printf)( "Routing user-sent sync signal %d via queue\n",sigNo);
 
       if (VG_(clo_trace_signals))
 	 VG_(message)(Vg_DebugMsg, "Routing user-sent sync signal %d via queue",
@@ -1709,7 +1713,10 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       NSegment* seg      = VG_(am_find_nsegment)(fault);
       NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
                                : NULL;
-
+      
+      VG_(printf)("SIGSEGV: si_code=%d faultaddr=%p tid=%d ESP=%p "
+                         "seg=NULL",
+			 info->_info._code, fault, tid, esp);
       if (VG_(clo_trace_signals)) {
 	 if (seg == NULL)
 	    VG_(message)(Vg_DebugMsg,
@@ -2082,7 +2089,7 @@ void VG_(poll_signals)(ThreadId tid)
    ThreadState *tst = VG_(get_ThreadState)(tid);
    Int i;
    vki_sigset_t saved_mask;
-   VG_(printf)("polling pending signals!\n");
+   VG_(printf)("\n polling pending signals!\n");
    /* look for all the signals this thread isn't blocking */
    for(i = 0; i < _VKI_NSIG_WORDS; i++)
       pollset.sig[i] = ~tst->sig_mask.sig[i];

@@ -67,9 +67,9 @@ typedef unsigned int vki_u32;
 
 #define VKI_MINSIGSTKSZ	2048
 
-#define VKI_SIG_BLOCK          0	/* for blocking signals */
-#define VKI_SIG_UNBLOCK        1	/* for unblocking signals */
-#define VKI_SIG_SETMASK        2	/* for setting the signal mask */
+#define VKI_SIG_BLOCK          1	/* for blocking signals */
+#define VKI_SIG_UNBLOCK        2	/* for unblocking signals */
+#define VKI_SIG_SETMASK        3	/* for setting the signal mask */
 
 /* Type of a signal handler.  */
 typedef void __vki_signalfn_t(int);
@@ -78,57 +78,64 @@ typedef __vki_signalfn_t __user *__vki_sighandler_t;
 typedef void __vki_restorefn_t(void);
 typedef __vki_restorefn_t __user *__vki_sigrestore_t;
 
-#define VKI_SIG_DFL	((__vki_sighandler_t)0)	/* default signal handling */
-#define VKI_SIG_IGN	((__vki_sighandler_t)1)	/* ignore signal */
+//#define VKI_SIG_DFL	((__vki_sighandler_t)0)	/* default signal handling */
+//#define VKI_SIG_IGN	((__vki_sighandler_t)1)	/* ignore signal */
 
 #define _VKI_NSIG	64
 #define _VKI_NSIG_BPW	32
-#define _VKI_NSIG_WORDS	(_VKI_NSIG / _VKI_NSIG_BPW)
-
+//#define _VKI_NSIG_WORDS	(_VKI_NSIG / _VKI_NSIG_BPW)
+#define _VKI_NSIG_WORDS 4 
 typedef unsigned long vki_old_sigset_t;		/* at least 32 bits */
 
 typedef struct {
-	unsigned int sig[4];
+	unsigned int sig[_VKI_NSIG_WORDS];
 } vki_sigset_t;
 
-#define VKI_SIGHUP		 1
-#define VKI_SIGINT		 2
-#define VKI_SIGQUIT		 3
-#define VKI_SIGILL		 4
-#define VKI_SIGTRAP		 5
-#define VKI_SIGABRT		 6
-//#define VKI_SIGIOT		 6
-#define VKI_SIGBUS		 7
-#define VKI_SIGFPE		 8
-#define VKI_SIGKILL		 9
-#define VKI_SIGUSR1		10
-#define VKI_SIGSEGV		11
-#define VKI_SIGUSR2		12
-#define VKI_SIGPIPE		13
-#define VKI_SIGALRM		14
-#define VKI_SIGTERM		15
-#define VKI_SIGSTKFLT		16
-#define VKI_SIGCHLD		17
-#define VKI_SIGCONT		18
-#define VKI_SIGSTOP		19
-#define VKI_SIGTSTP		20
-#define VKI_SIGTTIN		21
-#define VKI_SIGTTOU		22
-#define VKI_SIGURG		23
-#define VKI_SIGXCPU		24
-#define VKI_SIGXFSZ		25
-#define VKI_SIGVTALRM		26
-#define VKI_SIGPROF		27
-#define VKI_SIGWINCH		28
-#define VKI_SIGIO		29
-#define VKI_SIGPWR		30
-#define VKI_SIGSYS		31
-#define	VKI_SIGUNUSED		31
 
+#define	VKI_SIGHUP		1	/* hangup */
+#define	VKI_SIGINT		2	/* interrupt */
+#define	VKI_SIGQUIT		3	/* quit */
+#define	VKI_SIGILL		4	/* illegal instruction (not reset when caught) */
+#define	VKI_SIGTRAP		5	/* trace trap (not reset when caught) */
+#define	VKI_SIGABRT		6	/* abort() */
+#define	VKI_SIGIOT		VKI_SIGABRT	/* compatibility */
+#define	VKI_SIGEMT		7	/* EMT instruction */
+#define	VKI_SIGFPE		8	/* floating point exception */
+#define	VKI_SIGKILL		9	/* kill (cannot be caught or ignored) */
+#define	VKI_SIGBUS		10	/* bus error */
+#define	VKI_SIGSEGV		11	/* segmentation violation */
+#define	VKI_SIGSYS		12	/* bad argument to system call */
+#define	VKI_SIGPIPE		13	/* write on a pipe with no one to read it */
+#define	VKI_SIGALRM		14	/* alarm clock */
+#define	VKI_SIGTERM		15	/* software termination signal from kill */
+#define	VKI_SIGURG		16	/* urgent condition on IO channel */
+#define	VKI_SIGSTOP		17	/* sendable stop signal not from tty */
+#define	VKI_SIGTSTP		18	/* stop signal from tty */
+#define	VKI_SIGCONT		19	/* continue a stopped process */
+#define	VKI_SIGCHLD		20	/* to parent on child stop or exit */
+#define	VKI_SIGTTIN		21	/* to readers pgrp upon background tty read */
+#define	VKI_SIGTTOU		22	/* like TTIN for output if (tp->t_local&LTOSTOP) */
+#define	VKI_SIGIO		23	/* input/output possible signal */
+#define	VKI_SIGXCPU		24	/* exceeded CPU time limit */
+#define	VKI_SIGXFSZ		25	/* exceeded file size limit */
+#define	VKI_SIGVTALRM	26	/* virtual time alarm */
+#define	VKI_SIGPROF		27	/* profiling time alarm */
+#define	VKI_SIGWINCH	28	/* window size changes */
+#define	VKI_SIGINFO		29	/* information request */
+#define	VKI_SIGUSR1		30	/* user defined signal 1 */
+#define	VKI_SIGUSR2		31	/* user defined signal 2 */
+#define	VKI_SIGPWR		32	/* power fail/restart (not reset when caught) */
+#define	VKI_SIGRTMIN	33	/* Kernel only; not exposed to userland yet */
+#define	VKI_SIGRTMAX	63	/* Kernel only; not exposed to userland yet */
+
+#define	VKI_SIG_DFL		((void (*)(int))  0)
+#define	VKI_SIG_IGN		((void (*)(int))  1)
+#define	VKI_SIG_ERR		((void (*)(int)) -1)
+#define	VKI_SIG_HOLD	((void (*)(int))  3)
+
+ 
 /* These should not be considered constants from userland.  */
-#define VKI_SIGRTMIN	32
-// [[This was (_NSIG-1) in 2.4.X... not sure if it matters.]]
-#define VKI_SIGRTMAX	_VKI_NSIG
+
 
 #define VKI_SA_NOCLDSTOP	0x0008 
 #define VKI_SA_NOCLDWAIT	0x0020

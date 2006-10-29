@@ -826,6 +826,7 @@ DECL_TEMPLATE(x86_netbsdelf2, sys_pmc_get_info);
 DECL_TEMPLATE(x86_netbsdelf2, sys_pmc_control);
 DECL_TEMPLATE(x86_netbsdelf2, sys_rasctl);
 
+
 PRE(old_select)
 {
    /* struct sel_arg_struct {
@@ -2135,7 +2136,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //       linux versions may indicate a stupid reliance on position of
 //       timer_create in the syscall table.
 /*    GENXY(__NR_clock_gettime,     sys_clock_gettime),  // 232 */
-   GENXY(__NR_clock_gettime,     sys_ni_syscall),  // 232
+   GENX_(__NR_clock_gettime,     sys_ni_syscall),  // 232
 /*    GENX_(__NR_clock_settime,     sys_clock_settime),  // 233 */
    GENX_(__NR_clock_settime,     sys_ni_syscall),  // 233
 /*    GENXY(__NR_clock_getres,      sys_clock_getres),   // 234 */
@@ -2147,10 +2148,10 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 /*    GENXY(__NR_timer_gettime,     sys_timer_gettime),  // 238 */
 /*    GENX_(__NR_timer_getoverrun,  sys_timer_getoverrun),// 239 */
 
-   GENXY(__NR_timer_create,      sys_ni_syscall),   // 235
+   GENX_(__NR_timer_create,      sys_ni_syscall),   // 235
    GENX_(__NR_timer_delete,      sys_ni_syscall),   // 236
-   GENXY(__NR_timer_settime,     sys_ni_syscall),  // 237
-   GENXY(__NR_timer_gettime,     sys_ni_syscall),  // 238
+   GENX_(__NR_timer_settime,     sys_ni_syscall),  // 237
+   GENX_(__NR_timer_gettime,     sys_ni_syscall),  // 238
    GENX_(__NR_timer_getoverrun,  sys_ni_syscall),// 239
 
    GENXY(__NR_nanosleep,         sys_nanosleep),      // 240
@@ -2230,7 +2231,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 /*    GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293 */
 /*    GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294 */
    GENXY(__NR___sigpending14,    sys_ni_syscall),     // 292
-   GENXY(__NR___sigprocmask14,   sys_ni_syscall),    // 293
+   NBSDX_(__NR___sigprocmask14,   sys_ni_syscall),    // 293
    GENX_(__NR___sigsuspend14,    sys_ni_syscall),     // 294
 
    PLAX_(__NR_compat_16___sigreturn14, sys_sigreturn),// 295

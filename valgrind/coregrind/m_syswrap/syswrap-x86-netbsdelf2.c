@@ -2231,7 +2231,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 /*    GENXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293 */
 /*    GENX_(__NR___sigsuspend14,    sys_sigsuspend),     // 294 */
    GENXY(__NR___sigpending14,    sys_ni_syscall),     // 292
-   NBSDX_(__NR___sigprocmask14,   sys_ni_syscall),    // 293
+   NBSDXY(__NR___sigprocmask14,   sys_sigprocmask),    // 293
    GENX_(__NR___sigsuspend14,    sys_ni_syscall),     // 294
 
    PLAX_(__NR_compat_16___sigreturn14, sys_sigreturn),// 295

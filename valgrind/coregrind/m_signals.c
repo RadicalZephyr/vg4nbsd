@@ -778,6 +778,10 @@ SysRes VG_(do_sys_sigprocmask) ( ThreadId tid,
                                  vki_sigset_t* set,
                                  vki_sigset_t* oldset )
 {
+  /* switch this only if set is null, see netbsd's man page on
+     sigprocmask. if set is null, how doesnt matter, as its just a
+                                 query of what the signal mask is */ 
+  if(set!= NULL){
    switch(how) {
    case VKI_SIG_BLOCK:
    case VKI_SIG_UNBLOCK:
@@ -791,6 +795,15 @@ SysRes VG_(do_sys_sigprocmask) ( ThreadId tid,
                   "sigprocmask: unknown 'how' field %d", how);
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
+  }
+  else {
+    vg_assert(VG_(is_valid_tid)(tid));
+      do_setmask ( tid, how, 0, oldset );
+      /* setmask should only set
+      it if Set is not null, lets set the new set to null, just in
+      case */
+      return VG_(mk_SysRes_Success)( 0 );
+  }
 }
 
 

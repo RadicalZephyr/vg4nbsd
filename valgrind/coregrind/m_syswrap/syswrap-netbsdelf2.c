@@ -38,11 +38,13 @@
 #include "pub_core_libcfile.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
+#include "pub_core_libcsignal.h" /* for sigprocmask - kailash */
 #include "pub_core_mallocfree.h"
 #include "pub_core_tooliface.h"
 #include "pub_core_transtab.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
+#include "pub_core_signals.h" /* for sigprocmask - kailash */
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"
 
@@ -1644,11 +1646,60 @@ VG_(printf)("Arg 2 is %lx,%d\n",ARG2,RES);
 
 PRE(sys_sigaction_sigtramp)
 {
+  /* does it blcok? do we need sfMayBlock ? */
   PRINT("sigaction_sigtramp ( %d,%p,%p,%p,%d",ARG1,ARG2,ARG3,ARG4,ARG5);
   /*retval type , function name, argument type , argument name .. */
   PRE_REG_READ5("int","sigation_sigtramp",int, signum,struct  vki_sigaction * , nsa ,struct vki_sigaction * , osa , 
 		void *, tramp , int , vers );
   /* What is going to be written , is a post wrapper required XXXX FIxME !!! */
+}
+/* lifted from syswrap-linux but it uses do_sys_sigprocmask which uses primitives that have been fixed, so as semantics are the same, this should be fine */
+PRE(sys_sigprocmask)
+{
+/*    vki_old_sigset_t* set; */
+/*    vki_old_sigset_t* oldset; */
+/*    vki_sigset_t bigger_set; */
+/*    vki_sigset_t bigger_oldset; */
+
+   PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3); 
+/*    PRE_REG_READ3(long, "sigprocmask",  */
+/*                  int, how, vki_old_sigset_t *, set, vki_old_sigset_t *, oldset); */
+
+   PRE_REG_READ3(long, "sigprocmask", 
+                 int, how, vki_sigset_t *, set, vki_sigset_t *, oldset);
+   if (ARG2 != 0)
+      PRE_MEM_READ( "sigprocmask(set)", ARG2, sizeof(vki_sigset_t));
+   if (ARG3 != 0)
+      PRE_MEM_WRITE( "sigprocmask(oldset)", ARG3, sizeof(vki_sigset_t));
+
+   // Nb: We must convert the smaller vki_old_sigset_t params into bigger
+   // vki_sigset_t params.
+/*    set    = (vki_old_sigset_t*)ARG2; */
+/*    oldset = (vki_old_sigset_t*)ARG3; */
+/*XXX not required in netbsd, what is this? */
+
+/*    VG_(memset)(&bigger_set,    0, sizeof(vki_sigset_t)); */
+/*    VG_(memset)(&bigger_oldset, 0, sizeof(vki_sigset_t)); */
+/*    if (set) */
+/*       bigger_set.sig[0] = *(vki_old_sigset_t*)set; */
+
+   SET_STATUS_from_SysRes(
+			  VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, ARG2, ARG3)); 
+/*                                 set ? ARG2    : NULL, */
+/*                              oldset ? ARG3 : NULL) */
+/*    ); */
+
+/*    if (oldset) */
+/*       *oldset = bigger_oldset.sig[0]; */
+
+   if (SUCCESS)
+      *flags |= SfPollAfter;
+}
+POST(sys_sigprocmask)
+{
+   vg_assert(SUCCESS);
+   if (RES == 0 && ARG3 != 0)
+      POST_MEM_WRITE( ARG3, sizeof(vki_old_sigset_t));
 }
 #undef PRE
 #undef POST

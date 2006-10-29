@@ -163,6 +163,7 @@ DECL_TEMPLATE(netbsdelf2, sys_pipe);
 DECL_TEMPLATE(netbsdelf2, sys_lseek);
 DECL_TEMPLATE(netbsdelf2, sys_ioctl);
 DECL_TEMPLATE(netbsdelf2, sys_sigaction_sigtramp);
+DECL_TEMPLATE(netbsdelf2, sys_sigprocmask);
 #endif   // __PRIV_SYSWRAP_NETBSD_H
 
 /*--------------------------------------------------------------------*/

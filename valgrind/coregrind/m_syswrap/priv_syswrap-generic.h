@@ -195,6 +195,7 @@ DECL_TEMPLATE(generic, sys_fcntl64);               // * P?
 DECL_TEMPLATE(generic, sys_lookup_dcookie);        // (*/32/64) L
 DECL_TEMPLATE(generic, sys_statfs64);              // * (?)
 DECL_TEMPLATE(generic, sys_fstatfs64);             // * (?)
+DECL_TEMPLATE(generic, sys_sigprocmask);           // (x86) (XPG4-UNIX)
 
 
 /* ---------------------------------------------------------------------

@@ -450,7 +450,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 #elif defined (VGP_x86_netbsdelf2)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
      LibVEX_GuestX86_put_eflag_c(canonical->what == SsFailure ? 1 : 0, gst);
-   gst->guest_EAX = canonical->val;
+       gst->guest_EAX = canonical->val;
    
 #elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
@@ -646,7 +646,6 @@ void VG_(client_syscall) ( ThreadId tid )
    vg_assert(tid >= 1 && tid < VG_N_THREADS);
    vg_assert(VG_(is_running_thread)(tid));
    tst = VG_(get_ThreadState)(tid);
-
    /* First off, get the syscall args and number.  This is a
       platform-dependent action. */
 
@@ -664,6 +663,7 @@ void VG_(client_syscall) ( ThreadId tid )
    /* Save the syscall number in the thread state in case the syscall 
       is interrupted by a signal. */
    sysno = sci->orig_args.sysno;
+
    /* The default what-to-do-next thing is hand the syscall to the
       kernel, so we pre-set that here. */
    sci->status.what = SsHandToKernel;
@@ -870,6 +870,7 @@ void VG_(client_syscall) ( ThreadId tid )
       Now go on to do the post-syscall actions (read on down ..)
    */
    VG_(post_syscall)(tid);
+
 }
 
 

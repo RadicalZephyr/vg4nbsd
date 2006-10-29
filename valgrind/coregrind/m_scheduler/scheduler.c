@@ -708,7 +708,6 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
 	 VG_(debugLog)(1,"scheduler","poll signals\n");
-	 VG_(printf)("scheduler poll signals\n");
 	 VG_(poll_signals)(tid);
 
 	 if (VG_(is_exiting)(tid))

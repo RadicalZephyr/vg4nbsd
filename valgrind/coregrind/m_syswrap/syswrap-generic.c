@@ -4826,19 +4826,19 @@ PRE(sys_open)
 {
    HChar  name[30];
    SysRes sres;
-
+#ifndef VGO_netbsdelf2 
    if (ARG2 & VKI_O_CREAT) {
       // 3-arg version
       PRINT("sys_open ( %p(%s), %d, %d )",ARG1,ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "open",
                     const char *, filename, int, flags, int, mode);
+      /* NO! */
    } else {
       // 2-arg version
       PRINT("sys_open ( %p(%s), %d )",ARG1,ARG1,ARG2);
       PRE_REG_READ2(long, "open",
                     const char *, filename, int, flags);
    }
-   PRE_MEM_RASCIIZ( "open(filename)", ARG1 );
 
    /* Handle the case where the open is of /proc/self/cmdline or
       /proc/<pid>/cmdline, and just give it a copy of the fd for the
@@ -4846,6 +4846,7 @@ PRE(sys_open)
       cloned fd back to the start. */
 
    VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
+
    if (ML_(safe_to_deref)( (void*)ARG1, 1 )
        && (VG_(strcmp)((Char *)ARG1, name) == 0 
            || VG_(strcmp)((Char *)ARG1, "/proc/self/cmdline") == 0)) {
@@ -4858,19 +4859,24 @@ PRE(sys_open)
       }
       return;
    }
+#endif
+   PRINT("sys_open ( %p(%s), %d, %d )",ARG1,ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "open",
+		 const char *, filename, int, flags, int, mode);
+   PRE_MEM_RASCIIZ( "open(filename)", ARG1 );
 
    /* Otherwise handle normally */
-   *flags |= SfMayBlock;
+      *flags |= SfMayBlock;
 }
 
 POST(sys_open)
 {
    vg_assert(SUCCESS);
+   VG_(am_record_open_fd)(RES,(Char *)ARG1); /* moved this over here, because we do not want to record the fd if fd_allowed is false! */
    if (!ML_(fd_allowed)(RES, "open", tid, True)) {
-      VG_(close)(RES);
+     VG_(close)(RES); /* required?! */
       SET_STATUS_Failure( VKI_EMFILE );
    } else {
-     VG_(am_record_open_fd)(RES,(Char *)ARG1);
       if (VG_(clo_track_fds))
          ML_(record_fd_open_with_given_name)(tid, RES, (Char*)ARG1);
    }
@@ -4878,7 +4884,7 @@ POST(sys_open)
 
 PRE(sys_read)
 {
-  *flags |= SfMayBlock;
+    *flags |= SfMayBlock;
    PRINT("sys_read ( %d, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "read",
                  unsigned int, fd, char *, buf, vki_size_t, count);
@@ -5190,6 +5196,7 @@ PRE(sys_newstat)
 
 POST(sys_newstat)
 {
+
    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat) );
 }
 

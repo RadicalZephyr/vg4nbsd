@@ -2102,7 +2102,6 @@ void VG_(poll_signals)(ThreadId tid)
    ThreadState *tst = VG_(get_ThreadState)(tid);
    Int i;
    vki_sigset_t saved_mask;
-   VG_(printf)("\n polling pending signals!\n");
    /* look for all the signals this thread isn't blocking */
    for(i = 0; i < _VKI_NSIG_WORDS; i++)
       pollset.sig[i] = ~tst->sig_mask.sig[i];

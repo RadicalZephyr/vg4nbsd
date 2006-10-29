@@ -835,29 +835,22 @@ PRE(old_select)
       struct timeval *tvp;
       };
    */
-   PRE_REG_READ1(long, "old_select", struct sel_arg_struct *, args);
-   PRE_MEM_READ( "old_select(args)", ARG1, 5*sizeof(UWord) );
+   PRE_REG_READ5(long, "old_select", int , nfds, void *, readfds,
+		 void *, writefds, void *,exceptfds,void *, timeout);
+/*    PRE_MEM_READ( "old_select(args)", ARG1, 5*sizeof(UWord) ); */
+   /* we must do mem writes for all things ! and the size of mem to be read!
+      for netbsd, this may be the approach required. */ 
    *flags |= SfMayBlock;
-   {
-      UInt* arg_struct = (UInt*)ARG1;
-      UInt a1, a2, a3, a4, a5;
+      PRINT("old_select ( %d, %p, %p, %p, %p )", ARG1,ARG2,ARG3,ARG4,ARG5);
+      if (ARG2 != (Addr)NULL)
+         PRE_MEM_READ( "old_select(readfds)",   ARG2, ARG1/8 /* __FD_SETSIZE/8 */ );
+      if (ARG3 != (Addr)NULL)
+         PRE_MEM_READ( "old_select(writefds)",  ARG3, ARG1/8 /* __FD_SETSIZE/8 */ );
+      if (ARG4 != (Addr)NULL)
+         PRE_MEM_READ( "old_select(exceptfds)", ARG4, ARG1/8 /* __FD_SETSIZE/8 */ );
+      if (ARG5 != (Addr)NULL)
+         PRE_MEM_READ( "old_select(timeout)", ARG5, sizeof(struct vki_timeval) );
 
-      a1 = arg_struct[0];
-      a2 = arg_struct[1];
-      a3 = arg_struct[2];
-      a4 = arg_struct[3];
-      a5 = arg_struct[4];
-
-      PRINT("old_select ( %d, %p, %p, %p, %p )", a1,a2,a3,a4,a5);
-      if (a2 != (Addr)NULL)
-         PRE_MEM_READ( "old_select(readfds)",   a2, a1/8 /* __FD_SETSIZE/8 */ );
-      if (a3 != (Addr)NULL)
-         PRE_MEM_READ( "old_select(writefds)",  a3, a1/8 /* __FD_SETSIZE/8 */ );
-      if (a4 != (Addr)NULL)
-         PRE_MEM_READ( "old_select(exceptfds)", a4, a1/8 /* __FD_SETSIZE/8 */ );
-      if (a5 != (Addr)NULL)
-         PRE_MEM_READ( "old_select(timeout)", a5, sizeof(struct vki_timeval) );
-   }
 }
 
 PRE(sys_clone)

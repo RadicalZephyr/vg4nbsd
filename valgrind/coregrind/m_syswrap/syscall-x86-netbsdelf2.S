@@ -111,13 +111,18 @@ ML_(do_syscall_for_client_WRK):
 2:	int	$0x80
 	movl    %ebx, %esp /* Restore our stack */
 	movl    $0, %edx
-	jnc     cfdone
+	jnc     cfdone /* ok edx is 1 if carry flag is crapped */
+	pushl 4+FSZ(%ebx) /* should be the guest state */	
+	pushl   $1
+	call	LibVEX_GuestX86_put_eflag_c /* saved */
+	popl %edx
+	popl %edx  /* throw away the arguments */
 	movl    $1, %edx
 cfdone:
 3:	/* In the range [3, 4), the syscall result is in %eax, but hasn't been
 	   committed to EAX. */
 	movl	4+FSZ(%esp), %ecx
-	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save back to EAX */
+	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save back to EAX */  /*best to save the CFLAG in the guest state same way */
 
 4:	/* Re-block signals.  If eip is in [4,5), then the syscall is complete and 
 	   we needn't worry about it. */
@@ -134,7 +139,8 @@ cfdone:
 	movl    %ebx, %esp
 
 	/* Restore carry flag */
-	cmp     $0, %edx
+	
+	cmp     $0, %edx    /* the problem with this is that until this value may change before its tested and stored  */
 5:	/* now safe from signals */
 
 	popl    %edx		

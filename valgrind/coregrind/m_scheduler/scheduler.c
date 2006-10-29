@@ -657,7 +657,6 @@ static void handle_syscall(ThreadId tid)
       VG_(printf)("tid %d not running; VG_(running_tid)=%d, tid %d status %d\n",
 		  tid, VG_(running_tid), tid, tst->status);
    vg_assert(VG_(is_running_thread)(tid));
-   VG_(printf)("poll signals? jumped  = %d\n",jumped);
    if (jumped) {
       block_signals(tid);
 

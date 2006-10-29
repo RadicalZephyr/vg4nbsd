@@ -209,7 +209,7 @@ void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 /* #endif  */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
-  VG_(printf)("In sigprocmask how = %d\n",how);
+  VG_(debugLog)(1,"m_libcsignal","In sigprocmask how = %d\n",how);
 #  if !defined(VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 

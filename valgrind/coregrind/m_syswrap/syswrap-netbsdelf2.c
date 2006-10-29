@@ -273,6 +273,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 
 PRE(sys_ni_syscall)
 {
+   VG_(printf)("non-existent syscall! implement a syscall for no %d\n",SYSNO);
    I_die_here;
 }
 

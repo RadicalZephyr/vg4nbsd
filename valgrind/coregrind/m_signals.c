@@ -2155,7 +2155,7 @@ void VG_(sigstartup_actions) ( void )
    vki_sigset_t saved_procmask;
    struct vki_sigaction sa;
 
-   /* VG_(printf)("SIGSTARTUP\n"); */
+   VG_(printf)("SIGSTARTUP\n");
    /* Block all signals.  saved_procmask remembers the previous mask,
       which the first thread inherits.
    */

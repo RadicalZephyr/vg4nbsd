@@ -1990,9 +1990,9 @@ PRE(sys_exit)
 
 PRE(sys_ni_syscall)
 {
-   PRINT("non-existent syscall! (ni_syscall)");
-   PRE_REG_READ0(long, "ni_syscall");
-   SET_STATUS_Failure( VKI_ENOSYS );
+   PRINT("non-existent syscall! (ni_syscall) , Implement a syscall for number %d\n", SYSNO);
+   VG_(printf)("non-existent syscall! implement a syscall for no %d\n",SYSNO);
+   I_die_here;
 }
 POST (sys_ni_syscall) {
 /* empty */

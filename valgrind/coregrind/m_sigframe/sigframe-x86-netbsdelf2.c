@@ -125,27 +125,6 @@ struct sigframe
    struct vg_sigframe vg;
 };
 
-struct rt_sigframe
-{
-   /* Sig handler's return address */
-   Addr retaddr;
-   Int  sigNo;
-
-   /* ptr to siginfo_t. */
-   Addr psigInfo;
-
-   /* ptr to ucontext */
-   Addr puContext;
-   /* pointed to by psigInfo */
-   vki_siginfo_t sigInfo;
-
-   /* pointed to by puContext */
-   struct vki_ucontext uContext;
-   struct _vki_fpstate fpstate;
-
-   struct vg_sigframe vg;
-};
-
 
 //:: /*------------------------------------------------------------*/
 //:: /*--- Signal operations                                    ---*/
@@ -501,59 +480,6 @@ static Addr build_sigframe(ThreadState *tst,
 	I_die_here;
 }
 
-
-static Addr build_rt_sigframe(ThreadState *tst,
-			      Addr esp_top_of_frame,
-			      const vki_siginfo_t *siginfo,
-			      void *handler, UInt flags,
-			      const vki_sigset_t *mask,
-			      void *restorer)
-{
-/*    struct rt_sigframe *frame; */
-/*    Addr esp = esp_top_of_frame; */
-/*    Int	sigNo = siginfo->si_signo; */
-
-/*    vg_assert((flags & VKI_SA_SIGINFO) != 0); */
-
-/*    esp -= sizeof(*frame); */
-/*    esp = VG_ROUNDDN(esp, 16); */
-/*    frame = (struct rt_sigframe *)esp; */
-
-/*    if (!extend(tst, esp, sizeof(*frame))) */
-/*       return esp_top_of_frame; */
-
-/*    /\* retaddr, sigNo, pSiginfo, puContext fields are to be written *\/ */
-/*    VG_TRACK( pre_mem_write, Vg_CoreSignal, tst->tid, "rt signal handler frame",  */
-/* 	     esp, offsetof(struct rt_sigframe, vg) ); */
-
-/*    frame->sigNo = sigNo; */
-
-/*    if (flags & VKI_SA_RESTORER) */
-/*       frame->retaddr = (Addr)restorer; */
-/*    else */
-/*       frame->retaddr = (Addr)&VG_(x86_netbsdelf2_SUBST_FOR_rt_sigreturn); */
-
-/*    frame->psigInfo = (Addr)&frame->sigInfo; */
-/*    frame->puContext = (Addr)&frame->uContext; */
-/*    VG_(memcpy)(&frame->sigInfo, siginfo, sizeof(vki_siginfo_t)); */
-
-/*    /\* SIGILL defines addr to be the faulting address *\/ */
-/*    if (sigNo == VKI_SIGILL && siginfo->si_code > 0) */
-/*       frame->sigInfo._sifields._sigfault._addr  */
-/*          = (void*)tst->arch.vex.guest_EIP; */
-
-/*    synth_ucontext(tst->tid, siginfo, mask, &frame->uContext, &frame->fpstate); */
-
-/*    VG_TRACK( post_mem_write,  Vg_CoreSignal, tst->tid,  */
-/*              esp, offsetof(struct rt_sigframe, vg) ); */
-
-/*    build_vg_sigframe(&frame->vg, tst, mask, flags, sigNo); */
-   
-/*    return esp; */
-	I_die_here;
-}
-
-
 /* EXPORTED */
 void VG_(sigframe_create)( ThreadId tid, 
                            Addr esp_top_of_frame,
@@ -566,12 +492,8 @@ void VG_(sigframe_create)( ThreadId tid,
    Addr		esp;
    ThreadState* tst = VG_(get_ThreadState)(tid);
 
-   if (flags & VKI_SA_SIGINFO)
-      esp = build_rt_sigframe(tst, esp_top_of_frame, siginfo, 
-                                   handler, flags, mask, restorer);
-   else
-      esp = build_sigframe(tst, esp_top_of_frame, 
-                                siginfo, handler, flags, mask, restorer);
+   esp = build_sigframe(tst, esp_top_of_frame, 
+			siginfo, handler, flags, mask, restorer);
 
    /* Set the thread so it will next run the handler. */
    /* tst->m_esp  = esp;  also notify the tool we've updated ESP */
@@ -658,16 +580,6 @@ SizeT restore_sigframe ( ThreadState *tst,
    return sizeof(*frame);
 }
 
-static 
-SizeT restore_rt_sigframe ( ThreadState *tst, 
-                            struct rt_sigframe *frame, Int *sigNo )
-{
-   if (restore_vg_sigframe(tst, &frame->vg, sigNo))
-      restore_sigcontext(tst, &frame->uContext.uc_mcontext, &frame->fpstate);
-
-   return sizeof(*frame);
-}
-
 
 /* EXPORTED */
 void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
@@ -682,10 +594,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    /* Correctly reestablish the frame base address. */
    esp   = tst->arch.vex.guest_ESP;
 
-   if (!isRT)
-      size = restore_sigframe(tst, (struct sigframe *)esp, &sigNo);
-   else
-      size = restore_rt_sigframe(tst, (struct rt_sigframe *)esp, &sigNo);
+   size = restore_sigframe(tst, (struct sigframe *)esp, &sigNo);
 
    VG_TRACK( die_mem_stack_signal, esp - VG_STACK_REDZONE_SZB,
              size + VG_STACK_REDZONE_SZB );

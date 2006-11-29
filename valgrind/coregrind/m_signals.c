@@ -285,12 +285,21 @@ static
 void pp_SKSS ( void )
 {
    Int sig;
+   char *synchandler = "sync_signalhandler";
+   char * asynchandler ="async_signalhandler";
+   char * ptr ; 
+
    VG_(printf)("\n\nSKSS:\n");
    for (sig = 1; sig <= _VKI_NSIG; sig++) {
-      VG_(printf)("sig %d:  handler 0x%x,  flags 0x%x\n", sig,
-                  skss.skss_per_sig[sig].skss_handler,
+     if  (skss.skss_per_sig[sig].skss_handler == sync_signalhandler  ) 
+       ptr = synchandler; 
+     else if  (skss.skss_per_sig[sig].skss_handler == async_signalhandler)
+       ptr = asynchandler;
+     else 
+       ptr = NULL;
+      VG_(printf)("sig %d:  handler 0x%x ( %s ) ,  flags 0x%x\n", sig,
+                  skss.skss_per_sig[sig].skss_handler,ptr,
                   skss.skss_per_sig[sig].skss_flags );
-
    }
 }
 
@@ -308,7 +317,6 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    Int   sig;
    UInt  scss_flags;
    UInt  skss_flags;
-   VG_(printf)("Calculating SKSS\n");
    for (sig = 1; sig <= _VKI_NSIG; sig++) {
       void *skss_handler;
       void *scss_handler;
@@ -383,7 +391,9 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
       /* always ask for SA_SIGINFO */
       skss_flags |= VKI_SA_SIGINFO;
 
-#ifndef VGO_netbsdelf2 /* FIXME - we dont have an equivalent in netbsd  */
+#ifndef VGO_netbsdelf2 /* FIXME - we dont have an equivalent in
+			  netbsd, RESTORER IS OBSOLETE AND SHOULD NOT
+			  BE USED WTF IS GOING ON HERE  */
       /* use our own restorer */
       skss_flags |= VKI_SA_RESTORER;
 #endif 
@@ -400,8 +410,8 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-/*    if (1) */
-/*       pp_SKSS(); */
+   if (1)
+      pp_SKSS();
 }
 
 
@@ -500,7 +510,7 @@ static void handle_SCSS_change ( Bool force_update )
       VG_(sigdelset)( &ksa.sa_mask, VKI_SIGKILL );
       VG_(sigdelset)( &ksa.sa_mask, VKI_SIGSTOP );
 
-      if (VG_(clo_trace_signals) && VG_(clo_verbosity) > 2)
+      if (VG_(clo_trace_signals))
          VG_(message)(Vg_DebugMsg, 
             "setting ksig %d to: hdlr 0x%x, flags 0x%x, "
             "mask(63..0) 0x%x 0x%x",
@@ -511,7 +521,8 @@ static void handle_SCSS_change ( Bool force_update )
          );
 
       res = VG_(sigaction)( sig, &ksa, &ksa_old );
-      //      vg_assert(res == 0);
+      VG_(printf)("res is %d\n sig = %d\n", res,sig); 
+             vg_assert(res == 0);
 
       /* Since we got the old sigaction more or less for free, might
          as well extract the maximum sanity-check value from it. */
@@ -1000,7 +1011,9 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
    Bool core      = False;	/* kills process w/ core */
    struct vki_rlimit corelim;
    Bool could_core;
-   VG_(printf)("Default signal action\n");
+   VG_(debugLog)(1,"signals:default_action","default action\n");
+   VG_(printf)("\nDefault signal action\n");
+
 #if defined(VGO_netbsdelf2)
    sigNo= info->_info._signo;
 #else
@@ -1075,6 +1088,8 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 		   sigNo, signame(sigNo), core ? ": dumping core" : "");
 
       /* Be helpful - decode some more details about this fault */
+	 VG_(printf)("signo = %d\n, code = %d\n",sigNo,info->_info._code);
+
 #if defined (VGO_netbsdelf2)
       if (info->_info._code > VKI_SI_USER) {
 #else
@@ -1082,7 +1097,6 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 #endif
 	 const Char *event = NULL;
 	 Bool haveaddr = True;
-
 	 switch(sigNo) {
 	 case VKI_SIGSEGV:
 #if defined (VGO_netbsdelf2)
@@ -1215,7 +1229,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    SCSS_Per_Signal	*handler;
    void			*handler_fn;
    ThreadState		*tst = VG_(get_ThreadState)(tid);
-   VG_(printf)("Delivering signal\n");
+   VG_(printf)("\n\n\n\n\n\n\nDelivering signal\n\n");
 #if defined (VGO_netbsdelf2)
    sigNo = info->_info._signo;
    if (VG_(clo_trace_signals))
@@ -1624,7 +1638,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	     sigNo == VKI_SIGFPE  ||
 	     sigNo == VKI_SIGILL  ||
 	     sigNo == VKI_SIGTRAP);
-   VG_(printf)("Recieve a Sync signal from host!\n");
+   VG_(printf)("In sync signalhandler\n");
 /* #ifdef VGO_linux */
 /*    /\* The linux kernel uses the top 16 bits of si_code for it's own */
 /*       use and only exports the bottom 16 bits to user space - at least */
@@ -1721,6 +1735,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       act upon and immediately restart the faulting instruction.
     */
    if (info->_info._signo == VKI_SIGSEGV) {
+     VG_(printf)("sigsegv in sync_signalhandler\n");
       Addr fault = (Addr)info->_info._reason._fault._addr;
       Addr esp   =  VG_(get_SP)(tid);
       NSegment* seg      = VG_(am_find_nsegment)(fault);
@@ -1839,7 +1854,6 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	     sigNo == VKI_SIGILL  ||
 	     sigNo == VKI_SIGTRAP);
 
-#ifdef VGO_linux
    /* The linux kernel uses the top 16 bits of si_code for it's own
       use and only exports the bottom 16 bits to user space - at least
       that is the theory, but it turns out that there are some kernels
@@ -1849,7 +1863,6 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       mask them off) sign extends them when exporting to user space so
       we do the same thing here. */
    info->si_code = (Short)info->si_code;
-#endif
 
    if (info->si_code <= VKI_SI_USER) {
       /* If some user-process sent us one of these signals (ie,
@@ -2106,7 +2119,6 @@ void VG_(poll_signals)(ThreadId tid)
    for(i = 0; i < _VKI_NSIG_WORDS; i++)
       pollset.sig[i] = ~tst->sig_mask.sig[i];
 
-   VG_(printf)("tid %d pollset=%08x%08x\n", tid, pollset.sig[1], pollset.sig[0]);
 
    block_all_host_signals(&saved_mask); // protect signal queue
 
@@ -2167,7 +2179,6 @@ void VG_(sigstartup_actions) ( void )
    vki_sigset_t saved_procmask;
    struct vki_sigaction sa;
 
-   VG_(printf)("SIGSTARTUP\n");
    /* Block all signals.  saved_procmask remembers the previous mask,
       which the first thread inherits.
    */
@@ -2203,7 +2214,7 @@ void VG_(sigstartup_actions) ( void )
 
       VG_(max_signal) = i;
 
-      if (VG_(clo_trace_signals) && VG_(clo_verbosity) > 2)
+      if (VG_(clo_trace_signals) && VG_(clo_verbosity) > 0)
          VG_(printf)("snaffling handler 0x%x for signal %d\n", 
                      (Addr)(sa.ksa_handler), i );
 

@@ -4824,9 +4824,10 @@ POST(sys_nanosleep)
 
 PRE(sys_open)
 {
+#ifndef VGO_netbsdelf2 
    HChar  name[30];
    SysRes sres;
-#ifndef VGO_netbsdelf2 
+
    if (ARG2 & VKI_O_CREAT) {
       // 3-arg version
       PRINT("sys_open ( %p(%s), %d, %d )",ARG1,ARG1,ARG2,ARG3);
@@ -4844,7 +4845,6 @@ PRE(sys_open)
       /proc/<pid>/cmdline, and just give it a copy of the fd for the
       fake file we cooked up at startup (in m_main).  Also, seek the
       cloned fd back to the start. */
-
    VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
 
    if (ML_(safe_to_deref)( (void*)ARG1, 1 )
@@ -4859,10 +4859,11 @@ PRE(sys_open)
       }
       return;
    }
-#endif
+#else
    PRINT("sys_open ( %p(%s), %d, %d )",ARG1,ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "open",
 		 const char *, filename, int, flags, int, mode);
+#endif
    PRE_MEM_RASCIIZ( "open(filename)", ARG1 );
 
    /* Otherwise handle normally */
@@ -4925,8 +4926,9 @@ PRE(sys_write)
    if (!ok && ARG1 == 2/*stderr*/ 
            && VG_(strstr)(VG_(clo_sim_hints),"enable-outer"))
       ok = True;
-   if (!ok)
-      SET_STATUS_Failure( VKI_EBADF );
+   if (!ok){
+     I_die_here;
+     SET_STATUS_Failure( VKI_EBADF ); }
    else
       PRE_MEM_READ( "write(buf)", ARG2, ARG3 );
 }

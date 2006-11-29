@@ -25,7 +25,9 @@ int main()
 	sigfillset(&mask);
 	sigprocmask(SIG_BLOCK, &mask, NULL);
 
+	printf("before execution of the wierd line\n");
 	*(volatile int *)1234 = 213;
+	printf("after execution of the wierd line\n");
 
 	return 0;
 }

@@ -140,7 +140,7 @@ cfdone:
 
 	/* Restore carry flag */
 	
-	cmp     $0, %edx    /* the problem with this is that until this value may change before its tested and stored  */
+/*	cmp     $0, %edx     the problem with this is that until this value may change before its tested and stored  */
 5:	/* now safe from signals */
 
 	popl    %edx		

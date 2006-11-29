@@ -263,6 +263,10 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
 				  signum, (UWord)act, (UWord)oldact,
 				  (UWord)__sigtramp_sigcontext_1, 1);
    }
+   if(res.isError)
+     I_die_here;
+   else
+     VG_(printf)("Sigaction success!\n");
    return res.isError ? -1 : 0;
 #endif
 }

@@ -154,25 +154,88 @@ typedef struct {
 #define VKI_SS_ONSTACK	0x0001
 #define VKI_SS_DISABLE	0x0004
 
-struct vki_old_sigaction {
-        // [[Nb: a 'k' prefix is added to "sa_handler" because
-        // bits/sigaction.h (which gets dragged in somehow via signal.h)
-        // #defines it as something else.  Since that is done for glibc's
-        // purposes, which we don't care about here, we use our own name.]]
-        __vki_sighandler_t ksa_handler;
-        vki_old_sigset_t sa_mask;
-        unsigned long sa_flags;
-        __vki_sigrestore_t sa_restorer;
+/* ass linuxism, why are these two structures different */
+/* struct vki_old_sigaction { */
+/*         // [[Nb: a 'k' prefix is added to "sa_handler" because */
+/*         // bits/sigaction.h (which gets dragged in somehow via signal.h) */
+/*         // #defines it as something else.  Since that is done for glibc's */
+/*         // purposes, which we don't care about here, we use our own name.]] */
+/*         __vki_sighandler_t ksa_handler; */
+/*         vki_old_sigset_t sa_mask; */
+/*         unsigned long sa_flags; */
+/*         __vki_sigrestore_t sa_restorer; */
+/* }; */
+
+/* struct vki_sigaction { */
+/*         // [[See comment about extra 'k' above]] */
+/* 	__vki_sighandler_t ksa_handler; */
+/* 	unsigned long sa_flags; */
+/* 	__vki_sigrestore_t sa_restorer; */
+/* 	vki_sigset_t sa_mask;		/\* mask last for extensibility *\/ */
+/* }; */
+typedef union vki_sigval {
+	int sival_int;
+	void __user *sival_ptr;
+} vki_sigval_t;
+
+
+struct _vki_siginfo {
+	int	_signo;
+	int	_code;
+	int	_errno;
+
+	union {
+		struct {
+			int	_pid;
+			unsigned int	_uid;
+			vki_sigval_t	_sigval;
+		} _rt;
+
+		struct {
+			int	_pid;
+			unsigned int	_uid;
+			int	_status;
+			/* clock_t */ unsigned long	_utime;
+			unsigned long	_stime;
+		} _child;
+
+		struct {
+			void   *_addr;
+			int	_trap;
+		} _fault;
+
+		struct {
+			long	_band;
+			int	_fd;
+		} _poll;
+	} _reason;
+};
+typedef union vki_siginfo {
+	char	si_pad[128];	/* Total size; for future expansion */
+	struct _vki_siginfo _info;
+} vki_siginfo_t;
+
+struct vki_sigaction { 
+  union { 
+    void ( * _sa_handler ) (int);
+    void (* _sa_sigaction ) ( int , vki_siginfo_t *, void *);
+  } _sa_u;
+  vki_sigset_t sa_mask;
+  int sa_flags;
+#define ksa_handler _sa_u._sa_handler /* easier than throwing ifdef
+					 all over, may bite us in the
+  backside if you cleverly try to assign a variable called ksa_handler
+  */ 
 };
 
-struct vki_sigaction {
-        // [[See comment about extra 'k' above]]
-	__vki_sighandler_t ksa_handler;
-	unsigned long sa_flags;
-	__vki_sigrestore_t sa_restorer;
-	vki_sigset_t sa_mask;		/* mask last for extensibility */
+struct vki_old_sigaction { 
+  union { 
+    void ( * _sa_handler ) (int);
+    void (* _sa_sigaction ) ( int , vki_siginfo_t *, void *);
+  } _sa_u;
+  vki_sigset_t sa_mask;
+  int sa_flags;
 };
-
 typedef struct vki_sigaltstack {
 	void __user *ss_sp;
 	int ss_flags;

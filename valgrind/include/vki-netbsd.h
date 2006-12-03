@@ -296,10 +296,6 @@ struct vki_sched_param {
 // From linux-2.6.8.1/include/asm-generic/siginfo.h
 //----------------------------------------------------------------------
 
-typedef union vki_sigval {
-	int sival_int;
-	void __user *sival_ptr;
-} vki_sigval_t;
 
 #ifndef __VKI_ARCH_SI_PREAMBLE_SIZE
 #define __VKI_ARCH_SI_PREAMBLE_SIZE	(3 * sizeof(int))
@@ -320,41 +316,6 @@ typedef union vki_sigval {
 #endif
 
 
-struct _vki_siginfo {
-	int	_signo;
-	int	_code;
-	int	_errno;
-
-	union {
-		struct {
-			int	_pid;
-			unsigned int	_uid;
-			vki_sigval_t	_sigval;
-		} _rt;
-
-		struct {
-			int	_pid;
-			unsigned int	_uid;
-			int	_status;
-			/* clock_t */ unsigned long	_utime;
-			unsigned long	_stime;
-		} _child;
-
-		struct {
-			void   *_addr;
-			int	_trap;
-		} _fault;
-
-		struct {
-			long	_band;
-			int	_fd;
-		} _poll;
-	} _reason;
-};
-typedef union vki_siginfo {
-	char	si_pad[128];	/* Total size; for future expansion */
-	struct _vki_siginfo _info;
-} vki_siginfo_t;
 
 #define __VKI_SI_FAULT	0
 

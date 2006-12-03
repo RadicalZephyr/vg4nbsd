@@ -224,25 +224,32 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 
 /* Not sure if this is the right place for this (aka BIG HACK SIR) */
 #if defined(VGP_x86_netbsdelf2)
-extern int __sigtramp_sigcontext_1[];
+extern void * __vg_sigtramp_sigcontext_1;
 #define __STRING(x) #x
 #define STR(x) __STRING(x)
+#define __NR_EXIT         STR(__NR_exit)
+#define __NR_COMPAT___16_SIGRETURN14     STR(__NR_compat_16___sigreturn14)
 asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
     ".align 4\n"   /* This is ALIGN_TEXT, defined 4 if __ELF, else 2 */
-    ".globl\n"
-    ".type ___sigtramp_sigcontext_1,@function\n"
-    "__sigtramp_sigcontext_1:\n"
+    ".globl __vg_sigtramp_sigcontext_1\n"
+    ".type __vg_sigtramp_sigcontext_1,@function\n"
+    "__vg_sigtramp_sigcontext_1:\n"
     "leal	12(%esp),%eax\n"	/* get pointer to sigcontext */
     "movl	%eax,4(%esp)\n" 	/* put it in the argument slot */
     /* fake return address already there */
-    "movl $(" STR(__NR_compat_16___sigreturn14) "), %eax\n" /* do sigreturn */
+    /* "movl $(" STR(__NR_compat_16___sigreturn14) "), %eax\n"  */
+/*     "movl $"__NR_COMPAT___16_SIGRETURN14", %eax\n" */
+    "movl $295,%eax\n"
     "int $0x80\n"
     "movl	%eax,4(%esp)\n"   	/* error code */
-    "movl $(" STR(__NR_exit) "), %eax\n"       		/* exit */
+/*     "movl $"__NR_EXIT", %eax\n" */       		/* exit */
+    "movl $1,%eax\n"
     "int $0x80\n"
     );
 #endif
 
+/* we should consider implementing both the sigcontext and sigaction tramps
+ */
 Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
 {
@@ -259,9 +266,10 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
 				  signum, (UWord)act, (UWord)oldact,
 				  (UWord)NULL, 0);
    } else {
+     VG_(printf)("doing weird syscall\n");
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
-				  (UWord)__sigtramp_sigcontext_1, 1);
+				  (void * )__vg_sigtramp_sigcontext_1, 1);
    }
    if(res.isError)
      I_die_here;

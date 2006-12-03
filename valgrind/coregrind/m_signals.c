@@ -130,7 +130,7 @@ static void sigvgkill_handler	   ( Int sigNo, vki_siginfo_t *info, struct vki_uc
 static const Char *signame(Int sigNo);
 
 /* Maximum usable signal. */
-Int VG_(max_signal) = _VKI_NSIG;
+Int VG_(max_signal) = _VKI_NSIG - 1; /* XXX i put teh -1 - hsaliak */
 
 #define N_QUEUED_SIGNALS	8
 
@@ -478,7 +478,7 @@ static void handle_SCSS_change ( Bool force_update )
 
    /* Compare the new SKSS entries vs the old ones, and update kernel
       where they differ. */
-   for (sig = 1; sig <= VG_(max_signal); sig++) {
+   for (sig = 1; sig <= VG_(max_signal) ; sig++) {
 
       /* Trying to do anything with SIGKILL is pointless; just ignore
          it. */
@@ -496,7 +496,7 @@ static void handle_SCSS_change ( Bool force_update )
 
       ksa.ksa_handler = skss.skss_per_sig[sig].skss_handler;
       ksa.sa_flags    = skss.skss_per_sig[sig].skss_flags;
-#     if !defined(VGP_ppc32_linux)
+#     if !defined(VGP_ppc32_linux) && !defined(VGO_netbsdelf2)
       ksa.sa_restorer = my_sigreturn;
 #     endif
       /* Re above ifdef (also the assertion below), PaulM says:
@@ -531,7 +531,7 @@ static void handle_SCSS_change ( Bool force_update )
                    == skss_old.skss_per_sig[sig].skss_handler);
          vg_assert(ksa_old.sa_flags 
                    == skss_old.skss_per_sig[sig].skss_flags);
-#        if !defined(VGP_ppc32_linux)
+#        if !defined(VGP_ppc32_linux) && !defined(VGO_netbsdelf2)
          vg_assert(ksa_old.sa_restorer 
                    == my_sigreturn);
 #        endif
@@ -649,7 +649,9 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
       old_act->ksa_handler = scss.scss_per_sig[signo].scss_handler;
       old_act->sa_flags    = scss.scss_per_sig[signo].scss_flags;
       old_act->sa_mask     = scss.scss_per_sig[signo].scss_mask;
+#ifndef VGO_netbsdelf2
       old_act->sa_restorer = scss.scss_per_sig[signo].scss_restorer;
+#endif
    }
 
    /* And now copy new SCSS entry from new_act. */
@@ -657,8 +659,9 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
       scss.scss_per_sig[signo].scss_handler  = new_act->ksa_handler;
       scss.scss_per_sig[signo].scss_flags    = new_act->sa_flags;
       scss.scss_per_sig[signo].scss_mask     = new_act->sa_mask;
+#ifndef VGO_netbsdelf2
       scss.scss_per_sig[signo].scss_restorer = new_act->sa_restorer;
-
+#endif
       VG_(sigdelset)(&scss.scss_per_sig[signo].scss_mask, VKI_SIGKILL);
       VG_(sigdelset)(&scss.scss_per_sig[signo].scss_mask, VKI_SIGSTOP);
    }
@@ -980,7 +983,9 @@ void VG_(kill_self)(Int sigNo)
 
    sa.ksa_handler = VKI_SIG_DFL;
    sa.sa_flags = 0;
+#ifndef VGO_netbsdelf2 
    sa.sa_restorer = 0;
+#endif
    VG_(sigemptyset)(&sa.sa_mask);
       
    VG_(sigaction)(sigNo, &sa, &origsa);
@@ -2080,8 +2085,13 @@ static __attribute((unused))
 void pp_ksigaction ( struct vki_sigaction* sa )
 {
    Int i;
+#ifndef VGO_netbsdelf2
    VG_(printf)("pp_ksigaction: handler %p, flags 0x%x, restorer %p\n", 
                sa->ksa_handler, (UInt)sa->sa_flags, sa->sa_restorer);
+#else
+   VG_(printf)("pp_ksigaction: handler %p, flags 0x%x\n", 
+               sa->ksa_handler, (UInt)sa->sa_flags);
+#endif
    VG_(printf)("pp_ksigaction: { ");
    for (i = 1; i <= VG_(max_signal); i++)
       if (VG_(sigismember(&(sa->sa_mask),i)))
@@ -2098,7 +2108,9 @@ void VG_(set_default_handler)(Int signo)
 
    sa.ksa_handler = VKI_SIG_DFL;
    sa.sa_flags = 0;
+#ifndef VGO_netbsdelf2
    sa.sa_restorer = 0;
+#endif
    VG_(sigemptyset)(&sa.sa_mask);
       
    VG_(do_sys_sigaction)(signo, &sa, NULL);
@@ -2185,7 +2197,8 @@ void VG_(sigstartup_actions) ( void )
    block_all_host_signals( &saved_procmask );
 
    /* Copy per-signal settings to SCSS. */
-   for (i = 1; i <= _VKI_NSIG; i++) {
+/*    for (i = 1; i <= _VKI_NSIG; i++) { */
+   for (i = 1; i <= VG_(max_signal); i++){
       /* Get the old host action */
       ret = VG_(sigaction)(i, NULL, &sa);
 
@@ -2199,7 +2212,9 @@ void VG_(sigstartup_actions) ( void )
 
 	 tsa.ksa_handler = (void *)sync_signalhandler;
 	 tsa.sa_flags = VKI_SA_SIGINFO;
+#ifndef VGO_netbsdelf2
 	 tsa.sa_restorer = 0;
+#endif
 	 VG_(sigfillset)(&tsa.sa_mask);
 
 	 /* try setting it to some arbitrary handler */
@@ -2221,7 +2236,9 @@ void VG_(sigstartup_actions) ( void )
       scss.scss_per_sig[i].scss_handler  = sa.ksa_handler;
       scss.scss_per_sig[i].scss_flags    = sa.sa_flags;
       scss.scss_per_sig[i].scss_mask     = sa.sa_mask;
+#ifndef VGO_netbsdelf2
       scss.scss_per_sig[i].scss_restorer = sa.sa_restorer;
+#endif
    }
 
    if (VG_(clo_trace_signals))

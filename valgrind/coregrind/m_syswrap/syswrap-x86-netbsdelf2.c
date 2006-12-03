@@ -1378,6 +1378,9 @@ PRE(sys_sigaction)
    newp = oldp = NULL;
 
    if (ARG2 != 0) {
+     /* these were _old_sigaction, why ? XXXX - hsaliak in netbsd i
+	have set old and new to the same, unless they are not, needs
+     more investigation   */
       struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
       PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
       PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
@@ -1401,8 +1404,17 @@ PRE(sys_sigaction)
 
       new.ksa_handler = oldnew->ksa_handler;
       new.sa_flags = oldnew->sa_flags;
+#ifndef VGO_netbsdelf2
       new.sa_restorer = oldnew->sa_restorer;
       convert_sigset_to_rt(&oldnew->sa_mask, &new.sa_mask);
+#else
+      { int i ;
+      for (0 ;  i < _VKI_NSIG_WORDS; i ++ ) {
+
+	new.sa_mask.sig[i] = old.sa_mask.sig[i];
+      }
+      }
+#endif /* should be ok */
       newp = &new;
    }
 
@@ -1413,8 +1425,11 @@ PRE(sys_sigaction)
 
       oldold->ksa_handler = oldp->ksa_handler;
       oldold->sa_flags = oldp->sa_flags;
+#ifndef VGO_netbsdelf2 
       oldold->sa_restorer = oldp->sa_restorer;
-      oldold->sa_mask = oldp->sa_mask.sig[0];
+#endif
+      oldold->sa_mask.sig[0] = oldp->sa_mask.sig[0]; /* XXX we need to
+							copy all */
    }
 }
 

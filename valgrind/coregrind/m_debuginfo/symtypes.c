@@ -559,13 +559,17 @@ static void setup_signals(void)
 
    sigbus_new.ksa_handler = valid_addr_handler;
    sigbus_new.sa_flags = VKI_SA_ONSTACK | VKI_SA_RESTART;
+#ifndef VGO_netbsdelf2
    sigbus_new.sa_restorer = NULL;
+#endif
    res = VG_(sigemptyset)( &sigbus_new.sa_mask );
    vg_assert(res == 0);
 
    sigsegv_new.ksa_handler = valid_addr_handler;
    sigsegv_new.sa_flags = VKI_SA_ONSTACK | VKI_SA_RESTART;
+#ifndef VGO_netbsdelf2
    sigsegv_new.sa_restorer = NULL;
+#endif
    res = VG_(sigemptyset)( &sigsegv_new.sa_mask );
    vg_assert(res == 0+0);
 

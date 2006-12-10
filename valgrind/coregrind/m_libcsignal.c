@@ -230,7 +230,7 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 #define __NR_COMPAT___16_SIGRETURN14     STR(__NR_compat_16___sigreturn14)
 #define __NR_SETCONTEXT STR(__NR_setcontext)
 /* from /usr/netbsd-current/src/lib/libc/arch/i386/sys/_sigtramp2.S */
-extern void * __vg_sigtramp_siginfo_2
+extern void * __vg_sigtramp_siginfo_2;
      asm(".text\n"
 	 ".align 4\n"
 	 ".globl __vg_sigtramp_siginfo_2\n"

@@ -55,6 +55,7 @@ extern void VG_(sigdelset_from_set) ( vki_sigset_t* dst, vki_sigset_t* src );
 /* --- Mess with the kernel's sig state --- */
 extern Int VG_(sigprocmask) ( Int how, const vki_sigset_t* set,
                               vki_sigset_t* oldset );
+SysRes  VG_(do_sigaction_sigtramp)(Int signum, const struct vki_sigaction* act, struct vki_sigaction *oldact);
 extern Int VG_(sigaction)   ( Int signum,
                               const struct vki_sigaction* act,
                               struct vki_sigaction* oldact );

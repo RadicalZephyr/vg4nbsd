@@ -449,26 +449,14 @@ UInt run_thread_for_a_while ( ThreadId tid )
    VG_(my_fault) = True;
 
    if (jumped) {
+     VG_(printf)("Look we jumped! - Fault signal \n");
       /* We get here if the client took a fault, which caused our
          signal handler to longjmp. */
       vg_assert(trc == 0);
-
-
-
-
-
-
-
-
-
-
-
-
-
       trc = VG_TRC_FAULT_SIGNAL;
       block_signals(tid);
    } 
-
+   //     VG_(printf)("Jumped = 0  \n");
    VG_(debugLog)(4,"scheduler","jumped doing done_this_time\n");
    done_this_time = (Int)dispatch_ctr_SAVED - (Int)VG_(dispatch_ctr) - 0;
 
@@ -657,12 +645,13 @@ static void handle_syscall(ThreadId tid)
       VG_(printf)("tid %d not running; VG_(running_tid)=%d, tid %d status %d\n",
 		  tid, VG_(running_tid), tid, tst->status);
    vg_assert(VG_(is_running_thread)(tid));
-   if (jumped) {
+    if (jumped) {
+     VG_(printf)("Look we jumped!!\n");
       block_signals(tid);
 
       VG_(poll_signals)(tid);
-   }
-
+       }
+   //   VG_(printf)("Jumped = 0 \n");
    VG_(debugLog)(9,"scheduler.c","out of handle syscall\n");
 }
 

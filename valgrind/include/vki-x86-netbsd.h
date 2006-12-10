@@ -222,7 +222,7 @@ struct vki_sigaction {
   } _sa_u;
   vki_sigset_t sa_mask;
   int sa_flags;
-#define ksa_handler _sa_u._sa_handler /* easier than throwing ifdef
+#define ksa_handler _sa_u._sa_sigaction /* easier than throwing ifdef
 					 all over, may bite us in the
   backside if you cleverly try to assign a variable called ksa_handler
   */ 

@@ -326,12 +326,16 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 
       switch(sig) {
       case VKI_SIGSEGV:
+	VG_(printf)("setting handler! for sigsegv\n");
+	skss_handler = sync_signalhandler;
+	break;
       case VKI_SIGBUS:
       case VKI_SIGFPE:
       case VKI_SIGILL:
       case VKI_SIGTRAP:
 	 /* For these, we always want to catch them and report, even
 	    if the client code doesn't. */
+
 	 skss_handler = sync_signalhandler;
 	 break;
 
@@ -471,7 +475,7 @@ static void handle_SCSS_change ( Bool force_update )
    Int  res, sig;
    SKSS skss_old;
    struct vki_sigaction ksa, ksa_old;
-
+   VG_(printf)("in handle SCSS change , force update = %d\n", force_update);
    /* Remember old SKSS and calculate new one. */
    skss_old = skss;
    calculate_SKSS_from_SCSS ( &skss );
@@ -910,6 +914,9 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
       /* Signal delivery to tools */
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/False );
    }
+
+   // XXX 
+
 
    vg_assert(scss.scss_per_sig[sigNo].scss_handler != VKI_SIG_IGN);
    vg_assert(scss.scss_per_sig[sigNo].scss_handler != VKI_SIG_DFL);
@@ -1629,21 +1636,23 @@ void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
    instead of ifdefs all over the function making it unreadable I am
    defining  2 versions of the function , hopefully the netbsd one
    will work.Better ideas on how to translate is surely welcome. */ 
+/* NOte that if something crashes here, we are going to go into a
+   loop!  */
 #ifdef VGO_netbsdelf2 
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-
+   VG_(printf)("In sync signalhandler sigNo = \n", sigNo);
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
-
-   vg_assert(info != NULL);
-   vg_assert(info->_info._signo == sigNo);
-   vg_assert(sigNo == VKI_SIGSEGV ||
+   vg_assert(tid != 0);
+/*    vg_assert(info->_info != NULL); /\* points to something *\/   */
+      vg_assert(info->_info._signo == sigNo);
+      vg_assert(sigNo == VKI_SIGSEGV ||
 	     sigNo == VKI_SIGBUS  ||
 	     sigNo == VKI_SIGFPE  ||
 	     sigNo == VKI_SIGILL  ||
 	     sigNo == VKI_SIGTRAP);
-   VG_(printf)("In sync signalhandler\n");
+   VG_(printf)("Tid = %d\n signo = %d \n",tid,sigNo);
 /* #ifdef VGO_linux */
 /*    /\* The linux kernel uses the top 16 bits of si_code for it's own */
 /*       use and only exports the bottom 16 bits to user space - at least */
@@ -1668,11 +1677,12 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	  - while blocked in a syscall
 	    Action: make thread runnable, queue signal, resume scheduler
       */
-      if (VG_(threads)[tid].status == VgTs_WaitSys) {
-	 /* Since this signal interrupted a syscall, it means the
-	    client's signal mask was applied, so we can't get here
-	    unless the client wants this signal right now.  This means
-	    we can simply use the async_signalhandler. */
+     VG_(printf)("LESS THAN SI_USER!!\n");
+     if (VG_(threads)[tid].status == VgTs_WaitSys) {
+       /* Since this signal interrupted a syscall, it means the
+	  client's signal mask was applied, so we can't get here
+	  unless the client wants this signal right now.  This means
+	  we can simply use the async_signalhandler. */
 	VG_(printf)("Calling async handler!\n");
 	 async_signalhandler(sigNo, info, uc);
 	 VG_(core_panic)("async_signalhandler returned!?\n");
@@ -2121,7 +2131,8 @@ void VG_(set_default_handler)(Int signo)
  */
 void VG_(poll_signals)(ThreadId tid)
 {
-   static const struct vki_timespec zero = { 0, 0 };
+  VG_(printf)("Polling signals!!\n");
+  static const struct vki_timespec zero = { 0, 0 };
    vki_siginfo_t si, *sip;
    vki_sigset_t pollset;
    ThreadState *tst = VG_(get_ThreadState)(tid);
@@ -2198,7 +2209,7 @@ void VG_(sigstartup_actions) ( void )
 
    /* Copy per-signal settings to SCSS. */
 /*    for (i = 1; i <= _VKI_NSIG; i++) { */
-   for (i = 1; i <= VG_(max_signal); i++){
+   for (i = 1; i <= _VKI_NSIG; i++){
       /* Get the old host action */
       ret = VG_(sigaction)(i, NULL, &sa);
 

@@ -224,11 +224,30 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 
 /* Not sure if this is the right place for this (aka BIG HACK SIR) */
 #if defined(VGP_x86_netbsdelf2)
-extern void * __vg_sigtramp_sigcontext_1;
 #define __STRING(x) #x
 #define STR(x) __STRING(x)
 #define __NR_EXIT         STR(__NR_exit)
 #define __NR_COMPAT___16_SIGRETURN14     STR(__NR_compat_16___sigreturn14)
+#define __NR_SETCONTEXT STR(__NR_setcontext)
+/* from /usr/netbsd-current/src/lib/libc/arch/i386/sys/_sigtramp2.S */
+extern void * __vg_sigtramp_siginfo_2
+     asm(".text\n"
+	 ".align 4\n"
+	 ".globl __vg_sigtramp_siginfo_2\n"
+	 ".type __vg_sigtramp_siginfo_2,@function\n"
+	 "__vg_sigtramp_siginfo_2:\n"
+	 "leal	12+128(%esp),%eax\n"	/* get pointer to ucontext */
+	 "movl  %eax,4(%esp)\n"	/* put it in the argument slot */
+	 /* fake return address already there */
+	 "movl $308,%eax\n"    /* do setcontext */
+	 "int $0x80\n"
+	 "movl  %eax,4(%esp)\n"	/* error code */
+	 "movl $1,%eax\n"
+	 "int $0x80\n"
+	 );
+
+     /* from src/lib/libc/compat/arch/i386/sys/compat___sigtramp1. */
+extern void * __vg_sigtramp_sigcontext_1;
 asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
     ".align 4\n"   /* This is ALIGN_TEXT, defined 4 if __ELF, else 2 */
     ".globl __vg_sigtramp_sigcontext_1\n"
@@ -239,6 +258,7 @@ asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
     /* fake return address already there */
     /* "movl $(" STR(__NR_compat_16___sigreturn14) "), %eax\n"  */
 /*     "movl $"__NR_COMPAT___16_SIGRETURN14", %eax\n" */
+
     "movl $295,%eax\n"
     "int $0x80\n"
     "movl	%eax,4(%esp)\n"   	/* error code */
@@ -248,9 +268,27 @@ asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
     );
 #endif
 
-/* we should consider implementing both the sigcontext and sigaction tramps
- */
-Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
+SysRes VG_(do_sigaction_sigtramp)(Int signum ,const struct  vki_sigaction * act, struct vki_sigaction * oldact ) 
+{
+  SysRes res; 
+  if (act == NULL) {
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  (UWord)NULL, 0);
+   } else {
+     VG_(printf)("doing weird syscall\n");
+	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
+				  signum, (UWord)act, (UWord)oldact,
+				  (void * )__vg_sigtramp_siginfo_2, 2); /* legacy sigcontext trampoline */
+/* 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp, */
+/* 				  signum, (UWord)act, (UWord)oldact, */
+/* 				  NULL, 0); */ /* legacy kernal trampoline */
+   }
+  return res;
+}
+
+/* we should consider implementing both the sigcontext and sigaction tramps */
+Int VG_(sigaction) (Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
 {
 #  if !defined(VGP_x86_netbsdelf2)
@@ -261,20 +299,10 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
 #else
    /* From /usr/src/lib/libc/arch/i386/sys/__sigaction14_sigtramp */
    SysRes res;
-   if (act == NULL) {
-	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
-				  signum, (UWord)act, (UWord)oldact,
-				  (UWord)NULL, 0);
-   } else {
-     VG_(printf)("doing weird syscall\n");
-	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
-				  signum, (UWord)act, (UWord)oldact,
-				  (void * )__vg_sigtramp_sigcontext_1, 1);
-   }
-   if(res.isError)
-     I_die_here;
-   else
-     VG_(printf)("Sigaction success!\n");
+   res = VG_(do_sigaction_sigtramp) (signum, act, oldact);
+   if(res.isError) 
+     VG_(printf)("Sigaction failed!!!\n");
+
    return res.isError ? -1 : 0;
 #endif
 }

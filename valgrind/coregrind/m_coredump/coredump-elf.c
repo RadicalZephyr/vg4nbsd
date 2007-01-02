@@ -431,9 +431,8 @@ void make_elf_coredump(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
 
       if (phdrs[idx].p_filesz > 0) {
 	 Int ret;
-
-	 vg_assert(VG_(lseek)(core_fd, phdrs[idx].p_offset, VKI_SEEK_SET) == phdrs[idx].p_offset);
-	 vg_assert(seg->end - seg->start >= phdrs[idx].p_filesz);
+	  vg_assert(VG_(lseek)(core_fd, phdrs[idx].p_offset, VKI_SEEK_SET) == phdrs[idx].p_offset);
+	 	 vg_assert(seg->end - seg->start >= phdrs[idx].p_filesz);
 
 	 ret = VG_(write)(core_fd, (void *)seg->start, phdrs[idx].p_filesz);
       }
@@ -441,8 +440,8 @@ void make_elf_coredump(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
    }
 
    VG_(free)(seg_starts);
-
    VG_(close)(core_fd);
+
 }
 
 void VG_(make_coredump)(ThreadId tid, const vki_siginfo_t *si, UInt max_size)

@@ -326,9 +326,6 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 
       switch(sig) {
       case VKI_SIGSEGV:
-	VG_(printf)("setting handler! for sigsegv\n");
-	skss_handler = sync_signalhandler;
-	break;
       case VKI_SIGBUS:
       case VKI_SIGFPE:
       case VKI_SIGILL:
@@ -414,7 +411,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-   if (1)
+   if (0)
       pp_SKSS();
 }
 
@@ -475,7 +472,7 @@ static void handle_SCSS_change ( Bool force_update )
    Int  res, sig;
    SKSS skss_old;
    struct vki_sigaction ksa, ksa_old;
-   VG_(printf)("in handle SCSS change , force update = %d\n", force_update);
+   VG_(debugLog)(1,"m_signals","in handle SCSS change , force update = %d\n", force_update);
    /* Remember old SKSS and calculate new one. */
    skss_old = skss;
    calculate_SKSS_from_SCSS ( &skss );
@@ -525,7 +522,7 @@ static void handle_SCSS_change ( Bool force_update )
          );
 
       res = VG_(sigaction)( sig, &ksa, &ksa_old );
-      VG_(printf)("res is %d\n sig = %d\n", res,sig); 
+      VG_(debugLog)(1,"m_signals","res is %d\n sig = %d\n", res,sig); 
              vg_assert(res == 0);
 
       /* Since we got the old sigaction more or less for free, might
@@ -999,7 +996,7 @@ void VG_(kill_self)(Int sigNo)
 
    VG_(sigemptyset)(&mask);
    VG_(sigaddset)(&mask, sigNo);
-   VG_(printf)("Calling sigprocmask with unblock\n ");
+   VG_(debugLog)(1,"m_signals:kill_self","Calling sigprocmask with unblock\n ");
    VG_(sigprocmask)(VKI_SIG_UNBLOCK, &mask, &origmask);
 
    VG_(kill)(VG_(getpid)(), sigNo);
@@ -1024,7 +1021,7 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
    struct vki_rlimit corelim;
    Bool could_core;
    VG_(debugLog)(1,"signals:default_action","default action\n");
-   VG_(printf)("\nDefault signal action\n");
+
 
 #if defined(VGO_netbsdelf2)
    sigNo= info->_info._signo;
@@ -1100,7 +1097,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 		   sigNo, signame(sigNo), core ? ": dumping core" : "");
 
       /* Be helpful - decode some more details about this fault */
-	 VG_(printf)("signo = %d\n, code = %d\n",sigNo,info->_info._code);
+	 VG_(debugLog)(1,"m_signals","signo = %d\n, code = %d\n",sigNo,info->_info._code);
 
 #if defined (VGO_netbsdelf2)
       if (info->_info._code > VKI_SI_USER) {
@@ -1211,7 +1208,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
       const static struct vki_rlimit zero = { 0, 0 };
 
       VG_(make_coredump)(tid, info, corelim.rlim_cur);
-
+      VG_(debugLog)(1,"m_signals","Core Dump made\n");
       /* Make sure we don't get a confusing kernel-generated
 	 coredump when we finally exit */
       VG_(setrlimit)(VKI_RLIMIT_CORE, &zero);
@@ -1241,7 +1238,6 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    SCSS_Per_Signal	*handler;
    void			*handler_fn;
    ThreadState		*tst = VG_(get_ThreadState)(tid);
-   VG_(printf)("\n\n\n\n\n\n\nDelivering signal\n\n");
 #if defined (VGO_netbsdelf2)
    sigNo = info->_info._signo;
    if (VG_(clo_trace_signals))
@@ -1474,7 +1470,7 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
    do {
 
 #if defined(VGO_netbsdelf2)
-      if (1)
+      if (0)
 	 VG_(printf)("idx=%d si_signo=%d inset=%d\n", idx,
 		     sq->sigs[idx]._info._signo, VG_(sigismember)(set, sq->sigs[idx]._info._signo));
 
@@ -1511,7 +1507,7 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
 static 
 void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-   VG_(printf)("\n Recieve ASYNC handler \n");
+   VG_(debugLog)(1,"m_signals:async_signalhandler","\n Recieve ASYNC handler \n");
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
    ThreadState *tst = VG_(get_ThreadState)(tid);
 
@@ -1642,7 +1638,7 @@ void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-   VG_(printf)("In sync signalhandler sigNo = \n", sigNo);
+   VG_(debugLog)(1,"m_signals:sync_signalhandler","In sync signalhandler sigNo = %d\n", sigNo);
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
    vg_assert(tid != 0);
 /*    vg_assert(info->_info != NULL); /\* points to something *\/   */

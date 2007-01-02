@@ -276,7 +276,7 @@ SysRes VG_(do_sigaction_sigtramp)(Int signum ,const struct  vki_sigaction * act,
 				  signum, (UWord)act, (UWord)oldact,
 				  (UWord)NULL, 0);
    } else {
-     VG_(printf)("doing weird syscall\n");
+     VG_(debugLog)(2,"m_libcsignal","doing weird syscall\n");
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
 				  (void * )__vg_sigtramp_siginfo_2, 2); /* legacy sigcontext trampoline */
@@ -301,7 +301,7 @@ Int VG_(sigaction) (Int signum, const struct vki_sigaction* act,
    SysRes res;
    res = VG_(do_sigaction_sigtramp) (signum, act, oldact);
    if(res.isError) 
-     VG_(printf)("Sigaction failed!!!\n");
+     VG_(debugLog)(1,"m_libcsignal","Sigaction failed!!!\n");
 
    return res.isError ? -1 : 0;
 #endif

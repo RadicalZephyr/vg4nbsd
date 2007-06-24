@@ -74,7 +74,7 @@
    SIGVGKILL is used to terminate threads.  When one thread wants
    another to exit, it will set its exitreason and send it SIGVGKILL
    if it appears to be blocked in a syscall.
-
+n
 
    We use a kernel thread for each application thread.  When the
    thread allows itself to be open to signals, it sets the thread
@@ -317,6 +317,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    Int   sig;
    UInt  scss_flags;
    UInt  skss_flags;
+
    for (sig = 1; sig <= _VKI_NSIG; sig++) {
       void *skss_handler;
       void *scss_handler;
@@ -334,7 +335,9 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 	    if the client code doesn't. */
 
 	 skss_handler = sync_signalhandler;
-	 break;
+      VG_(debugLog)(0,"m_signals","Setting sync_signalhandler for signal %d\n",
+		    sig); 
+      break;
 
       case VKI_SIGCONT:
 	 /* Let the kernel handle SIGCONT unless the client is actually
@@ -351,7 +354,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 	 else if (scss.scss_per_sig[sig].scss_handler == VKI_SIG_IGN)
 	    skss_handler = VKI_SIG_IGN;
 	 else
-	    skss_handler = async_signalhandler;
+	   skss_handler = async_signalhandler; /* changed to sync_signalhandler - reverted */
 	 break;
 
       default:
@@ -363,7 +366,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 	    if (scss_handler == VKI_SIG_IGN)
 	       skss_handler = VKI_SIG_IGN;
 	    else 
-	       skss_handler = async_signalhandler;
+	      skss_handler = async_signalhandler; /* all sync_signal handler this changed */
 	 }
 	 break;
       }
@@ -411,7 +414,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-   if (0)
+   if (1)
       pp_SKSS();
 }
 
@@ -460,7 +463,7 @@ extern void my_sigreturn(void);
 #define MYSIG(name)  _MYSIG(name) 
 	asm(
 #if defined (VGO_netbsdelf2)
-		MYSIG(__NR_compat_16___sigreturn14)
+		MYSIG(__NR___sigaction_sigtramp)
 #else
 		MYSIG(__NR_rt_sigreturn)
 #endif
@@ -781,8 +784,8 @@ void do_setmask ( ThreadId tid,
    }
    if (newset) {
       do_sigprocmask_bitops (how, &VG_(threads)[tid].sig_mask, newset );
-      VG_(sigdelset)(&VG_(threads)[tid].sig_mask, VKI_SIGKILL);
-      VG_(sigdelset)(&VG_(threads)[tid].sig_mask, VKI_SIGSTOP);
+            VG_(sigdelset)(&VG_(threads)[tid].sig_mask, VKI_SIGKILL);
+            VG_(sigdelset)(&VG_(threads)[tid].sig_mask, VKI_SIGSTOP);
       VG_(threads)[tid].tmp_sig_mask = VG_(threads)[tid].sig_mask;
    }
 }
@@ -876,7 +879,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
 #else
    Int		sigNo = siginfo->si_signo;
 #endif
-
+   I_die_here;
    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
@@ -1238,6 +1241,8 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    SCSS_Per_Signal	*handler;
    void			*handler_fn;
    ThreadState		*tst = VG_(get_ThreadState)(tid);
+   VG_(printf)("In deliver signal\n");
+
 #if defined (VGO_netbsdelf2)
    sigNo = info->_info._signo;
    if (VG_(clo_trace_signals))
@@ -1276,6 +1281,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    if (handler_fn == VKI_SIG_DFL) {
       default_action(info, tid);
    } else {
+     VG_(printf)("DELIVERING NON DEFAULT SIGNAL!!!\n");
       /* Create a signal delivery frame, and set the client's %ESP and
 	 %EIP so that when execution continues, we will enter the
 	 signal handler with the frame on top of the client's stack,
@@ -1345,10 +1351,13 @@ static void synth_fault_common(ThreadId tid, Addr addr, Int si_code)
    info._sifields._sigfault._addr = (void*)addr;
 #endif
 
-   /* If they're trying to block the signal, force it to be delivered */
-   if (VG_(sigismember)(&VG_(threads)[tid].sig_mask, VKI_SIGSEGV))
-      VG_(set_default_handler)(VKI_SIGSEGV);
-
+   /* If they're trying to block the signal, force it to be delivered
+      */
+   VG_(printf)("Checking if sigsegv is member!\n");
+   if (VG_(sigismember)(&VG_(threads)[tid].sig_mask, VKI_SIGSEGV)){
+     VG_(printf)("setting def handler for segv\n");
+    VG_(set_default_handler)(VKI_SIGSEGV);
+   }
    deliver_signal(tid, &info);
 }
 
@@ -1402,10 +1411,11 @@ void VG_(synth_sigill)(ThreadId tid, Addr addr)
 static 
 void queue_signal(ThreadId tid, const vki_siginfo_t *si)
 {
+
    ThreadState *tst;
    SigQueue *sq;
    vki_sigset_t savedmask;
-
+  VG_(printf)("In Queue signal!!\n");
    tst = VG_(get_ThreadState)(tid);
 
    /* Protect the signal queue against async deliveries */
@@ -1507,6 +1517,7 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
 static 
 void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
+
    VG_(debugLog)(1,"m_signals:async_signalhandler","\n Recieve ASYNC handler \n");
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
    ThreadState *tst = VG_(get_ThreadState)(tid);
@@ -1638,7 +1649,8 @@ void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-   VG_(debugLog)(1,"m_signals:sync_signalhandler","In sync signalhandler sigNo = %d\n", sigNo);
+
+   VG_(debugLog)(0,"m_signals:sync_signalhandler","In sync signalhandler sigNo = %d\n", sigNo);
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
    vg_assert(tid != 0);
 /*    vg_assert(info->_info != NULL); /\* points to something *\/   */
@@ -1854,7 +1866,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-
+  I_die_here;
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
 
    vg_assert(info != NULL);
@@ -2097,6 +2109,7 @@ void pp_ksigaction ( struct vki_sigaction* sa )
 #else
    VG_(printf)("pp_ksigaction: handler %p, flags 0x%x\n", 
                sa->ksa_handler, (UInt)sa->sa_flags);
+   I_die_here;
 #endif
    VG_(printf)("pp_ksigaction: { ");
    for (i = 1; i <= VG_(max_signal); i++)
@@ -2111,14 +2124,13 @@ void pp_ksigaction ( struct vki_sigaction* sa )
 void VG_(set_default_handler)(Int signo)
 {
    struct vki_sigaction sa;   
-
    sa.ksa_handler = VKI_SIG_DFL;
    sa.sa_flags = 0;
 #ifndef VGO_netbsdelf2
    sa.sa_restorer = 0;
 #endif
    VG_(sigemptyset)(&sa.sa_mask);
-      
+
    VG_(do_sys_sigaction)(signo, &sa, NULL);
 }
 
@@ -2127,6 +2139,7 @@ void VG_(set_default_handler)(Int signo)
  */
 void VG_(poll_signals)(ThreadId tid)
 {
+
   VG_(printf)("Polling signals!!\n");
   static const struct vki_timespec zero = { 0, 0 };
    vki_siginfo_t si, *sip;
@@ -2138,17 +2151,15 @@ void VG_(poll_signals)(ThreadId tid)
    for(i = 0; i < _VKI_NSIG_WORDS; i++)
       pollset.sig[i] = ~tst->sig_mask.sig[i];
 
-
-   block_all_host_signals(&saved_mask); // protect signal queue
+   block_all_host_signals(&saved_mask); // protect signal queue /* try unblocking */
 
    /* First look for any queued pending signals */
    sip = next_queued(tid, &pollset); /* this thread */
-
    if (sip == NULL)
       sip = next_queued(0, &pollset); /* process-wide */
 
    /* If there was nothing queued, ask the kernel for a pending signal */
-   if (sip == NULL && VG_(sigtimedwait)(&pollset, &si, &zero) > 0) {
+   if (sip == NULL && VG_(sigtimedwait)(&pollset, &si, &zero ) > 0) {
 #if defined(VGO_netbsdelf2)
 	 VG_(message)(Vg_DebugMsg, "poll_signals: got signal %d "
                                    "for thread %d", si._info._signo, tid);
@@ -2158,9 +2169,11 @@ void VG_(poll_signals)(ThreadId tid)
 #endif
       sip = &si;
    }
-
+   VG_(printf)("Sip is null, not good %p\n",sip);
    if (sip != NULL) {
       /* OK, something to do; deliver it */
+   VG_(printf)("found a signal in the queue details: Signum = %d, Code = %d\n", sip->_info._signo , sip->_info._code ); 
+
 #if defined(VGO_netbsdelf2)
       if (VG_(clo_trace_signals))
 	 VG_(message)(Vg_DebugMsg, "Polling found signal %d for tid %d", 
@@ -2210,8 +2223,7 @@ void VG_(sigstartup_actions) ( void )
       ret = VG_(sigaction)(i, NULL, &sa);
 
       if (ret != 0)
-	 break;
-
+	break;
       /* Try setting it back to see if this signal is really
 	 available */
       if (i >= VKI_SIGRTMIN) {
@@ -2253,7 +2265,7 @@ void VG_(sigstartup_actions) ( void )
 
    /* Our private internal signals are treated as ignored */
    scss.scss_per_sig[VG_SIGVGKILL].scss_handler = VKI_SIG_IGN;
-   scss.scss_per_sig[VG_SIGVGKILL].scss_flags   = VKI_SA_SIGINFO;
+   scss.scss_per_sig[VG_SIGVGKILL].scss_flags   = VKI_SIG_IGN; /* VKI_SA_SIGINFO; */
    VG_(sigfillset)(&scss.scss_per_sig[VG_SIGVGKILL].scss_mask);
 
    /* Copy the process' signal mask into the root thread. */

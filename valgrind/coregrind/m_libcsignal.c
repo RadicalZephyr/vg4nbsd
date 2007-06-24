@@ -125,6 +125,7 @@ Int VG_(sigismember) ( const vki_sigset_t* set, Int signum )
    if (signum < 1 || signum > _VKI_NSIG)
       return 0;
    //signum--;
+   VG_(printf)("checking if sig is member signum = %d\n",signum);
    return    ((set->sig[__sigword(signum)] & __sigmask(signum)) != 0);
 
 }
@@ -270,12 +271,14 @@ asm(".text\n"      /* Start of _ENTRY, see include/i386/asm.h */
 
 SysRes VG_(do_sigaction_sigtramp)(Int signum ,const struct  vki_sigaction * act, struct vki_sigaction * oldact ) 
 {
-  SysRes res; 
+  SysRes res;
+
   if (act == NULL) {
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
 				  (UWord)NULL, 0);
    } else {
+
      VG_(debugLog)(2,"m_libcsignal","doing weird syscall\n");
 	   res = VG_(do_syscall5)(__NR___sigaction_sigtramp,
 				  signum, (UWord)act, (UWord)oldact,
@@ -299,7 +302,8 @@ Int VG_(sigaction) (Int signum, const struct vki_sigaction* act,
 #else
    /* From /usr/src/lib/libc/arch/i386/sys/__sigaction14_sigtramp */
    SysRes res;
-   res = VG_(do_sigaction_sigtramp) (signum, act, oldact);
+   // res = VG_(do_sys_sigaction)(signum , act, oldact);
+     res = VG_(do_sigaction_sigtramp) (signum, act, oldact);
    if(res.isError) 
      VG_(debugLog)(1,"m_libcsignal","Sigaction failed!!!\n");
 
@@ -328,6 +332,10 @@ Int VG_(sigtimedwait)( const vki_sigset_t *set, vki_siginfo_t *info,
 #elif defined (VGP_x86_netbsdelf2)
    SysRes res = VG_(do_syscall3)(__NR___sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)timeout/* , sizeof(*set) */);
+   if (res.isError){
+     VG_(printf)("Sigtimedwait fialed!!");
+   }
+     
    return res.isError ? -1 : res.val;
 #endif
 }

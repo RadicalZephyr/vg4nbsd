@@ -2585,8 +2585,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Initialise the pthread model
    //   p: ?
    //--------------------------------------------------------------
-   //if (VG_(clo_model_pthreads))
-   //   VG_(pthread_init)();
+   //   if (VG_(clo_model_pthreads))
+     //      VG_(pthread_init)();
 
    //--------------------------------------------------------------
    // Initialise the signal handling subsystem

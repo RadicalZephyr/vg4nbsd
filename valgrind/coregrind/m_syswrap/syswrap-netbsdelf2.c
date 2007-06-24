@@ -1646,7 +1646,9 @@ VG_(printf)("Arg 2 is %lx,%d\n",ARG2,RES);
 
 PRE(sys_sigaction_sigtramp)
 {
-
+  // When we are here it means that the kernel has finished a signal,
+  //  and is using the trampoline to jump back into the actual code  
+  //  I_die_here;
   /* does it blcok? do we need sfMayBlock ? */
   PRINT("sigaction_sigtramp ( %d,%p,%p,%p,%d",ARG1,ARG2,ARG3,ARG4,ARG5);
   /*retval type , function name, argument type , argument name .. */
@@ -1654,8 +1656,10 @@ PRE(sys_sigaction_sigtramp)
 		void *, tramp , int , vers );
   /* What is going to be written , is a post wrapper required XXXX FIxME !!! */
   /* first stab at doing this ourselves */
-  SET_STATUS_from_SysRes(VG_(do_sigaction_sigtramp)(ARG1,ARG2,ARG3));
-  //  I_die_here;
+
+  // SET_STATUS_from_SysRes(VG_(do_sigaction_sigtramp)(ARG1,ARG2,ARG3));
+
+//  I_die_here;
 
 }
 /* lifted from syswrap-linux but it uses do_sys_sigprocmask which uses primitives that have been fixed, so as semantics are the same, this should be fine */

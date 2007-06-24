@@ -318,7 +318,7 @@ void VG_(vg_yield)(void)
 static void block_signals(ThreadId tid)
 {
    vki_sigset_t mask;
-
+   VG_(printf)("In block signals!\n");
    VG_(sigfillset)(&mask);
 
    /* Don't block these because they're synchronous */
@@ -440,10 +440,10 @@ UInt run_thread_for_a_while ( ThreadId tid )
    SCHEDSETJMP(tid, jumped, 
                     trc = (UInt)VG_(run_innerloop)( (void*)&tst->arch.vex ));
 
-   //nextEIP = tst->arch.m_eip;
-   //if (nextEIP >= VG_(client_end))
-   //   VG_(printf)("trc=%d jump to %p from %p\n",
-   //		  trc, nextEIP, EIP);
+   /* nextEIP = tst->arch.m_eip; */
+/*    if (nextEIP >= VG_(client_end)) */
+/*        VG_(printf)("trc=%d jump to %p from %p\n", */
+/*    		  trc, nextEIP, EIP); */
    
    VG_(debugLog)(9,"scheduler","after jump\n");
    VG_(my_fault) = True;
@@ -617,9 +617,10 @@ static void handle_tt_miss ( ThreadId tid )
 	 // means that either a signal has been set up for delivery,
 	 // or the thread has been marked for termination.  Either
 	 // way, we just need to go back into the scheduler loop.
+	VG_(printf)("Translate failed\n");
       }
    }
-   VG_(debugLog)(4,"scheduler","out of handling tt miss\n");
+   VG_(debugLog)(2,"scheduler","out of handling tt miss\n");
 }
 
 static void handle_syscall(ThreadId tid)
@@ -775,13 +776,13 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 break;
 
       case VG_TRC_FAULT_SIGNAL:
-	VG_(debugLog)(4,"scheduler", "signal fault\n");
+	VG_(debugLog)(0,"scheduler", "signal fault\n");
 	 /* Everything should be set up (either we're exiting, or
 	    about to start in a signal handler). */
 	 break;
 
       case VEX_TRC_JMP_MAPFAIL:
-	VG_(debugLog)(4,"scheduler", "mapfail\n");
+	VG_(debugLog)(0,"scheduler", "mapfail\n");
          /* Failure of arch-specific address translation (x86/amd64
             segment override use) */
          /* jrs 2005 03 11: is this correct? */

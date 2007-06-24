@@ -137,7 +137,7 @@ typedef struct {
 /* These should not be considered constants from userland.  */
 
 
-#define VKI_SA_NOCLDSTOP	0x0008 
+#define VKI_SA_NOCLDSTOP	0x0008
 #define VKI_SA_NOCLDWAIT	0x0020
 #define VKI_SA_SIGINFO		0x0040
 #define VKI_SA_ONSTACK		0x0001

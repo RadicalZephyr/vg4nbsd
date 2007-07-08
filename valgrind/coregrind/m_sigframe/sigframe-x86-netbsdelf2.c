@@ -322,95 +322,95 @@ struct sigframe
    Vex guest state.  NOTE: does not fill in the FP or SSE
    bits of sigcontext at the moment.
 */
-/* static  */
-/* void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,  */
-/*                     const vki_sigset_t *set,  */
-/*                     struct vki_ucontext *uc, struct _vki_fpstate *fpstate) */
-/* { */
-/*    ThreadState *tst = VG_(get_ThreadState)(tid); */
-/*    struct vki_sigcontext *sc = &uc->uc_mcontext; */
+static
+void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
+                    const vki_sigset_t *set,
+                    struct vki_ucontext *uc, struct _vki_fpstate *fpstate)
+{
+   ThreadState *tst = VG_(get_ThreadState)(tid);
+   struct vki_sigcontext *sc = &uc->uc_mcontext;
 
-/*    VG_(memset)(uc, 0, sizeof(*uc)); */
+   VG_(memset)(uc, 0, sizeof(*uc));
 
-/*    uc->uc_flags = 0; */
-/*    uc->uc_link = 0; */
-/*    uc->uc_sigmask = *set; */
-/*    uc->uc_stack = tst->altstack; */
-/*    sc->fpstate = fpstate; */
+   uc->uc_flags = 0;
+   uc->uc_link = 0;
+   uc->uc_sigmask = *set;
+   uc->uc_stack = tst->altstack;
+// XXX  sc->fpstate = fpstate;
 
-/*    // FIXME: save_i387(&tst->arch, fpstate); */
+   // FIXME: save_i387(&tst->arch, fpstate);
 
-/* #  define SC2(reg,REG)  sc->reg = tst->arch.vex.guest_##REG */
-/*    SC2(gs,GS); */
-/*    SC2(fs,FS); */
-/*    SC2(es,ES); */
-/*    SC2(ds,DS); */
+#  define SC2(reg,REG)  sc->sc_##reg = tst->arch.vex.guest_##REG
+   SC2(gs,GS);
+   SC2(fs,FS);
+   SC2(es,ES);
+   SC2(ds,DS);
 
-/*    SC2(edi,EDI); */
-/*    SC2(esi,ESI); */
-/*    SC2(ebp,EBP); */
-/*    SC2(esp,ESP); */
-/*    SC2(ebx,EBX); */
-/*    SC2(edx,EDX); */
-/*    SC2(ecx,ECX); */
-/*    SC2(eax,EAX); */
+   SC2(edi,EDI);
+   SC2(esi,ESI);
+   SC2(ebp,EBP);
+   SC2(esp,ESP);
+   SC2(ebx,EBX);
+   SC2(edx,EDX);
+   SC2(ecx,ECX);
+   SC2(eax,EAX);
 
-/*    SC2(eip,EIP); */
-/*    SC2(cs,CS); */
-/*    sc->eflags = LibVEX_GuestX86_get_eflags(&tst->arch.vex); */
-/*    SC2(ss,SS); */
-/*    /\* XXX esp_at_signal *\/ */
-/*    /\* XXX trapno *\/ */
-/*    /\* XXX err *\/ */
-/* #  undef SC2 */
+   SC2(eip,EIP);
+   SC2(cs,CS);
+   sc->sc_eflags = LibVEX_GuestX86_get_eflags(&tst->arch.vex);
+   SC2(ss,SS);
+   /* XXX esp_at_signal */
+   /* XXX trapno */
+   /* XXX err */
+#  undef SC2
 
-/*    sc->cr2 = (UInt)si->_sifields._sigfault._addr; */
+// XXX   sc->cr2 = (UInt)si->_sifields._sigfault._addr;
 
-/* } */
+}
 
 
 /* Extend the stack segment downwards if needed so as to ensure the
    new signal frames are mapped to something.  Return a Bool
    indicating whether or not the operation was successful.
 */
-/* static Bool extend ( ThreadState *tst, Addr addr, SizeT size ) */
-/* { */
-/*    ThreadId tid = tst->tid; */
-/*    NSegment *stackseg = NULL; */
+static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
+{
+   ThreadId tid = tst->tid;
+   NSegment *stackseg = NULL;
 
-/*    if (VG_(extend_stack)(addr, tst->client_stack_szB)) { */
-/*       stackseg = VG_(am_find_nsegment)(addr); */
-/*       if (0 && stackseg) */
-/* 	 VG_(printf)("frame=%p seg=%p-%p\n", */
-/* 		     addr, stackseg->start, stackseg->end); */
-/*    } */
+   if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
+      stackseg = VG_(am_find_nsegment)(addr);
+      if (0 && stackseg)
+	 VG_(printf)("frame=%p seg=%p-%p\n",
+		     addr, stackseg->start, stackseg->end);
+   }
 
-/*    if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) { */
-/*       VG_(message)( */
-/*          Vg_UserMsg, */
-/*          "Can't extend stack to %p during signal delivery for thread %d:", */
-/*          addr, tid); */
-/*       if (stackseg == NULL) */
-/*          VG_(message)(Vg_UserMsg, "  no stack segment"); */
-/*       else */
-/*          VG_(message)(Vg_UserMsg, "  too small or bad protection modes"); */
+   if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
+      VG_(message)(
+         Vg_UserMsg,
+         "Can't extend stack to %p during signal delivery for thread %d:",
+         addr, tid);
+      if (stackseg == NULL)
+         VG_(message)(Vg_UserMsg, "  no stack segment");
+      else
+         VG_(message)(Vg_UserMsg, "  too small or bad protection modes");
 
-/*       /\* set SIGSEGV to default handler *\/ */
-/*       VG_(set_default_handler)(VKI_SIGSEGV); */
-/*       VG_(synth_fault_mapping)(tid, addr); */
+      /* set SIGSEGV to default handler */
+      VG_(set_default_handler)(VKI_SIGSEGV);
+      VG_(synth_fault_mapping)(tid, addr);
 
-/*       /\* The whole process should be about to die, since the default */
-/* 	 action of SIGSEGV to kill the whole process. *\/ */
-/*       return False; */
-/*    } */
+      /* The whole process should be about to die, since the default
+	 action of SIGSEGV to kill the whole process. */
+      return False;
+   }
 
-/*    /\* For tracking memory events, indicate the entire frame has been */
-/*       allocated. *\/ */
-/*    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB, */
-/*              size + VG_STACK_REDZONE_SZB ); */
+   /* For tracking memory events, indicate the entire frame has been
+      allocated. */
+   VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
+             size + VG_STACK_REDZONE_SZB );
 
-/*    return True; */
-/* } */
+   return True;
+}
 
 
 /* Build the Valgrind-specific part of a signal frame. */
@@ -437,47 +437,42 @@ static Addr build_sigframe(ThreadState *tst,
 			   Addr esp_top_of_frame,
 			   const vki_siginfo_t *siginfo,
 			   void *handler, UInt flags,
-			   const vki_sigset_t *mask,
-			   void *restorer)
+			   const vki_sigset_t *mask)
 {
-/*    struct sigframe *frame; */
-/*    Addr esp = esp_top_of_frame; */
-/*    Int	sigNo = siginfo->si_signo; */
-/*    struct vki_ucontext uc; */
+   struct sigframe *frame;
+   Addr esp = esp_top_of_frame;
+   Int	sigNo = siginfo->_info._signo;
+   struct vki_ucontext uc;
 
-/*    vg_assert((flags & VKI_SA_SIGINFO) == 0); */
+   vg_assert((flags & VKI_SA_SIGINFO) == 0);
 
-/*    esp -= sizeof(*frame); */
-/*    esp = VG_ROUNDDN(esp, 16); */
-/*    frame = (struct sigframe *)esp; */
+   esp -= sizeof(*frame);
+   esp = VG_ROUNDDN(esp, 16);
+   frame = (struct sigframe *)esp;
 
-/*    if (!extend(tst, esp, sizeof(*frame))) */
-/*       return esp_top_of_frame; */
+   if (!extend(tst, esp, sizeof(*frame)))
+      return esp_top_of_frame;
 
-/*    /\* retaddr, sigNo, siguContext fields are to be written *\/ */
-/*    VG_TRACK( pre_mem_write, Vg_CoreSignal, tst->tid, "signal handler frame",  */
-/* 	     esp, offsetof(struct sigframe, vg) ); */
+   /* retaddr, sigNo, siguContext fields are to be written */
+   VG_TRACK( pre_mem_write, Vg_CoreSignal, tst->tid, "signal handler frame",
+	     esp, offsetof(struct sigframe, vg) );
 
-/*    frame->sigNo = sigNo; */
+   frame->sigNo = sigNo;
 
-/*    if (flags & VKI_SA_RESTORER) */
-/*       frame->retaddr = (Addr)restorer; */
-/*    else */
-/*       frame->retaddr = (Addr)&VG_(x86_netbsdelf2_SUBST_FOR_sigreturn); */
+   frame->retaddr = (Addr)&VG_(x86_netbsdelf2_SUBST_FOR_sigreturn);
 
-/*    synth_ucontext(tst->tid, siginfo, mask, &uc, &frame->fpstate); */
+   synth_ucontext(tst->tid, siginfo, mask, &uc, &frame->fpstate);
 
-/*    VG_(memcpy)(&frame->sigContext, &uc.uc_mcontext,  */
-/* 	       sizeof(struct vki_sigcontext)); */
-/*    frame->sigContext.oldmask = mask->sig[0]; */
+   VG_(memcpy)(&frame->sigContext, &uc.uc_mcontext,
+	       sizeof(struct vki_sigcontext));
+   frame->sigContext.oldmask = mask->sig[0];
 
-/*    VG_TRACK( post_mem_write, Vg_CoreSignal, tst->tid,  */
-/*              esp, offsetof(struct sigframe, vg) ); */
+   VG_TRACK( post_mem_write, Vg_CoreSignal, tst->tid,
+             esp, offsetof(struct sigframe, vg) );
 
-/*    build_vg_sigframe(&frame->vg, tst, mask, flags, sigNo); */
+   build_vg_sigframe(&frame->vg, tst, mask, flags, sigNo);
 
-/*    return esp; */
-	I_die_here;
+   return esp;
 }
 
 /* EXPORTED */
@@ -486,14 +481,13 @@ void VG_(sigframe_create)( ThreadId tid,
                            const vki_siginfo_t *siginfo,
                            void *handler, 
                            UInt flags,
-                           const vki_sigset_t *mask,
-		           void *restorer )
+                           const vki_sigset_t *mask)
 {
    Addr		esp;
    ThreadState* tst = VG_(get_ThreadState)(tid);
 
    esp = build_sigframe(tst, esp_top_of_frame, 
-			siginfo, handler, flags, mask, restorer);
+			siginfo, handler, flags, mask);
 
    /* Set the thread so it will next run the handler. */
    /* tst->m_esp  = esp;  also notify the tool we've updated ESP */

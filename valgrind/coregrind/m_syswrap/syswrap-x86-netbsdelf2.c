@@ -1435,9 +1435,11 @@ PRE(sys_sigaction)
 
 POST(sys_sigaction)
 {
+
    vg_assert(SUCCESS);
    if (RES == 0 && ARG3 != 0)
       POST_MEM_WRITE( ARG3, sizeof(struct vki_old_sigaction));
+
 }
 
 PRE(sys_compat_ocreat)

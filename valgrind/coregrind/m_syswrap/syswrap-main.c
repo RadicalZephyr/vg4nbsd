@@ -1124,13 +1124,12 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
       interrupt) and so is ignored, apart from in the following
       printf. */
 
-   static const Bool debug = False;
+   static const Bool debug = True;
 
    ThreadState*     tst;
    SyscallStatus    canonical;
    ThreadArchState* th_regs;
    SyscallInfo*     sci;
-
    if (debug)
       VG_(printf)( "interrupted_syscall %d: tid=%d, IP=0x%llx, "
                    "restart=%s, sysret.isError=%s, sysret.val=%lld\n", 
@@ -1148,7 +1147,7 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
    tst     = VG_(get_ThreadState)(tid);
    th_regs = &tst->arch;
    sci     = & syscallInfo[tid];
-
+   VG_(printf)("Assertions passed\n");
    /* Figure out what the state of the syscall was by examining the
       (real) IP at the time of the signal, and act accordingly. */
 
@@ -1157,6 +1156,7 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
                   ML_(blksys_setup), ML_(blksys_finished));
       /* Looks like we weren't in a syscall at all.  Hmm. */
       vg_assert(sci->status.what != SsIdle);
+
       return;
    }
 
@@ -1174,7 +1174,8 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
    } 
 
    else 
-   if (ip == ML_(blksys_restart)) {
+/*    if (ip == ML_(blksys_restart)) { */
+     if (ip >=  ML_(blksys_restart) && ip < ML_(blksys_complete)) {
       /* We're either about to run the syscall, or it was interrupted
          and the kernel restarted it.  Restart if asked, otherwise
          EINTR it. */
@@ -1215,7 +1216,6 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
 
    else
       VG_(core_panic)("?? strange syscall interrupt state?");
-
    /* In all cases, the syscall is now finished (even if we called
       ML_(fixup_guest_state_to_restart_syscall), since that just
       re-positions the guest's IP for another go at it).  So we need

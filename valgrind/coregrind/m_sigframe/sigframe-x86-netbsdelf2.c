@@ -491,7 +491,7 @@ void VG_(sigframe_create)( ThreadId tid,
 {
    Addr		esp;
    ThreadState* tst = VG_(get_ThreadState)(tid);
-   I_die_here;
+
    esp = build_sigframe(tst, esp_top_of_frame, 
 			siginfo, handler, flags, mask, restorer);
 

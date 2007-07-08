@@ -414,7 +414,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
    vg_assert(dst->skss_per_sig[VKI_SIGKILL].skss_handler == VKI_SIG_DFL);
    vg_assert(dst->skss_per_sig[VKI_SIGSTOP].skss_handler == VKI_SIG_DFL);
 
-   if (1)
+   if (0)
       pp_SKSS();
 }
 
@@ -879,8 +879,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
 #else
    Int		sigNo = siginfo->si_signo;
 #endif
-   I_die_here;
-   vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
+    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
    vg_assert(VG_(is_valid_tid)(tid));
    tst = & VG_(threads)[tid];
 
@@ -1547,10 +1546,10 @@ void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *
 #endif
    /* Update thread state properly */
    VG_(fixup_guest_state_after_syscall_interrupted)(
-      tid, 
-      VG_UCONTEXT_INSTR_PTR(uc), 
-      VG_UCONTEXT_SYSCALL_NUM(uc), 
-      VG_UCONTEXT_SYSCALL_SYSRES(uc),  
+      tid,
+      VG_UCONTEXT_INSTR_PTR(uc),
+      VG_UCONTEXT_SYSCALL_NUM(uc),
+      VG_UCONTEXT_SYSCALL_SYSRES(uc),
       !!(scss.scss_per_sig[sigNo].scss_flags & VKI_SA_RESTART)
    );
 

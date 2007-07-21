@@ -118,8 +118,8 @@ struct sigframe
    Addr retaddr;
    Int  sigNo;
 
-/*    struct vki_sigcontext sigContext; */
-	struct vki_mcontext sigContext; /* XXX - netbsd */
+   struct vki_sigcontext sigContext;
+/* 	struct vki_mcontext sigContext; /\* XXX - netbsd *\/ */
     struct _vki_fpstate fpstate;
 
    struct vg_sigframe vg;
@@ -415,23 +415,23 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 
 /* Build the Valgrind-specific part of a signal frame. */
 
-/* static void build_vg_sigframe(struct vg_sigframe *frame, */
-/* 			      ThreadState *tst, */
-/* 			      const vki_sigset_t *mask, */
-/* 			      UInt flags, */
-/* 			      Int sigNo) */
-/* { */
-/*    frame->sigNo_private = sigNo; */
-/*    frame->magicPI       = 0x31415927; */
-/*    frame->vex_shadow    = tst->arch.vex_shadow; */
-/*    /\* HACK ALERT *\/ */
-/*    frame->vex           = tst->arch.vex; */
-/*    /\* end HACK ALERT *\/ */
-/*    frame->mask          = tst->sig_mask; */
-/*    frame->handlerflags  = flags; */
-/*    frame->magicE        = 0x27182818; */
-/* } */
-
+static void build_vg_sigframe(struct vg_sigframe *frame,
+			      ThreadState *tst,
+			      const vki_sigset_t *mask,
+			      UInt flags,
+			      Int sigNo)
+{
+   frame->sigNo_private = sigNo;
+   frame->magicPI       = 0x31415927;
+   frame->vex_shadow    = tst->arch.vex_shadow;
+   /* HACK ALERT */
+   frame->vex           = tst->arch.vex;
+   /* end HACK ALERT */
+   frame->mask          = tst->sig_mask;
+   frame->handlerflags  = flags;
+   frame->magicE        = 0x27182818;
+}
+/* I have uncommented this .. what is this? - Kailash VG4nBSD */
 
 static Addr build_sigframe(ThreadState *tst,
 			   Addr esp_top_of_frame,
@@ -465,7 +465,11 @@ static Addr build_sigframe(ThreadState *tst,
 
    VG_(memcpy)(&frame->sigContext, &uc.uc_mcontext,
 	       sizeof(struct vki_sigcontext));
+#ifndef VGO_netbsdelf2
    frame->sigContext.oldmask = mask->sig[0];
+#else /* guess that the sc_mask is the mask to be restored netbsd aggregates the whole sigcontext scruture */
+   VG_(memcpy)(&frame->sigContext.sc_mask,&mask, sizeof(vki_sigset_t));
+#endif
 
    VG_TRACK( post_mem_write, Vg_CoreSignal, tst->tid,
              esp, offsetof(struct sigframe, vg) );
@@ -481,7 +485,8 @@ void VG_(sigframe_create)( ThreadId tid,
                            const vki_siginfo_t *siginfo,
                            void *handler, 
                            UInt flags,
-                           const vki_sigset_t *mask)
+                           const vki_sigset_t *mask, void * restorer)
+/* added restorer for no reason - Kailash to keep it aligned with prototype */
 {
    Addr		esp;
    ThreadState* tst = VG_(get_ThreadState)(tid);

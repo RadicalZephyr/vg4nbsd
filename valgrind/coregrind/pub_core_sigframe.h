@@ -45,7 +45,7 @@
 /* Create a signal frame for thread 'tid'. */
 extern 
 void VG_(sigframe_create) ( ThreadId tid, 
-                            Addr sp_top_of_frame,
+                            Addr esp_top_of_frame,
                             const vki_siginfo_t *siginfo,
                             void *handler, 
                             UInt flags,

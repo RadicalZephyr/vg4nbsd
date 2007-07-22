@@ -125,6 +125,27 @@ struct sigframe
    struct vg_sigframe vg;
 };
 
+struct rt_sigframe
+{
+   /* Sig handler's return address */
+   Addr retaddr;
+   Int  sigNo;
+
+   /* ptr to siginfo_t. */
+   Addr psigInfo;
+
+   /* ptr to ucontext */
+   Addr puContext;
+   /* pointed to by psigInfo */
+   vki_siginfo_t sigInfo;
+
+   /* pointed to by puContext */
+   struct vki_ucontext uContext;
+   struct _vki_fpstate fpstate;
+
+   struct vg_sigframe vg;
+};
+
 
 //:: /*------------------------------------------------------------*/
 //:: /*--- Signal operations                                    ---*/
@@ -439,12 +460,13 @@ static Addr build_sigframe(ThreadState *tst,
 			   void *handler, UInt flags,
 			   const vki_sigset_t *mask)
 {
+  VG_(printf)("Building sigframe\n");
    struct sigframe *frame;
    Addr esp = esp_top_of_frame;
    Int	sigNo = siginfo->_info._signo;
    struct vki_ucontext uc;
 
-   vg_assert((flags & VKI_SA_SIGINFO) == 0);
+    vg_assert((flags & VKI_SA_SIGINFO) == 0);
 
    esp -= sizeof(*frame);
    esp = VG_ROUNDDN(esp, 16);
@@ -465,11 +487,7 @@ static Addr build_sigframe(ThreadState *tst,
 
    VG_(memcpy)(&frame->sigContext, &uc.uc_mcontext,
 	       sizeof(struct vki_sigcontext));
-#ifndef VGO_netbsdelf2
-   frame->sigContext.oldmask = mask->sig[0];
-#else /* guess that the sc_mask is the mask to be restored netbsd aggregates the whole sigcontext scruture */
    VG_(memcpy)(&frame->sigContext.sc_mask,&mask, sizeof(vki_sigset_t));
-#endif
 
    VG_TRACK( post_mem_write, Vg_CoreSignal, tst->tid,
              esp, offsetof(struct sigframe, vg) );
@@ -478,6 +496,58 @@ static Addr build_sigframe(ThreadState *tst,
 
    return esp;
 }
+
+static Addr build_rt_sigframe(ThreadState *tst,
+			      Addr esp_top_of_frame,
+			      const vki_siginfo_t *siginfo,
+			      void *handler, UInt flags,
+			      const vki_sigset_t *mask)
+{
+   struct rt_sigframe *frame;
+   Addr esp = esp_top_of_frame;
+   Int	sigNo = siginfo->_info._signo;
+
+   vg_assert((flags & VKI_SA_SIGINFO) != 0);
+
+   esp -= sizeof(*frame);
+   esp = VG_ROUNDDN(esp, 16);
+   frame = (struct rt_sigframe *)esp;
+
+   if (!extend(tst, esp, sizeof(*frame)))
+      return esp_top_of_frame;
+
+   /* retaddr, sigNo, pSiginfo, puContext fields are to be written */
+   VG_TRACK( pre_mem_write, Vg_CoreSignal, tst->tid, "rt signal handler frame", 
+	     esp, offsetof(struct rt_sigframe, vg) );
+
+   frame->sigNo = sigNo;
+
+/*    if (flags & VKI_SA_RESTORER) */
+/*       frame->retaddr = (Addr)restorer; */
+/*    else */
+/* Commented - kailash, netbsd does not use this RESTORER stuff */
+      frame->retaddr = (Addr)&VG_(x86_netbsdelf2_SUBST_FOR_sigreturn);
+
+   frame->psigInfo = (Addr)&frame->sigInfo;
+   frame->puContext = (Addr)&frame->uContext;
+   VG_(memcpy)(&frame->sigInfo, siginfo, sizeof(vki_siginfo_t));
+
+   /* SIGILL defines addr to be the faulting address */
+   if (sigNo == VKI_SIGILL && siginfo->_info._code > 0)
+     frame->sigInfo._info._reason._fault._addr 
+         = (void*)tst->arch.vex.guest_EIP;
+
+   synth_ucontext(tst->tid, siginfo, mask, &frame->uContext, &frame->fpstate);
+
+   VG_TRACK( post_mem_write,  Vg_CoreSignal, tst->tid, 
+             esp, offsetof(struct rt_sigframe, vg) );
+
+   build_vg_sigframe(&frame->vg, tst, mask, flags, sigNo);
+   
+   return esp;
+}
+
+
 
 /* EXPORTED */
 void VG_(sigframe_create)( ThreadId tid, 
@@ -491,8 +561,12 @@ void VG_(sigframe_create)( ThreadId tid,
    Addr		esp;
    ThreadState* tst = VG_(get_ThreadState)(tid);
 
-   esp = build_sigframe(tst, esp_top_of_frame, 
-			siginfo, handler, flags, mask);
+   if (flags & VKI_SA_SIGINFO)
+      esp = build_rt_sigframe(tst, esp_top_of_frame, siginfo, 
+                                   handler, flags, mask);
+   else
+      esp = build_sigframe(tst, esp_top_of_frame, 
+                                siginfo, handler, flags, mask);
 
    /* Set the thread so it will next run the handler. */
    /* tst->m_esp  = esp;  also notify the tool we've updated ESP */

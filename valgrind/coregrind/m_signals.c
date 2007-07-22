@@ -115,8 +115,7 @@ n
 #include "vki_unistd.h"
 
 
-/* Define to give more sanity checking for signals. */
-#define DEBUG_SIGNALS
+/* Define to give more sanity checking for signals. */ #define DEBUG_SIGNALS
 
 
 /* ---------------------------------------------------------------------
@@ -129,8 +128,7 @@ static void sigvgkill_handler	   ( Int sigNo, vki_siginfo_t *info, struct vki_uc
 
 static const Char *signame(Int sigNo);
 
-/* Maximum usable signal. */
-Int VG_(max_signal) = _VKI_NSIG - 1; /* XXX i put teh -1 - hsaliak */
+/* Maximum usable signal. */ Int VG_(max_signal) = _VKI_NSIG - 1; /* XXX i put teh -1 - hsaliak */
 
 #define N_QUEUED_SIGNALS	8
 
@@ -310,8 +308,7 @@ void pp_SKSS ( void )
                 else if client is DFL, then our handler as well
                 else (client must be IGN)
 			then hander is IGN
-*/
-static
+*/ static
 void calculate_SKSS_from_SCSS ( SKSS* dst )
 {
    Int   sig;
@@ -455,8 +452,7 @@ extern void my_sigreturn(void);
    "	movl	$" #name ", %eax\n" \
    "	int	$0x80\n" \
    ".previous\n"
-/* XXX broken */
-#else
+/* XXX broken */ #else
 #  error Unknown platform
 #endif
 
@@ -554,8 +550,7 @@ static void handle_SCSS_change ( Bool force_update )
 /* Logic for this alt-stack stuff copied directly from do_sigaltstack
    in kernel/signal.[ch] */
 
-/* True if we are on the alternate signal stack.  */
-static Bool on_sig_stack ( ThreadId tid, Addr m_SP )
+/* True if we are on the alternate signal stack.  */ static Bool on_sig_stack ( ThreadId tid, Addr m_SP )
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
 
@@ -757,8 +752,7 @@ const Char *format_sigset ( const vki_sigset_t* set )
 
    Note that the thread signal masks are an implicit part of SCSS,
    which is why this routine is allowed to mess with them.  
-*/
-static
+*/ static
 void do_setmask ( ThreadId tid,
                   Int how,
                   vki_sigset_t* newset,
@@ -833,8 +827,7 @@ SysRes VG_(do_sys_sigprocmask) ( ThreadId tid,
    Handy utilities to block/restore all host signals.
    ------------------------------------------------------------------ */
 
-/* Block all host signals, dumping the old mask in *saved_mask. */
-static void block_all_host_signals ( /* OUT */ vki_sigset_t* saved_mask )
+/* Block all host signals, dumping the old mask in *saved_mask. */ static void block_all_host_signals ( /* OUT */ vki_sigset_t* saved_mask )
 {
    Int           ret;
    vki_sigset_t block_procmask;
@@ -844,8 +837,7 @@ static void block_all_host_signals ( /* OUT */ vki_sigset_t* saved_mask )
    vg_assert(ret == 0);
 }
 
-/* Restore the blocking mask using the supplied saved one. */
-static void restore_all_host_signals ( /* IN */ vki_sigset_t* saved_mask )
+/* Restore the blocking mask using the supplied saved one. */ static void restore_all_host_signals ( /* IN */ vki_sigset_t* saved_mask )
 {
    Int ret;
    ret = VG_(sigprocmask)(VKI_SIG_SETMASK, saved_mask, NULL);
@@ -868,10 +860,10 @@ void VG_(clear_out_queued_signals)( ThreadId tid, vki_sigset_t* saved_mask )
    ------------------------------------------------------------------ */
 
 /* Set up a stack frame (VgSigContext) for the client's signal
-   handler. */
-static
+   handler. */ static
 void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
 {
+  VG_(printf)("In push_signal_frame\n");
    Addr         esp_top_of_frame;
    ThreadState* tst;
 #if defined(VGO_netbsdelf2)
@@ -894,6 +886,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
              arch/i386/kernel/signal.c. */
           sas_ss_flags(tid, VG_(get_SP)(tid)) == 0
       ) {
+     VG_(printf)("Alternate stack!\n");
       esp_top_of_frame 
          = (Addr)(tst->altstack.ss_sp) + tst->altstack.ss_size;
       if (VG_(clo_trace_signals))
@@ -908,6 +901,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/True );
       
    } else {
+     VG_(printf)("Normal stack!\n");
       esp_top_of_frame = VG_(get_SP)(tid) - VG_STACK_REDZONE_SZB;
 
       /* Signal delivery to tools */
@@ -981,8 +975,7 @@ static const Char *signame(Int sigNo)
    }
 }
 
-/* Hit ourselves with a signal using the default handler */
-void VG_(kill_self)(Int sigNo)
+/* Hit ourselves with a signal using the default handler */ void VG_(kill_self)(Int sigNo)
 {
    vki_sigset_t	        mask, origmask;
    struct vki_sigaction sa, origsa;   
@@ -1014,8 +1007,7 @@ void VG_(kill_self)(Int sigNo)
 
    If we're not being quiet, then print out some more detail about
    fatal signals (esp. core dumping signals).
- */
-static void default_action(const vki_siginfo_t *info, ThreadId tid)
+ */ static void default_action(const vki_siginfo_t *info, ThreadId tid)
 {
    Int  sigNo;
    Bool terminate = False;	/* kills process         */
@@ -1233,8 +1225,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 
    This updates the thread state, but it does not set it to be
    Runnable.
-*/
-static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
+*/ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
 {
    Int			sigNo;
    SCSS_Per_Signal	*handler;
@@ -1318,8 +1309,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
       }
    }
 
-   /* Thread state is ready to go - just add Runnable */
-}
+   /* Thread state is ready to go - just add Runnable */ }
 
 static void resume_scheduler(ThreadId tid)
 {
@@ -1406,8 +1396,7 @@ void VG_(synth_sigill)(ThreadId tid, Addr addr)
 
    tid==0 means add it to the process-wide queue, and not sent it to a
    specific thread.
-*/
-static 
+*/ static 
 void queue_signal(ThreadId tid, const vki_siginfo_t *si)
 {
 
@@ -1440,8 +1429,7 @@ void queue_signal(ThreadId tid, const vki_siginfo_t *si)
 
       XXX We should also keep a sigset of pending signals, so that at
       least a non-siginfo signal gets deliviered.
-   */
-#if defined (VGO_netbsdelf2)
+   */ #if defined (VGO_netbsdelf2)
    if (sq->sigs[sq->next]._info._signo != 0)
       VG_(message)(Vg_UserMsg, "Signal %d being dropped from thread %d's queue",
 		   sq->sigs[sq->next]._info._signo, tid);
@@ -1463,8 +1451,7 @@ void queue_signal(ThreadId tid, const vki_siginfo_t *si)
 
    Must be called with all signals blocked, to protect against async
    deliveries.
-*/
-static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
+*/ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
    SigQueue *sq;
@@ -1512,8 +1499,7 @@ static vki_siginfo_t *next_queued(ThreadId tid, const vki_sigset_t *set)
 
    This should only happen when the thread is blocked in a syscall,
    since that's the only time this set of signals is unblocked.
-*/
-static 
+*/ static 
 void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
 
@@ -1579,8 +1565,7 @@ void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *
    - addr not below a growable segment
    - new stack size would exceed maxsize
    - mmap failed for some other reason
- */
-Bool VG_(extend_stack)(Addr addr, UInt maxsize)
+ */ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
 {
    SizeT udelta;
 
@@ -1694,7 +1679,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 async_signalhandler(sigNo, info, uc);
 	 VG_(core_panic)("async_signalhandler returned!?\n");
       }
-      /* netbsd doesnt have this union XXX - examine equivalent union  */ 
+      /* netbsd doesnt have this union XXX - examine equivalent union  - For now this block is commented out*/ 
 /*       if (info->_sifields._kill._pid == 0) { */
 /* 	 /\* There's a per-user limit of pending siginfo signals.  If */
 /* 	    you exceed this, by having more than that number of */
@@ -1702,32 +1687,19 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 /* 	    delivered without siginfo.  This condition can be caused */
 /* 	    by any unrelated program you're running at the same time */
 /* 	    as Valgrind, if it has a large number of pending siginfo */
-/* 	    signals which it isn't taking delivery of. */
+/*  	    signals which it isn't taking delivery of. */
 
 /* 	    Since we depend on siginfo to work out why we were sent a */
-/* 	    signal and what we should do about it, we really can't */
-/* 	    continue unless we get it. *\/ */
-/* 	 VG_(message)(Vg_UserMsg, "Signal %d (%s) appears to have lost its siginfo; I can't go on.", */
-/* 		      sigNo, signame(sigNo)); */
-/* 	 VG_(message)(Vg_UserMsg, "  This may be because one of your programs has consumed your"); */
-/* 	 VG_(message)(Vg_UserMsg, "  ration of siginfo structures."); */
-/*          VG_(printf)( */
-/* "  For more information, see:\n" */
-/* "    http://kerneltrap.org/mailarchive/1/message/25599/thread\n" */
-/* "  Basically, some program on your system is building up a large queue of\n" */
-/* "  pending signals, and this causes the siginfo data for other signals to\n" */
-/* "  be dropped because it's exceeding a system limit.  However, Valgrind\n" */
-/* "  absolutely needs siginfo for SIGSEGV.  A workaround is to track down the\n" */
-/* "  offending program and avoid running it while using Valgrind, but there\n" */
-/* "  is no easy way to do this.  Apparently the problem was fixed in kernel\n" */
-/* "  2.6.12.\n"); */
+/*  	    signal and what we should do about it, we really can't */
+/*  	    continue unless we get it. *\/ */
+/*  	 VG_(message)(Vg_UserMsg, "Signal %d (%s) appears to have lost its siginfo; I can't go on.", 		      sigNo, signame(sigNo)); 	 VG_(message)(Vg_UserMsg, "  This may be because one of your programs has consumed your"); 	 VG_(message)(Vg_UserMsg, "  ration of siginfo structures.");          VG_(printf)( "  For more information, see:\n" "    http://kerneltrap.org/mailarchive/1/message/25599/thread\n" "  Basically, some program on your system is building up a large queue of\n" "  pending signals, and this causes the siginfo data for other signals to\n" "  be dropped because it's exceeding a system limit.  However, Valgrind\n" "  absolutely needs siginfo for SIGSEGV.  A workaround is to track down the\n" "  offending program and avoid running it while using Valgrind, but there\n" "  is no easy way to do this.  Apparently the problem was fixed in kernel\n" "  2.6.12.\n"); */
 
-/* 	 /\* It's a fatal signal, so we force the default handler. *\/ */
-/* 	 VG_(set_default_handler)(sigNo); */
-/* 	 deliver_signal(tid, info); */
-/* 	 resume_scheduler(tid); */
-/* 	 VG_(exit)(99);		/\* If we can't resume, then just exit *\/ */
-/*       } */
+/* 	 /\* It's a fatal signal, so we force the default handler. *\/ 	  */
+/* VG_(set_default_handler)(sigNo); 	  */
+/* deliver_signal(tid, info); 	  */
+/* resume_scheduler(tid); 	  */
+/* VG_(exit)(99);		/\* If we can't resume, then just exit *\/       */
+/*  } */
       VG_(printf)( "Routing user-sent sync signal %d via queue\n",sigNo);
 
       if (VG_(clo_trace_signals))
@@ -1821,6 +1793,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       if (!VG_(my_fault)) {
 	 /* Can't continue; must longjmp back to the scheduler and thus
 	    enter the sighpandler immediately. */
+	VG_(printf)("Not my fault!?\n");
 	deliver_signal(tid, info); /* INVESTIGATE THIS FUNCTION */
 	 resume_scheduler(tid);
       }
@@ -2074,8 +2047,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
    Kill this thread.  Makes it leave any syscall it might be currently
    blocked in, and return to the scheduler.  This doesn't mark the thread
    as exiting; that's the caller's job.
- */
-static void sigvgkill_handler(int signo, vki_siginfo_t *si, struct vki_ucontext *uc)
+ */ static void sigvgkill_handler(int signo, vki_siginfo_t *si, struct vki_ucontext *uc)
 {
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
 
@@ -2119,8 +2091,7 @@ void pp_ksigaction ( struct vki_sigaction* sa )
 
 /* 
    Force signal handler to default
- */
-void VG_(set_default_handler)(Int signo)
+ */ void VG_(set_default_handler)(Int signo)
 {
    struct vki_sigaction sa;   
    sa.ksa_handler = VKI_SIG_DFL;
@@ -2135,8 +2106,7 @@ void VG_(set_default_handler)(Int signo)
 
 /* 
    Poll for pending signals, and set the next one up for delivery.
- */
-void VG_(poll_signals)(ThreadId tid)
+ */ void VG_(poll_signals)(ThreadId tid)
 {
 
   VG_(printf)("Polling signals!!\n");
@@ -2182,7 +2152,7 @@ void VG_(poll_signals)(ThreadId tid)
 	 else if (VG_(clo_trace_signals))
 		 VG_(message)(Vg_DebugMsg, "signal %d ignored", sip->_info._signo);
 	 sip->_info._signo = 0;	/* remove from signal queue, if that's
-				   where it came from */
+				   where it came from */ 
 #else
       if (VG_(clo_trace_signals))
 	 VG_(message)(Vg_DebugMsg, "Polling found signal %d for tid %d", 
@@ -2232,6 +2202,7 @@ void VG_(sigstartup_actions) ( void )
 	 tsa.sa_flags = VKI_SA_SIGINFO;
 #ifndef VGO_netbsdelf2
 	 tsa.sa_restorer = 0;
+	 tsa.sa_flags = VKI_SA_SIGINFO;/* do we use all siginfo in netbsd? */ 
 #endif
 	 VG_(sigfillset)(&tsa.sa_mask);
 
@@ -2280,9 +2251,6 @@ void VG_(sigstartup_actions) ( void )
    handle_SCSS_change( True /* forced update */ );
 
    /* Leave with all signals still blocked; the thread scheduler loop
-      will set the appropriate mask at the appropriate time. */
-}
+      will set the appropriate mask at the appropriate time. */ }
 
-/*--------------------------------------------------------------------*/
-/*--- end                                                          ---*/
-/*--------------------------------------------------------------------*/
+/*--------------------------------------------------------------------*/ /*--- end                                                          ---*/ /*--------------------------------------------------------------------*/

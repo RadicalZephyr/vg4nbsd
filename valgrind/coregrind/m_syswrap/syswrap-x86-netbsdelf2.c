@@ -1628,12 +1628,20 @@ PRE(sys_minherit)
 
 PRE(sys_getcontext)
 {
-   I_die_here;
+  PRINT("sys_getcontext (%p)", ARG1);
+  PRE_REG_READ1(long, "getcontext", struct vki_ucontext * , ucp);
+  PRE_MEM_WRITE("getcontext(ucp)",ARG1, sizeof(struct vki_ucontext));
+/*    I_die_here; */
 }
 
 POST(sys_getcontext)
 {
-   I_die_here;
+  vg_assert(SUCCESS);
+  if (RES ==0) {
+
+    POST_MEM_WRITE(ARG1, sizeof(struct vki_ucontext));
+  }
+/*   I_die_here; */
 }
 
 PRE(sys_setcontext)

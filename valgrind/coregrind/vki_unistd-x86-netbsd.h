@@ -828,10 +828,10 @@
 
 
 #define	__NR_getcontext	307
-
+/* syscall: "getcontext" ret: "int" args: "struct __ucontext *" */
 
 #define	__NR_setcontext	308
-
+/* syscall: "setcontext" ret: "int" args: "const struct __ucontext *" */
 
 #define	__NR__lwp_create	309
 

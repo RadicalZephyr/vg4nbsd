@@ -43,7 +43,8 @@
 // It defines the redzone to be twice the page size
 #  elif defined(VGO_netbsdelf2)
 #     include "vki-x86-netbsd.h"
-#     define VG_STACK_REDZONE_SZB      (VKI_PAGE_SIZE * 2)  // number of addressable bytes below SP
+
+#     define VG_STACK_REDZONE_SZB       (VKI_PAGE_SIZE * 2)  // number of addressable bytes below SP
 #  else
 #    error Unknown OS (arch = x86)
 #  endif

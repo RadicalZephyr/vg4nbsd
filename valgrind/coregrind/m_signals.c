@@ -886,7 +886,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
              arch/i386/kernel/signal.c. */
           sas_ss_flags(tid, VG_(get_SP)(tid)) == 0
       ) {
-     VG_(printf)("Alternate stack!\n");
+     VG_(printf)("m_signals:push_signal_frame:Alternate stack!\n");
       esp_top_of_frame 
          = (Addr)(tst->altstack.ss_sp) + tst->altstack.ss_size;
       if (VG_(clo_trace_signals))
@@ -901,7 +901,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/True );
       
    } else {
-     VG_(printf)("Normal stack!\n");
+     VG_(printf)("m_signals:push_signal_frame:Normal stack!\n");
       esp_top_of_frame = VG_(get_SP)(tid) - VG_STACK_REDZONE_SZB;
 
       /* Signal delivery to tools */
@@ -1225,7 +1225,8 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
 
    This updates the thread state, but it does not set it to be
    Runnable.
-*/ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
+*/
+static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
 {
    Int			sigNo;
    SCSS_Per_Signal	*handler;
@@ -1285,7 +1286,7 @@ if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
       vg_assert(VG_(is_valid_tid)(tid));
 
       push_signal_frame ( tid, info );
-
+      VG_(printf)("Out of push_signal_frame\n");
       if (handler->scss_flags & VKI_SA_ONESHOT) {
 	 /* Do the ONESHOT thing. */
 	 handler->scss_handler = VKI_SIG_DFL;
@@ -1644,7 +1645,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	     sigNo == VKI_SIGFPE  ||
 	     sigNo == VKI_SIGILL  ||
 	     sigNo == VKI_SIGTRAP);
-   VG_(printf)("Tid = %d\n signo = %d \n",tid,sigNo);
+   VG_(printf)("m_signals:sync_signalhandler: Tid = %d\n signo = %d \n",tid,sigNo);
 /* #ifdef VGO_linux */
 /*    /\* The linux kernel uses the top 16 bits of si_code for it's own */
 /*       use and only exports the bottom 16 bits to user space - at least */
@@ -1736,9 +1737,6 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
                                : NULL;
       
-      VG_(printf)("SIGSEGV: si_code=%d faultaddr=%p tid=%d ESP=%p "
-                         "seg=NULL",
-			 info->_info._code, fault, tid, esp);
       if (VG_(clo_trace_signals)) {
 	 if (seg == NULL)
 	    VG_(message)(Vg_DebugMsg,
@@ -1751,6 +1749,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
                           "seg=%p-%p",
 			 info->_info._code, fault, tid, esp, seg->start, seg->end);
       }
+      /* This condition is not working correctly in NetBSD */
       if (info->_info._code == VKI_SEGV_MAPERR
           && seg
           && seg->kind == SkResvn
@@ -1770,6 +1769,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	       VG_(message)(Vg_DebugMsg, 
 			    "       -> extended stack base to %p", 
                             VG_PGROUNDDN(fault));
+	    VG_(printf)("Returning from sync_signalhandler\n");
 	    return; // extension succeeded, restart instruction
 	 } else
 	    VG_(message)(Vg_UserMsg, 
@@ -1787,6 +1787,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 
       if (VG_(sigismember)(&tst->sig_mask, sigNo)) {
 	 /* signal is blocked, but they're not allowed to block faults */
+	VG_(printf)("sync_signalhandler:Forcibly setting default handler for Signal %d\n",sigNo);
 	 VG_(set_default_handler)(sigNo);
       }
 
@@ -1795,6 +1796,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	    enter the sighpandler immediately. */
 	VG_(printf)("Not my fault!?\n");
 	deliver_signal(tid, info); /* INVESTIGATE THIS FUNCTION */
+	VG_(printf)("sync_signalhandler:Resuming scheduler\n");
 	 resume_scheduler(tid);
       }
 

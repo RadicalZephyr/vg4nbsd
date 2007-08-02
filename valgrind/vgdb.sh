@@ -17,7 +17,7 @@ echo "BIN : $BIN"
 cd $VG_ROOT
 cat > $VG_TMP_SCRIPT << EOF
 break main
-run --log-file=output.txt --trace-syscalls=yes --tool=$VG_TOOL -v $BIN
+run --log-file=output.txt  --tool=$VG_TOOL -v $BIN
 step
 symbol-file .in_place/x86-netbsd/none
 EOF

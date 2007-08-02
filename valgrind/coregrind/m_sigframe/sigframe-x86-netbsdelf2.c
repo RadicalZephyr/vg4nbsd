@@ -503,6 +503,7 @@ static Addr build_rt_sigframe(ThreadState *tst,
 			      void *handler, UInt flags,
 			      const vki_sigset_t *mask)
 {
+
    struct rt_sigframe *frame;
    Addr esp = esp_top_of_frame;
    Int	sigNo = siginfo->_info._signo;

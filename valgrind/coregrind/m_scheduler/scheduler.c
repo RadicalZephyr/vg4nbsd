@@ -892,8 +892,8 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
    VGP_POPCC(VgpSched);
 
-   //if (VG_(clo_model_pthreads))
-   //   VG_(tm_thread_exit)(tid);
+   //   if (VG_(clo_model_pthreads))
+     //   VG_(tm_thread_exit)(tid);
    
    return tst->exitreason;
 }

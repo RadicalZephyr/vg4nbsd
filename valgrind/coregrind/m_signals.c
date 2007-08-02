@@ -471,8 +471,7 @@ static void handle_SCSS_change ( Bool force_update )
    Int  res, sig;
    SKSS skss_old;
    struct vki_sigaction ksa, ksa_old;
-   VG_(debugLog)(1,"m_signals","in handle SCSS change , force update = %d\n", force_update);
-   /* Remember old SKSS and calculate new one. */
+    /* Remember old SKSS and calculate new one. */
    skss_old = skss;
    calculate_SKSS_from_SCSS ( &skss );
 
@@ -863,7 +862,7 @@ void VG_(clear_out_queued_signals)( ThreadId tid, vki_sigset_t* saved_mask )
    handler. */ static
 void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
 {
-  VG_(printf)("In push_signal_frame\n");
+  
    Addr         esp_top_of_frame;
    ThreadState* tst;
 #if defined(VGO_netbsdelf2)
@@ -886,7 +885,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
              arch/i386/kernel/signal.c. */
           sas_ss_flags(tid, VG_(get_SP)(tid)) == 0
       ) {
-     VG_(printf)("m_signals:push_signal_frame:Alternate stack!\n");
+     
       esp_top_of_frame 
          = (Addr)(tst->altstack.ss_sp) + tst->altstack.ss_size;
       if (VG_(clo_trace_signals))
@@ -901,7 +900,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
       VG_TRACK( pre_deliver_signal, tid, sigNo, /*alt_stack*/True );
       
    } else {
-     VG_(printf)("m_signals:push_signal_frame:Normal stack!\n");
+     
       esp_top_of_frame = VG_(get_SP)(tid) - VG_STACK_REDZONE_SZB;
 
       /* Signal delivery to tools */
@@ -1232,8 +1231,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    SCSS_Per_Signal	*handler;
    void			*handler_fn;
    ThreadState		*tst = VG_(get_ThreadState)(tid);
-   VG_(printf)("In deliver signal\n");
-
+   
 #if defined (VGO_netbsdelf2)
    sigNo = info->_info._signo;
    if (VG_(clo_trace_signals))
@@ -1272,8 +1270,7 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
    if (handler_fn == VKI_SIG_DFL) {
       default_action(info, tid);
    } else {
-     VG_(printf)("DELIVERING NON DEFAULT SIGNAL!!!\n");
-      /* Create a signal delivery frame, and set the client's %ESP and
+        /* Create a signal delivery frame, and set the client's %ESP and
 	 %EIP so that when execution continues, we will enter the
 	 signal handler with the frame on top of the client's stack,
 	 as it expects.
@@ -1286,14 +1283,12 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
       vg_assert(VG_(is_valid_tid)(tid));
 
       push_signal_frame ( tid, info );
-      VG_(printf)("Out of push_signal_frame\n");
       if (handler->scss_flags & VKI_SA_ONESHOT) {
 	 /* Do the ONESHOT thing. */
 	 handler->scss_handler = VKI_SIG_DFL;
 
 	 handle_SCSS_change( False /* lazy update */ );
       }
-
       /* At this point:
 	 tst->sig_mask is the current signal mask
 	 tst->tmp_sig_mask is the same as sig_mask, unless we're in sigsuspend
@@ -1343,10 +1338,8 @@ static void synth_fault_common(ThreadId tid, Addr addr, Int si_code)
 
    /* If they're trying to block the signal, force it to be delivered
       */
-   VG_(printf)("Checking if sigsegv is member!\n");
    if (VG_(sigismember)(&VG_(threads)[tid].sig_mask, VKI_SIGSEGV)){
-     VG_(printf)("setting def handler for segv\n");
-    VG_(set_default_handler)(VKI_SIGSEGV);
+     VG_(set_default_handler)(VKI_SIGSEGV);
    }
    deliver_signal(tid, &info);
 }
@@ -1404,7 +1397,6 @@ void queue_signal(ThreadId tid, const vki_siginfo_t *si)
    ThreadState *tst;
    SigQueue *sq;
    vki_sigset_t savedmask;
-  VG_(printf)("In Queue signal!!\n");
    tst = VG_(get_ThreadState)(tid);
 
    /* Protect the signal queue against async deliveries */
@@ -1634,18 +1626,17 @@ void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
 static
 void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-
-   VG_(debugLog)(0,"m_signals:sync_signalhandler","In sync signalhandler sigNo = %d\n", sigNo);
+   VG_(printf)("m_signals:sync_signalhandler","In sync signalhandler sigNo = %d\n", sigNo);
    ThreadId tid = VG_(get_lwp_tid)(VG_(gettid)());
    vg_assert(tid != 0);
-/*    vg_assert(info->_info != NULL); /\* points to something *\/   */
+/*    vg_assert((void *)(info->_info) != NULL); /\* points to something *\/ */
       vg_assert(info->_info._signo == sigNo);
       vg_assert(sigNo == VKI_SIGSEGV ||
 	     sigNo == VKI_SIGBUS  ||
 	     sigNo == VKI_SIGFPE  ||
 	     sigNo == VKI_SIGILL  ||
 	     sigNo == VKI_SIGTRAP);
-   VG_(printf)("m_signals:sync_signalhandler: Tid = %d\n signo = %d \n",tid,sigNo);
+/*    VG_(printf)("m_signals:sync_signalhandler: Tid = %d\n signo = %d \n",tid,sigNo); */
 /* #ifdef VGO_linux */
 /*    /\* The linux kernel uses the top 16 bits of si_code for it's own */
 /*       use and only exports the bottom 16 bits to user space - at least */
@@ -1670,15 +1661,12 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	  - while blocked in a syscall
 	    Action: make thread runnable, queue signal, resume scheduler
       */
-     VG_(printf)("LESS THAN SI_USER!!\n");
      if (VG_(threads)[tid].status == VgTs_WaitSys) {
        /* Since this signal interrupted a syscall, it means the
 	  client's signal mask was applied, so we can't get here
 	  unless the client wants this signal right now.  This means
 	  we can simply use the async_signalhandler. */
-	VG_(printf)("Calling async handler!\n");
-	 async_signalhandler(sigNo, info, uc);
-	 VG_(core_panic)("async_signalhandler returned!?\n");
+       async_signalhandler(sigNo, info, uc);
       }
       /* netbsd doesnt have this union XXX - examine equivalent union  - For now this block is commented out*/ 
 /*       if (info->_sifields._kill._pid == 0) { */
@@ -1729,8 +1717,9 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
    /* Special fault-handling case. We can now get signals which can
       act upon and immediately restart the faulting instruction.
     */
+
    if (info->_info._signo == VKI_SIGSEGV) {
-     VG_(printf)("sigsegv in sync_signalhandler\n");
+     
       Addr fault = (Addr)info->_info._reason._fault._addr;
       Addr esp   =  VG_(get_SP)(tid);
       NSegment* seg      = VG_(am_find_nsegment)(fault);
@@ -1769,8 +1758,12 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	       VG_(message)(Vg_DebugMsg, 
 			    "       -> extended stack base to %p", 
                             VG_PGROUNDDN(fault));
-	    VG_(printf)("Returning from sync_signalhandler\n");
+#ifdef VGO_netbsdelf2
+	    resume_scheduler(tid); /* resume the scheduler */
+#else
+
 	    return; // extension succeeded, restart instruction
+#endif /* VG4nBSD I do not see why we should not resume the scheduler to restart the instruction */
 	 } else
 	    VG_(message)(Vg_UserMsg, 
                          "Stack overflow in thread %d: can't grow stack to %p", 
@@ -1794,10 +1787,8 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       if (!VG_(my_fault)) {
 	 /* Can't continue; must longjmp back to the scheduler and thus
 	    enter the sighpandler immediately. */
-	VG_(printf)("Not my fault!?\n");
 	deliver_signal(tid, info); /* INVESTIGATE THIS FUNCTION */
-	VG_(printf)("sync_signalhandler:Resuming scheduler\n");
-	 resume_scheduler(tid);
+	resume_scheduler(tid);
       }
 
       /* Check to see if someone is interested in faults. */
@@ -2111,7 +2102,6 @@ void pp_ksigaction ( struct vki_sigaction* sa )
  */ void VG_(poll_signals)(ThreadId tid)
 {
 
-  VG_(printf)("Polling signals!!\n");
   static const struct vki_timespec zero = { 0, 0 };
    vki_siginfo_t si, *sip;
    vki_sigset_t pollset;
@@ -2140,10 +2130,9 @@ void pp_ksigaction ( struct vki_sigaction* sa )
 #endif
       sip = &si;
    }
-   VG_(printf)("Sip is null, not good %p\n",sip);
    if (sip != NULL) {
       /* OK, something to do; deliver it */
-   VG_(printf)("found a signal in the queue details: Signum = %d, Code = %d\n", sip->_info._signo , sip->_info._code ); 
+     VG_(debugLog)(1,"signals","found a signal in the queue details: Signum = %d, Code = %d\n", sip->_info._signo , sip->_info._code ); 
 
 #if defined(VGO_netbsdelf2)
       if (VG_(clo_trace_signals))

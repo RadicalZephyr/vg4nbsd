@@ -1020,6 +1020,7 @@ extern const Addr ML_(blksys_finished);
 
 void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
 {
+  VG_(printf)("Fixup Guest state to restart Syscall\n");
 #if defined(VGP_x86_linux) || defined (VGP_x86_netbsdelf2)
    arch->vex.guest_EIP -= 2;             // sizeof(int $0x80)
 

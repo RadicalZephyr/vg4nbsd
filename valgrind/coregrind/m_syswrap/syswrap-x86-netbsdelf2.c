@@ -1369,7 +1369,7 @@ PRE(sys_sigaction)
 {
    struct vki_sigaction new, old;
    struct vki_sigaction *newp, *oldp;
-
+   VG_(printf)("In Sys_sigaction\n");
    PRINT("sys_sigaction ( %d, %p, %p )", ARG1,ARG2,ARG3);
    PRE_REG_READ3(int, "sigaction",
                  int, signum, const struct old_sigaction *, act,

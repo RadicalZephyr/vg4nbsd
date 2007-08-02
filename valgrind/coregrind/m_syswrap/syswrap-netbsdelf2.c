@@ -573,40 +573,40 @@ POST(sys_accept)
 /* From sys_socketcall */
 PRE(sys_bind)
 {
-   I_die_here;
 }
 
 POST(sys_bind)
 {
-   I_die_here;
 }
 
 /* From sys_socketcall? */
 PRE(sys_setsockopt)
 {
-   I_die_here;
 }
 
 /* From sys_socketcall? */
 PRE(sys_getsockopt)
 {
-   I_die_here;
+	/* I don't know what the arg4 size will be */
+   if (ARG5 != NULL)
+	PRE_MEM_WRITE("optlen", ARG5, sizeof(vki_socklen_t));
 }
 
 POST(sys_getsockopt)
 {
-   I_die_here;
+   if (ARG4 != NULL)
+	POST_MEM_WRITE(ARG4, ARG5);
+   if (ARG5 != NULL)
+	POST_MEM_WRITE(ARG5, sizeof(vki_socklen_t));
 }
 
 /* From sys_socketcall */
 PRE(sys_listen)
 {
-   I_die_here;
 }
 
 POST(sys_listen)
 {
-   I_die_here;
 }
 
 

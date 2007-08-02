@@ -57,6 +57,8 @@ typedef unsigned short	__vki_kernel_old_gid_t;
 
 typedef long long	__vki_kernel_loff_t;
 
+typedef unsigned int	__vki_kernel_socklen_t;
+
 typedef struct {
 	int	val[2];
 } __vki_kernel_fsid_t;

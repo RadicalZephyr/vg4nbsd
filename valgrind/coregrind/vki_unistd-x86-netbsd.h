@@ -913,4 +913,6 @@
 #define __NR___lstat30   389
 #define __NR___getdents30   390
 
+#define __NR___socket30		394
+
 #endif /* _VG_ASM_I386_UNISTD_H_ */

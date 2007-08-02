@@ -133,6 +133,8 @@ typedef __vki_kernel_time_t	vki_time_t;
 typedef __vki_kernel_clock_t	vki_clock_t;
 typedef __vki_kernel_caddr_t	vki_caddr_t;
 
+typedef __vki_kernel_socklen_t	vki_socklen_t;
+
 typedef unsigned long           vki_u_long;
 
 typedef unsigned int	        vki_uint;

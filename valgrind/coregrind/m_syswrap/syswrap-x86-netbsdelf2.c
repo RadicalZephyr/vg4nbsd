@@ -2365,6 +2365,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR___stat30,                    sys_newstat),     // 384 does this work?
    GENXY(__NR___fstat30,         sys_newfstat),       // 388
    GENXY(__NR___lstat30,         sys_newlstat),       // 279
+   NBSDXY(__NR___socket30,	 sys_socket),		// 394
 
    /* syscall: "__lstat30" ret: "int" args: "const char *" "struct stat *" */
 #define SYS___lstat30   389  

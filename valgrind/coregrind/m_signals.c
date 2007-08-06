@@ -1762,6 +1762,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	    resume_scheduler(tid); /* resume the scheduler */
 #else
 
+	    resume_scheduler(tid);
 	    return; // extension succeeded, restart instruction
 #endif /* VG4nBSD I do not see why we should not resume the scheduler to restart the instruction */
 	 } else

@@ -1694,6 +1694,7 @@ PRE(sys_sigprocmask)
 
    SET_STATUS_from_SysRes(
 			  VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, ARG2, ARG3)); 
+   *flags |= SfPollAfter;
 /*                                 set ? ARG2    : NULL, */
 /*                              oldset ? ARG3 : NULL) */
 /*    ); */

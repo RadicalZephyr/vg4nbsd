@@ -332,7 +332,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 	    if the client code doesn't. */
 
 	 skss_handler = sync_signalhandler;
-      VG_(debugLog)(0,"m_signals","Setting sync_signalhandler for signal %d\n",
+      VG_(debugLog)(9,"m_signals","Setting sync_signalhandler for signal %d\n",
 		    sig); 
       break;
 

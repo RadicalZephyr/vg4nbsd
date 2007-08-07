@@ -318,7 +318,7 @@ void VG_(vg_yield)(void)
 static void block_signals(ThreadId tid)
 {
    vki_sigset_t mask;
-   VG_(printf)("In block signals!\n");
+   //VG_(printf)("In block signals!\n");
    VG_(sigfillset)(&mask);
 
    /* Don't block these because they're synchronous */

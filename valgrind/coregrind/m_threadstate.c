@@ -115,7 +115,7 @@ Int VG_(count_living_threads)(void)
 ThreadId VG_(get_lwp_tid)(Int lwp)
 {
    ThreadId tid;
-   VG_(printf)("in get_lwp_id, lwp = %d \n",lwp);   
+   VG_(printf)("\nin get_lwp_id, lwp = %d \n",lwp);   
    for(tid = 1; tid < VG_N_THREADS; tid++)
      if (VG_(threads)[tid].status != VgTs_Empty && VG_(threads)[tid].os_state.lwpid == lwp) {
        VG_(printf)("returning from get lwp_id \n");

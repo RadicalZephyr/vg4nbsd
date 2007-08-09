@@ -1670,7 +1670,7 @@ PRE(sys_sigprocmask)
 /*    vki_sigset_t bigger_set; */
 /*    vki_sigset_t bigger_oldset; */
 
-   PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3); 
+  PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3); 
 /*    PRE_REG_READ3(long, "sigprocmask",  */
 /*                  int, how, vki_old_sigset_t *, set, vki_old_sigset_t *, oldset); */
 
@@ -1693,8 +1693,8 @@ PRE(sys_sigprocmask)
 /*       bigger_set.sig[0] = *(vki_old_sigset_t*)set; */
 
    SET_STATUS_from_SysRes(
-			  VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, ARG2, ARG3)); 
-   *flags |= SfPollAfter;
+			  VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, (vki_sigset_t *)ARG2, (vki_old_sigset_t *)ARG3)); 
+   //   *flags |= SfPollAfter;
 /*                                 set ? ARG2    : NULL, */
 /*                              oldset ? ARG3 : NULL) */
 /*    ); */

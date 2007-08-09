@@ -1378,14 +1378,15 @@ PRE(sys_sigaction)
    newp = oldp = NULL;
 
    if (ARG2 != 0) {
-   VG_(printf)("Arg2 != null sys_sigaction\n");
+     struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
+
      /* these were _old_sigaction, why ? XXXX - hsaliak in netbsd i
 	have set old and new to the same, unless they are not, needs
-     more investigation   */
-      struct vki_old_sigaction *sa = (struct vki_old_sigaction *)ARG2;
-      PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
-      PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
-      PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
+	more investigation   */
+     VG_(printf)("Arg2 != null sys_sigaction\n");
+     PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+     PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+     PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
     /*   if (sa->sa_flags & VKI_SA_RESTORER) */
 /*          PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer)); */
 /*    } */
@@ -1402,24 +1403,21 @@ PRE(sys_sigaction)
    //   return;
 
    if (ARG2 != 0) {
-   VG_(printf)("Setting handlers\n");
       struct vki_old_sigaction *oldnew = (struct vki_old_sigaction *)ARG2;
-
+      VG_(printf)("Setting handlers\n");
       new.ksa_handler = oldnew->ksa_handler;
       new.sa_flags = oldnew->sa_flags;
 #ifndef VGO_netbsdelf2
       new.sa_restorer = oldnew->sa_restorer;
       //      convert_sigset_to_rt(&oldnew->sa_mask, &new.sa_mask);
 #else
-      convert_sigset_to_rt(&oldnew->sa_mask, &new.sa_mask);
-   VG_(printf)("converted\n");
-      { int i ;
+      do { int i = 0; 
       for (i = 0 ;  i < _VKI_NSIG_WORDS; i ++ ) {
-
 	new.sa_mask.sig[i] = old.sa_mask.sig[i];
       }
    VG_(printf)("after weird for loop that doesnt set i \n");
-      }
+      }while(0);
+
 #endif /* should be ok */
    VG_(printf)("Setting handlers\n");
       newp = &new;

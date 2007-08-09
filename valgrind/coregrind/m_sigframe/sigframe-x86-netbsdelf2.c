@@ -349,7 +349,9 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
                     struct vki_ucontext *uc, struct _vki_fpstate *fpstate)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
-   struct vki_sigcontext *sc = &uc->uc_mcontext;
+
+/*    struct vki_sigcontext *sc = & (uc->uc_mcontext); */
+   struct vki_mcontext *sc =& (uc->uc_mcontext);
 
    VG_(memset)(uc, 0, sizeof(*uc));
 
@@ -361,25 +363,25 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
 
    // FIXME: save_i387(&tst->arch, fpstate);
 
-#  define SC2(reg,REG)  sc->sc_##reg = tst->arch.vex.guest_##REG
-   SC2(gs,GS);
-   SC2(fs,FS);
-   SC2(es,ES);
-   SC2(ds,DS);
+#  define SC2(REG)  sc->__gregs[_REG_##REG] = tst->arch.vex.guest_##REG
+   SC2(GS);
+   SC2(FS);
+   SC2(ES);
+   SC2(DS);
 
-   SC2(edi,EDI);
-   SC2(esi,ESI);
-   SC2(ebp,EBP);
-   SC2(esp,ESP);
-   SC2(ebx,EBX);
-   SC2(edx,EDX);
-   SC2(ecx,ECX);
-   SC2(eax,EAX);
+   SC2(EDI);
+   SC2(ESI);
+   SC2(EBP);
+   SC2(ESP);
+   SC2(EBX);
+   SC2(EDX);
+   SC2(ECX);
+   SC2(EAX);
 
-   SC2(eip,EIP);
-   SC2(cs,CS);
-   sc->sc_eflags = LibVEX_GuestX86_get_eflags(&tst->arch.vex);
-   SC2(ss,SS);
+   SC2(EIP);
+   SC2(CS);
+   sc->__gregs[_REG_EFL] = LibVEX_GuestX86_get_eflags(&tst->arch.vex);
+   SC2(SS);
    /* XXX esp_at_signal */
    /* XXX trapno */
    /* XXX err */
@@ -460,12 +462,12 @@ static Addr build_sigframe(ThreadState *tst,
 			   void *handler, UInt flags,
 			   const vki_sigset_t *mask)
 {
-  VG_(printf)("Building sigframe\n");
+
    struct sigframe *frame;
    Addr esp = esp_top_of_frame;
    Int	sigNo = siginfo->_info._signo;
    struct vki_ucontext uc;
-
+  VG_(printf)("Building sigframe\n");
     vg_assert((flags & VKI_SA_SIGINFO) == 0);
 
    esp -= sizeof(*frame);

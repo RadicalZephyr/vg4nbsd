@@ -631,8 +631,8 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
    /* don't let them use our signals */
    if ( (signo > VG_SIGVGRTUSERMAX)
 	&& new_act
-	&& !(new_act->ksa_handler == VKI_SIG_DFL 
-             || new_act->ksa_handler == VKI_SIG_IGN) )
+	&& !(new_act->ksa_handler == (void *) VKI_SIG_DFL 
+             || new_act->ksa_handler == (void *) VKI_SIG_IGN) )
       goto bad_signo_reserved;
 
    /* Reject attempts to set a handler (or set ignore) for SIGKILL. */
@@ -921,6 +921,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo )
                          scss.scss_per_sig[sigNo].scss_flags,
                          &tst->sig_mask,
                          scss.scss_per_sig[sigNo].scss_restorer);
+   VG_(printf)("Exit push signal frmae\n");
 }
 
 
@@ -1280,13 +1281,15 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
 	 push_signal_frame will cause the whole process to exit when
 	 we next hit the scheduler.
       */
+     VG_(printf)("Delivering non default signal!!\n");
       vg_assert(VG_(is_valid_tid)(tid));
 
       push_signal_frame ( tid, info );
+
       if (handler->scss_flags & VKI_SA_ONESHOT) {
 	 /* Do the ONESHOT thing. */
 	 handler->scss_handler = VKI_SIG_DFL;
-
+	 VG_(printf)("Handle scss , why is oneshot set?\n");
 	 handle_SCSS_change( False /* lazy update */ );
       }
       /* At this point:
@@ -1298,17 +1301,20 @@ static void deliver_signal ( ThreadId tid, const vki_siginfo_t *info )
        */
       tst->sig_mask = tst->tmp_sig_mask;
       if (!(handler->scss_flags & VKI_SA_NOMASK)) {
+	VG_(printf)("NOMASK!\n");
 	 VG_(sigaddset_from_set)(&tst->sig_mask, &handler->scss_mask);
 	 VG_(sigaddset)(&tst->sig_mask, sigNo);
 
 	 tst->tmp_sig_mask = tst->sig_mask;
       }
+	VG_(printf)("NOMASK!\n");
    }
 
    /* Thread state is ready to go - just add Runnable */ }
 
 static void resume_scheduler(ThreadId tid)
 {
+	VG_(printf)("Resuming scheduler!\n");
    ThreadState *tst = VG_(get_ThreadState)(tid);
 
    vg_assert(tst->os_state.lwpid == VG_(gettid)());
@@ -2000,7 +2006,9 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 /* Can't continue; must longjmp back to the scheduler and thus
 	    enter the sighandler immediately. */
 	 deliver_signal(tid, info);
+	 VG_(printf)("Resume sched\n");
 	 resume_scheduler(tid);
+
       }
 
       /* Check to see if someone is interested in faults. */

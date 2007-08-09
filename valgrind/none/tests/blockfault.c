@@ -23,7 +23,7 @@ int main()
 	sigaction(SIGSEGV, &sa, NULL);
 
 	sigfillset(&mask);
-	sigprocmask(SIG_BLOCK, &mask, NULL); // blocking a SIGSEGV is same as default handler? 
+//	sigprocmask(SIG_BLOCK, &mask, NULL); // blocking a SIGSEGV is same as default handler? 
 
 	printf("before execution of the wierd line\n");
 	*(volatile int *)1234 = 213;

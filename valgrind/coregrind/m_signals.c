@@ -382,7 +382,7 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
 	 syscall, we observe whether it wanted to restart the syscall
 	 or not, which is needed by 
          VG_(fixup_guest_state_after_syscall_interrupted) */
-      skss_flags |= VKI_SA_RESTART;
+            skss_flags |= VKI_SA_RESTART;
 
       /* SA_NOMASK: ignore it */
 
@@ -1648,7 +1648,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 /*       we do the same thing here. *\/ */
 /*    info->si_code = (Short)info->si_code; */
 /* #endif */
-
+      VG_(printf)("After asserts\n");
    if (info->_info._code <= VKI_SI_USER) {
       /* If some user-process sent us one of these signals (ie,
 	 they're not the result of a faulting instruction), then treat
@@ -1666,6 +1666,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	  client's signal mask was applied, so we can't get here
 	  unless the client wants this signal right now.  This means
 	  we can simply use the async_signalhandler. */
+       VG_(printf)("Calling async signalhandler\n");
        async_signalhandler(sigNo, info, uc);
       }
       /* netbsd doesnt have this union XXX - examine equivalent union  - For now this block is commented out*/ 
@@ -1705,23 +1706,24 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 
       return;
    } 
-
-   if (VG_(clo_trace_signals)) {
-      VG_(message)(Vg_DebugMsg, "signal %d arrived ... si_code=%d, "
-                                "EIP=%p, eip=%p",
-                   sigNo, info->_info._code, VG_(get_IP)(tid), 
-		   VG_UCONTEXT_INSTR_PTR(uc) );
-   }
+      VG_(printf)("After asserts2\n");
+/*    if (VG_(clo_trace_signals)) { */
+/*       VG_(message)(Vg_DebugMsg, "signal %d arrived ... si_code=%d, " */
+/*                                 "EIP=%p, eip=%p", */
+/*                    sigNo, info->_info._code, VG_(get_IP)(tid), */
+/* 		   VG_UCONTEXT_INSTR_PTR(uc) ); */
+/*    } */
    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
-
+      VG_(printf)("between max signal\n");
    /* Special fault-handling case. We can now get signals which can
       act upon and immediately restart the faulting instruction.
     */
 
    if (info->_info._signo == VKI_SIGSEGV) {
-     
+
       Addr fault = (Addr)info->_info._reason._fault._addr;
       Addr esp   =  VG_(get_SP)(tid);
+      VG_(printf)("After get sp\n");
       NSegment* seg      = VG_(am_find_nsegment)(fault);
       NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
                                : NULL;
@@ -1752,6 +1754,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	    nothing mapped there (as opposed to a permissions fault),
 	    then extend the stack segment. 
 	 */
+	VG_(printf)("A map error\n");
          Addr base = VG_PGROUNDDN(esp - VG_STACK_REDZONE_SZB);
 	 if (VG_(extend_stack)(base, VG_(threads)[tid].client_stack_szB)) {
 	    if (VG_(clo_trace_signals))
@@ -1778,7 +1781,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       and have it delivered.  Otherwise it's a Valgrind bug. */
    {   
       ThreadState *tst = VG_(get_ThreadState)(VG_(get_lwp_tid)(VG_(gettid)()));
-
+      VG_(printf)("Checking if signal is blocked\n");
       if (VG_(sigismember)(&tst->sig_mask, sigNo)) {
 	 /* signal is blocked, but they're not allowed to block faults */
 	VG_(printf)("sync_signalhandler:Forcibly setting default handler for Signal %d\n",sigNo);
@@ -1788,6 +1791,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
       if (!VG_(my_fault)) {
 	 /* Can't continue; must longjmp back to the scheduler and thus
 	    enter the sighpandler immediately. */
+	VG_(printf)("Delivering signal\n");
 	deliver_signal(tid, info); /* INVESTIGATE THIS FUNCTION */
 	resume_scheduler(tid);
       }

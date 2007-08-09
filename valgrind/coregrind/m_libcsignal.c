@@ -126,6 +126,7 @@ Int VG_(sigismember) ( const vki_sigset_t* set, Int signum )
       return 0;
    //signum--;
    VG_(printf)("checking if sig is member signum = %d\n",signum);
+   VG_(printf)("returning %d\n",((set->sig[__sigword(signum)] & __sigmask(signum)) != 0));
    return    ((set->sig[__sigword(signum)] & __sigmask(signum)) != 0);
 
 }
